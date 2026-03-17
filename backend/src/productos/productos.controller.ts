@@ -56,13 +56,17 @@ export class CultivosController {
   }
 
   @Post()
-  create(@Body() dto: CreateCultivoDto) {
-    return this.cultivosService.create(dto);
+  create(@Body() dto: CreateCultivoDto, @Body('usuarioId') usuarioId?: number) {
+    return this.cultivosService.create(dto, usuarioId);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCultivoDto) {
-    return this.cultivosService.update(id, dto);
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateCultivoDto,
+    @Body('usuarioId') usuarioId?: number,
+  ) {
+    return this.cultivosService.update(id, dto, usuarioId);
   }
 }
 
@@ -78,13 +82,17 @@ export class HibridosController {
   }
 
   @Post()
-  create(@Body() dto: CreateHibridoDto) {
-    return this.service.create(dto);
+  create(@Body() dto: CreateHibridoDto, @Body('usuarioId') usuarioId?: number) {
+    return this.service.create(dto, usuarioId);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateHibridoDto) {
-    return this.service.update(id, dto);
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateHibridoDto,
+    @Body('usuarioId') usuarioId?: number,
+  ) {
+    return this.service.update(id, dto, usuarioId);
   }
 }
 
@@ -100,12 +108,16 @@ export class BandasController {
   }
 
   @Post()
-  create(@Body() dto: CreateBandaDto) {
-    return this.service.create(dto);
+  create(@Body() dto: CreateBandaDto, @Body('usuarioId') usuarioId?: number) {
+    return this.service.create(dto, usuarioId);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateBandaDto) {
-    return this.service.update(id, dto);
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateBandaDto,
+    @Body('usuarioId') usuarioId?: number,
+  ) {
+    return this.service.update(id, dto, usuarioId);
   }
 }

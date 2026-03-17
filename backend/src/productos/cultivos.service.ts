@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { TipoAccion, TipoEntidad } from '../historial/historial-accion.entity';
+import { HistorialService } from '../historial/historial.service';
 import { Cultivo } from './cultivo.entity';
 import { CreateCultivoDto } from './dto/create-cultivo.dto';
 import { UpdateCultivoDto } from './dto/update-cultivo.dto';
@@ -10,6 +12,7 @@ export class CultivosService {
   constructor(
     @InjectRepository(Cultivo)
     private readonly repo: Repository<Cultivo>,
+    private readonly historialService: HistorialService,
   ) {}
 
   findAll(soloActivos = false): Promise<Cultivo[]> {
@@ -25,13 +28,36 @@ export class CultivosService {
     return cultivo;
   }
 
-  create(dto: CreateCultivoDto): Promise<Cultivo> {
-    return this.repo.save(this.repo.create(dto));
+  async create(dto: CreateCultivoDto, usuarioId?: number): Promise<Cultivo> {
+    const cultivo = await this.repo.save(this.repo.create(dto));
+
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      tipoEntidad: TipoEntidad.CULTIVO,
+      tipoAccion: TipoAccion.CREAR,
+      entidadId: cultivo.id,
+      descripcion: `Cultivo "${cultivo.nombre}" creado`,
+    });
+
+    return cultivo;
   }
 
-  async update(id: number, dto: UpdateCultivoDto): Promise<Cultivo> {
+  async update(id: number, dto: UpdateCultivoDto, usuarioId?: number): Promise<Cultivo> {
     const cultivo = await this.findOne(id);
+    const previo = { nombre: cultivo.nombre, activo: cultivo.activo };
     Object.assign(cultivo, dto);
-    return this.repo.save(cultivo);
+    const updated = await this.repo.save(cultivo);
+
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      tipoEntidad: TipoEntidad.CULTIVO,
+      tipoAccion: TipoAccion.ACTUALIZAR,
+      entidadId: id,
+      descripcion: `Cultivo "${cultivo.nombre}" actualizado`,
+      datosPrevios: previo,
+      datosNuevos: dto,
+    });
+
+    return updated;
   }
 }

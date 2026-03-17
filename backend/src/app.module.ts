@@ -6,6 +6,7 @@ import { ClientesModule } from './clientes/clientes.module';
 import { CotizacionesModule } from './cotizaciones/cotizaciones.module';
 import { DatabaseModule } from './database/database.module';
 import { DescuentosModule } from './descuentos/descuentos.module';
+import { HistorialModule } from './historial/historial.module';
 import { MensajesModule } from './mensajes/mensajes.module';
 import { PreciosModule } from './precios/precios.module';
 import { ProductosModule } from './productos/productos.module';
@@ -24,6 +25,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
     PreciosModule,
     DescuentosModule,
     CotizacionesModule,
+    HistorialModule,
     MensajesModule,
   ],
   controllers: [AppController],

@@ -87,8 +87,9 @@ export class CotizacionesController {
   eliminarItem(
     @Param('versionId', ParseIntPipe) versionId: number,
     @Param('itemId', ParseIntPipe) itemId: number,
+    @Body('usuarioId') usuarioId?: number,
   ) {
-    return this.service.eliminarItem(versionId, itemId);
+    return this.service.eliminarItem(versionId, itemId, usuarioId);
   }
 
   // ─── DESCUENTOS POR ÍTEM ──────────────────────────────────────────────────
@@ -105,8 +106,9 @@ export class CotizacionesController {
   eliminarDescuentoItem(
     @Param('itemId', ParseIntPipe) itemId: number,
     @Param('did', ParseIntPipe) did: number,
+    @Body('usuarioId') usuarioId?: number,
   ) {
-    return this.service.eliminarDescuentoItem(itemId, did);
+    return this.service.eliminarDescuentoItem(itemId, did, usuarioId);
   }
 
   // ─── DESCUENTOS GLOBALES ──────────────────────────────────────────────────
@@ -123,7 +125,8 @@ export class CotizacionesController {
   eliminarDescuentoGlobal(
     @Param('versionId', ParseIntPipe) versionId: number,
     @Param('did', ParseIntPipe) did: number,
+    @Body('usuarioId') usuarioId?: number,
   ) {
-    return this.service.eliminarDescuentoGlobal(versionId, did);
+    return this.service.eliminarDescuentoGlobal(versionId, did, usuarioId);
   }
 }

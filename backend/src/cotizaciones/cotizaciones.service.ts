@@ -7,6 +7,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { DescuentosService } from '../descuentos/descuentos.service';
 import { DescuentosVolumenService } from '../descuentos/descuentos-volumen.service';
+import { TipoAccion, TipoEntidad } from '../historial/historial-accion.entity';
+import { HistorialService } from '../historial/historial.service';
 import { PreciosService } from '../precios/precios.service';
 import { AddItemDto } from './dto/add-item.dto';
 import { ApplyDescuentoDto } from './dto/apply-descuento.dto';
@@ -34,6 +36,7 @@ export class CotizacionesService {
     private readonly preciosService: PreciosService,
     private readonly descuentosService: DescuentosService,
     private readonly descuentosVolumenService: DescuentosVolumenService,
+    private readonly historialService: HistorialService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -67,27 +70,52 @@ export class CotizacionesService {
 
   // Crea cotización + versión 1 en una transacción
   async crear(dto: CreateCotizacionDto): Promise<Cotizacion> {
-    return this.dataSource.transaction(async (em) => {
+    const saved = await this.dataSource.transaction(async (em) => {
       const numero = await this.generarNumero();
       const cotizacion = em.create(Cotizacion, { ...dto, numero });
-      const saved = await em.save(cotizacion);
+      const savedCot = await em.save(cotizacion);
 
       const version = em.create(CotizacionVersion, {
-        cotizacionId: saved.id,
+        cotizacionId: savedCot.id,
         version: 1,
         usuarioId: dto.usuarioId,
         total: 0,
       });
       await em.save(version);
 
-      return saved;
+      return savedCot;
     });
+
+    await this.historialService.registrar({
+      usuarioId: dto.usuarioId,
+      cotizacionId: saved.id,
+      tipoEntidad: TipoEntidad.COTIZACION,
+      tipoAccion: TipoAccion.CREAR,
+      entidadId: saved.id,
+      descripcion: `Cotización ${saved.numero} creada`,
+    });
+
+    return saved;
   }
 
   async updateEstado(id: number, dto: UpdateEstadoDto): Promise<Cotizacion> {
     const cotizacion = await this.findOne(id);
+    const estadoPrevio = cotizacion.estado;
     cotizacion.estado = dto.estado;
-    return this.cotizacionRepo.save(cotizacion);
+    const updated = await this.cotizacionRepo.save(cotizacion);
+
+    await this.historialService.registrar({
+      usuarioId: dto.usuarioId,
+      cotizacionId: id,
+      tipoEntidad: TipoEntidad.COTIZACION,
+      tipoAccion: TipoAccion.CAMBIAR_ESTADO,
+      entidadId: id,
+      descripcion: `Estado de cotización ${cotizacion.numero} cambió de "${estadoPrevio}" a "${dto.estado}"`,
+      datosPrevios: { estado: estadoPrevio },
+      datosNuevos: { estado: dto.estado },
+    });
+
+    return updated;
   }
 
   // ─── VERSIONES ────────────────────────────────────────────────────────────
@@ -135,19 +163,19 @@ export class CotizacionesService {
       throw new BadRequestException('Solo se pueden crear nuevas versiones de cotizaciones en borrador');
     }
 
-    return this.dataSource.transaction(async (em) => {
+    const nuevaVersion = await this.dataSource.transaction(async (em) => {
       const ultima = await this.getVersion(
         cotizacionId,
         (await this.getUltimaVersion(cotizacionId)).id,
       );
 
-      const nuevaVersion = em.create(CotizacionVersion, {
+      const nueva = em.create(CotizacionVersion, {
         cotizacionId,
         version: ultima.version + 1,
         usuarioId,
         total: ultima.total,
       });
-      const savedVersion = await em.save(nuevaVersion);
+      const savedVersion = await em.save(nueva);
 
       // Clonar ítems y sus descuentos
       for (const item of ultima.items) {
@@ -186,6 +214,18 @@ export class CotizacionesService {
 
       return savedVersion;
     });
+
+    await this.historialService.registrar({
+      usuarioId,
+      cotizacionId,
+      tipoEntidad: TipoEntidad.COTIZACION_VERSION,
+      tipoAccion: TipoAccion.NUEVA_VERSION,
+      entidadId: nuevaVersion.id,
+      descripcion: `Nueva versión ${nuevaVersion.version} creada para cotización ${cotizacion.numero}`,
+      datosNuevos: { version: nuevaVersion.version },
+    });
+
+    return nuevaVersion;
   }
 
   // ─── ITEMS ────────────────────────────────────────────────────────────────
@@ -226,17 +266,39 @@ export class CotizacionesService {
       );
     }
 
-    // Recalcula total de la versión
     await this.recalcularTotal(versionId);
+
+    await this.historialService.registrar({
+      usuarioId: dto.usuarioId,
+      cotizacionId: version.cotizacionId,
+      tipoEntidad: TipoEntidad.COTIZACION_ITEM,
+      tipoAccion: TipoAccion.AGREGAR_ITEM,
+      entidadId: item.id,
+      descripcion: `Ítem agregado: híbrido ${dto.hibridoId}, banda ${dto.bandaId}, cantidad ${dto.cantidad}, precio base $${precioBase}`,
+      datosNuevos: { hibridoId: dto.hibridoId, bandaId: dto.bandaId, cantidad: dto.cantidad, precioBase, subtotal },
+    });
 
     return item;
   }
 
-  async eliminarItem(versionId: number, itemId: number): Promise<void> {
+  async eliminarItem(versionId: number, itemId: number, usuarioId?: number): Promise<void> {
     const item = await this.itemRepo.findOneBy({ id: itemId, versionId });
     if (!item) throw new NotFoundException(`Ítem ${itemId} no encontrado en versión ${versionId}`);
+
+    const version = await this.versionRepo.findOneBy({ id: versionId });
+
     await this.itemRepo.remove(item);
     await this.recalcularTotal(versionId);
+
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      cotizacionId: version?.cotizacionId ?? null,
+      tipoEntidad: TipoEntidad.COTIZACION_ITEM,
+      tipoAccion: TipoAccion.ELIMINAR_ITEM,
+      entidadId: itemId,
+      descripcion: `Ítem ${itemId} eliminado de versión ${versionId}`,
+      datosPrevios: { hibridoId: item.hibridoId, bandaId: item.bandaId, cantidad: item.cantidad, precioBase: item.precioBase },
+    });
   }
 
   // ─── DESCUENTOS POR ÍTEM ──────────────────────────────────────────────────
@@ -258,16 +320,41 @@ export class CotizacionesService {
       }),
     );
 
+    const version = await this.versionRepo.findOneBy({ id: item.versionId });
     await this.recalcularTotal(item.versionId);
+
+    await this.historialService.registrar({
+      usuarioId: dto.usuarioId,
+      cotizacionId: version?.cotizacionId ?? null,
+      tipoEntidad: TipoEntidad.COTIZACION_ITEM,
+      tipoAccion: TipoAccion.AGREGAR_DESCUENTO,
+      entidadId: aplicado.id,
+      descripcion: `Descuento "${descuento.nombre}" (${descuento.valorPorcentaje}%) aplicado al ítem ${itemId}`,
+      datosNuevos: { descuentoId: descuento.id, nombre: descuento.nombre, porcentaje: descuento.valorPorcentaje },
+    });
+
     return aplicado;
   }
 
-  async eliminarDescuentoItem(itemId: number, descuentoItemId: number): Promise<void> {
+  async eliminarDescuentoItem(itemId: number, descuentoItemId: number, usuarioId?: number): Promise<void> {
     const d = await this.itemDescRepo.findOneBy({ id: descuentoItemId, cotizacionItemId: itemId });
     if (!d) throw new NotFoundException(`Descuento ${descuentoItemId} no encontrado en ítem ${itemId}`);
-    const versionId = (await this.itemRepo.findOneBy({ id: itemId }))?.versionId;
+
+    const item = await this.itemRepo.findOneBy({ id: itemId });
+    const versionId = item?.versionId;
+    const version = versionId ? await this.versionRepo.findOneBy({ id: versionId }) : null;
+
     await this.itemDescRepo.remove(d);
     if (versionId) await this.recalcularTotal(versionId);
+
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      cotizacionId: version?.cotizacionId ?? null,
+      tipoEntidad: TipoEntidad.COTIZACION_ITEM,
+      tipoAccion: TipoAccion.ELIMINAR_DESCUENTO,
+      entidadId: descuentoItemId,
+      descripcion: `Descuento ${descuentoItemId} eliminado del ítem ${itemId}`,
+    });
   }
 
   // ─── DESCUENTOS GLOBALES ──────────────────────────────────────────────────
@@ -290,14 +377,36 @@ export class CotizacionesService {
     );
 
     await this.recalcularTotal(versionId);
+
+    await this.historialService.registrar({
+      usuarioId: dto.usuarioId,
+      cotizacionId: version.cotizacionId,
+      tipoEntidad: TipoEntidad.COTIZACION_VERSION,
+      tipoAccion: TipoAccion.AGREGAR_DESCUENTO,
+      entidadId: aplicado.id,
+      descripcion: `Descuento global "${descuento.nombre}" (${descuento.valorPorcentaje}%) aplicado a versión ${versionId}`,
+      datosNuevos: { descuentoId: descuento.id, nombre: descuento.nombre, porcentaje: descuento.valorPorcentaje },
+    });
+
     return aplicado;
   }
 
-  async eliminarDescuentoGlobal(versionId: number, descuentoVersionId: number): Promise<void> {
+  async eliminarDescuentoGlobal(versionId: number, descuentoVersionId: number, usuarioId?: number): Promise<void> {
     const d = await this.descRepo.findOneBy({ id: descuentoVersionId, versionId });
     if (!d) throw new NotFoundException(`Descuento ${descuentoVersionId} no encontrado en versión ${versionId}`);
+
+    const version = await this.versionRepo.findOneBy({ id: versionId });
     await this.descRepo.remove(d);
     await this.recalcularTotal(versionId);
+
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      cotizacionId: version?.cotizacionId ?? null,
+      tipoEntidad: TipoEntidad.COTIZACION_VERSION,
+      tipoAccion: TipoAccion.ELIMINAR_DESCUENTO,
+      entidadId: descuentoVersionId,
+      descripcion: `Descuento global ${descuentoVersionId} eliminado de versión ${versionId}`,
+    });
   }
 
   // ─── CÁLCULO DE TOTAL (siempre en backend) ────────────────────────────────

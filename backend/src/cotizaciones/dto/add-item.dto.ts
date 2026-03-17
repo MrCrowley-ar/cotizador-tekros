@@ -1,4 +1,4 @@
-import { IsInt, IsNumber, IsPositive } from 'class-validator';
+import { IsInt, IsNumber, IsOptional, IsPositive } from 'class-validator';
 
 export class AddItemDto {
   @IsInt()
@@ -16,4 +16,8 @@ export class AddItemDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   cantidad: number;
+
+  @IsInt()
+  @IsOptional()
+  usuarioId?: number;
 }

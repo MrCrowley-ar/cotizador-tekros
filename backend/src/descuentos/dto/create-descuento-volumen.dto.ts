@@ -8,6 +8,7 @@ import {
   Min,
 } from 'class-validator';
 
+
 export class CreateDescuentoVolumenDto {
   @IsInt()
   @IsPositive()
@@ -29,4 +30,8 @@ export class CreateDescuentoVolumenDto {
 
   @IsDateString()
   fecha: string;
+
+  @IsInt()
+  @IsOptional()
+  usuarioId?: number;
 }

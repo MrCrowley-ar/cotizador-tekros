@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DescuentosModule } from '../descuentos/descuentos.module';
+import { HistorialModule } from '../historial/historial.module';
 import { PreciosModule } from '../precios/precios.module';
 import { CotizacionDescuento } from './cotizacion-descuento.entity';
 import { CotizacionItemDescuento } from './cotizacion-item-descuento.entity';
@@ -21,6 +22,7 @@ import { CotizacionesService } from './cotizaciones.service';
     ]),
     PreciosModule,
     DescuentosModule,
+    HistorialModule,
   ],
   controllers: [CotizacionesController],
   providers: [CotizacionesService],

@@ -17,12 +17,18 @@ export class MensajesController {
   }
 
   @Patch(':id/toggle-fijado')
-  toggleFijado(@Param('id', ParseIntPipe) id: number) {
-    return this.service.toggleFijado(id);
+  toggleFijado(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('usuarioId') usuarioId?: number,
+  ) {
+    return this.service.toggleFijado(id, usuarioId);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.service.remove(id);
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('usuarioId') usuarioId?: number,
+  ) {
+    return this.service.remove(id, usuarioId);
   }
 }

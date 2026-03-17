@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { TipoAccion, TipoEntidad } from '../historial/historial-accion.entity';
+import { HistorialService } from '../historial/historial.service';
 import { DescuentoVolumen } from './descuento-volumen.entity';
 import { CreateDescuentoVolumenDto } from './dto/create-descuento-volumen.dto';
 
@@ -9,6 +11,7 @@ export class DescuentosVolumenService {
   constructor(
     @InjectRepository(DescuentoVolumen)
     private readonly repo: Repository<DescuentoVolumen>,
+    private readonly historialService: HistorialService,
   ) {}
 
   findByCultivo(cultivoId: number): Promise<DescuentoVolumen[]> {
@@ -18,8 +21,20 @@ export class DescuentosVolumenService {
     });
   }
 
-  create(dto: CreateDescuentoVolumenDto): Promise<DescuentoVolumen> {
-    return this.repo.save(this.repo.create(dto));
+  async create(dto: CreateDescuentoVolumenDto): Promise<DescuentoVolumen> {
+    const { usuarioId, ...dvData } = dto;
+    const dv = await this.repo.save(this.repo.create(dvData));
+
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      tipoEntidad: TipoEntidad.DESCUENTO_VOLUMEN,
+      tipoAccion: TipoAccion.CREAR,
+      entidadId: dv.id,
+      descripcion: `Descuento volumen ${dv.valorPorcentaje}% creado para cultivo ${dv.cultivoId} (${dv.cantidadMin}–${dv.cantidadMax ?? '∞'})`,
+      datosNuevos: { cultivoId: dv.cultivoId, cantidadMin: dv.cantidadMin, cantidadMax: dv.cantidadMax, valorPorcentaje: dv.valorPorcentaje },
+    });
+
+    return dv;
   }
 
   // Obtiene el descuento por volumen vigente para un cultivo y una cantidad dada.

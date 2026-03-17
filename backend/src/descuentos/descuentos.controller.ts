@@ -36,8 +36,11 @@ export class DescuentosController {
   }
 
   @Patch(':id/toggle')
-  toggleActivo(@Param('id', ParseIntPipe) id: number) {
-    return this.service.toggleActivo(id);
+  toggleActivo(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('usuarioId') usuarioId?: number,
+  ) {
+    return this.service.toggleActivo(id, usuarioId);
   }
 }
 
