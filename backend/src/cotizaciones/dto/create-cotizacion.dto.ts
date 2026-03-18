@@ -4,8 +4,4 @@ export class CreateCotizacionDto {
   @IsInt()
   @IsPositive()
   clienteId: number;
-
-  @IsInt()
-  @IsPositive()
-  usuarioId: number;
 }

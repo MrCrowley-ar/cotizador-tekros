@@ -28,9 +28,8 @@ export class DescuentosService {
   }
 
   // INSERT only — el historial se mantiene por nombre + fecha
-  async create(dto: CreateDescuentoDto): Promise<Descuento> {
-    const { usuarioId, ...descuentoData } = dto;
-    const descuento = await this.repo.save(this.repo.create(descuentoData));
+  async create(dto: CreateDescuentoDto, usuarioId?: number): Promise<Descuento> {
+    const descuento = await this.repo.save(this.repo.create(dto));
 
     await this.historialService.registrar({
       usuarioId: usuarioId ?? null,

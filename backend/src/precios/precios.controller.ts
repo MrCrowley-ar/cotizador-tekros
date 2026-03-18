@@ -1,4 +1,7 @@
 import { Body, Controller, Get, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolUsuario, Usuario } from '../usuarios/usuario.entity';
 import { CreatePrecioDto } from './dto/create-precio.dto';
 import { PreciosService } from './precios.service';
 
@@ -7,8 +10,9 @@ export class PreciosController {
   constructor(private readonly service: PreciosService) {}
 
   @Post()
-  registrar(@Body() dto: CreatePrecioDto) {
-    return this.service.registrar(dto);
+  @Roles(RolUsuario.ADMIN)
+  registrar(@Body() dto: CreatePrecioDto, @CurrentUser() user: Usuario) {
+    return this.service.registrar(dto, user.id);
   }
 
   @Get('actual')

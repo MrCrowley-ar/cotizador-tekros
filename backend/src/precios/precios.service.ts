@@ -15,9 +15,8 @@ export class PreciosService {
   ) {}
 
   // INSERT only — los precios nunca se actualizan
-  async registrar(dto: CreatePrecioDto): Promise<Precio> {
-    const { usuarioId, ...precioData } = dto;
-    const precio = await this.repo.save(this.repo.create(precioData));
+  async registrar(dto: CreatePrecioDto, usuarioId?: number): Promise<Precio> {
+    const precio = await this.repo.save(this.repo.create(dto));
 
     await this.historialService.registrar({
       usuarioId: usuarioId ?? null,

@@ -1,4 +1,4 @@
-import { IsDateString, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsNotEmpty, IsNumber, IsString, Max, Min } from 'class-validator';
 
 export class CreateDescuentoDto {
   @IsString()
@@ -13,7 +13,4 @@ export class CreateDescuentoDto {
   @IsDateString()
   fecha: string;
 
-  @IsInt()
-  @IsOptional()
-  usuarioId?: number;
 }

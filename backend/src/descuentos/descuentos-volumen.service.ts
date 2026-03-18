@@ -21,9 +21,8 @@ export class DescuentosVolumenService {
     });
   }
 
-  async create(dto: CreateDescuentoVolumenDto): Promise<DescuentoVolumen> {
-    const { usuarioId, ...dvData } = dto;
-    const dv = await this.repo.save(this.repo.create(dvData));
+  async create(dto: CreateDescuentoVolumenDto, usuarioId?: number): Promise<DescuentoVolumen> {
+    const dv = await this.repo.save(this.repo.create(dto));
 
     await this.historialService.registrar({
       usuarioId: usuarioId ?? null,

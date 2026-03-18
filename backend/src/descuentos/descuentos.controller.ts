@@ -9,6 +9,9 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolUsuario, Usuario } from '../usuarios/usuario.entity';
 import { DescuentosVolumenService } from './descuentos-volumen.service';
 import { DescuentosService } from './descuentos.service';
 import { CreateDescuentoVolumenDto } from './dto/create-descuento-volumen.dto';
@@ -31,16 +34,15 @@ export class DescuentosController {
   }
 
   @Post()
-  create(@Body() dto: CreateDescuentoDto) {
-    return this.service.create(dto);
+  @Roles(RolUsuario.ADMIN)
+  create(@Body() dto: CreateDescuentoDto, @CurrentUser() user: Usuario) {
+    return this.service.create(dto, user.id);
   }
 
   @Patch(':id/toggle')
-  toggleActivo(
-    @Param('id', ParseIntPipe) id: number,
-    @Body('usuarioId') usuarioId?: number,
-  ) {
-    return this.service.toggleActivo(id, usuarioId);
+  @Roles(RolUsuario.ADMIN)
+  toggleActivo(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: Usuario) {
+    return this.service.toggleActivo(id, user.id);
   }
 }
 
@@ -56,7 +58,8 @@ export class DescuentosVolumenController {
   }
 
   @Post()
-  create(@Body() dto: CreateDescuentoVolumenDto) {
-    return this.service.create(dto);
+  @Roles(RolUsuario.ADMIN)
+  create(@Body() dto: CreateDescuentoVolumenDto, @CurrentUser() user: Usuario) {
+    return this.service.create(dto, user.id);
   }
 }

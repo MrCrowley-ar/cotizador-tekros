@@ -24,10 +24,10 @@ export class MensajesService {
     });
   }
 
-  async create(dto: CreateMensajeDto): Promise<Mensaje> {
+  async create(dto: CreateMensajeDto, usuarioId?: number): Promise<Mensaje> {
     const mensaje = await this.mensajeRepo.save(
       this.mensajeRepo.create({
-        usuarioId: dto.usuarioId,
+        usuarioId: usuarioId ?? null,
         contenido: dto.contenido,
       }),
     );
@@ -41,11 +41,11 @@ export class MensajesService {
     }
 
     await this.historialService.registrar({
-      usuarioId: dto.usuarioId,
+      usuarioId: usuarioId ?? null,
       tipoEntidad: TipoEntidad.MENSAJE,
       tipoAccion: TipoAccion.CREAR,
       entidadId: mensaje.id,
-      descripcion: `Mensaje creado por usuario ${dto.usuarioId}`,
+      descripcion: `Mensaje creado por usuario ${usuarioId ?? 'desconocido'}`,
       datosNuevos: { contenido: dto.contenido.substring(0, 100) },
     });
 

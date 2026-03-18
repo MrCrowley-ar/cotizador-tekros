@@ -69,16 +69,16 @@ export class CotizacionesService {
   }
 
   // Crea cotización + versión 1 en una transacción
-  async crear(dto: CreateCotizacionDto): Promise<Cotizacion> {
+  async crear(dto: CreateCotizacionDto, usuarioId?: number): Promise<Cotizacion> {
     const saved = await this.dataSource.transaction(async (em) => {
       const numero = await this.generarNumero();
-      const cotizacion = em.create(Cotizacion, { ...dto, numero });
+      const cotizacion = em.create(Cotizacion, { clienteId: dto.clienteId, usuarioId, numero });
       const savedCot = await em.save(cotizacion);
 
       const version = em.create(CotizacionVersion, {
         cotizacionId: savedCot.id,
         version: 1,
-        usuarioId: dto.usuarioId,
+        usuarioId: usuarioId ?? null,
         total: 0,
       });
       await em.save(version);
@@ -87,7 +87,7 @@ export class CotizacionesService {
     });
 
     await this.historialService.registrar({
-      usuarioId: dto.usuarioId,
+      usuarioId: usuarioId ?? null,
       cotizacionId: saved.id,
       tipoEntidad: TipoEntidad.COTIZACION,
       tipoAccion: TipoAccion.CREAR,
@@ -98,14 +98,14 @@ export class CotizacionesService {
     return saved;
   }
 
-  async updateEstado(id: number, dto: UpdateEstadoDto): Promise<Cotizacion> {
+  async updateEstado(id: number, dto: UpdateEstadoDto, usuarioId?: number): Promise<Cotizacion> {
     const cotizacion = await this.findOne(id);
     const estadoPrevio = cotizacion.estado;
     cotizacion.estado = dto.estado;
     const updated = await this.cotizacionRepo.save(cotizacion);
 
     await this.historialService.registrar({
-      usuarioId: dto.usuarioId,
+      usuarioId: usuarioId ?? null,
       cotizacionId: id,
       tipoEntidad: TipoEntidad.COTIZACION,
       tipoAccion: TipoAccion.CAMBIAR_ESTADO,
@@ -230,7 +230,7 @@ export class CotizacionesService {
 
   // ─── ITEMS ────────────────────────────────────────────────────────────────
 
-  async agregarItem(versionId: number, dto: AddItemDto): Promise<CotizacionItem> {
+  async agregarItem(versionId: number, dto: AddItemDto, usuarioId?: number): Promise<CotizacionItem> {
     const version = await this.versionRepo.findOneBy({ id: versionId });
     if (!version) throw new NotFoundException(`Versión ${versionId} no encontrada`);
 
@@ -269,7 +269,7 @@ export class CotizacionesService {
     await this.recalcularTotal(versionId);
 
     await this.historialService.registrar({
-      usuarioId: dto.usuarioId,
+      usuarioId: usuarioId ?? null,
       cotizacionId: version.cotizacionId,
       tipoEntidad: TipoEntidad.COTIZACION_ITEM,
       tipoAccion: TipoAccion.AGREGAR_ITEM,
@@ -306,6 +306,7 @@ export class CotizacionesService {
   async aplicarDescuentoItem(
     itemId: number,
     dto: ApplyDescuentoDto,
+    usuarioId?: number,
   ): Promise<CotizacionItemDescuento> {
     const item = await this.itemRepo.findOneBy({ id: itemId });
     if (!item) throw new NotFoundException(`Ítem ${itemId} no encontrado`);
@@ -324,7 +325,7 @@ export class CotizacionesService {
     await this.recalcularTotal(item.versionId);
 
     await this.historialService.registrar({
-      usuarioId: dto.usuarioId,
+      usuarioId: usuarioId ?? null,
       cotizacionId: version?.cotizacionId ?? null,
       tipoEntidad: TipoEntidad.COTIZACION_ITEM,
       tipoAccion: TipoAccion.AGREGAR_DESCUENTO,
@@ -362,6 +363,7 @@ export class CotizacionesService {
   async aplicarDescuentoGlobal(
     versionId: number,
     dto: ApplyDescuentoDto,
+    usuarioId?: number,
   ): Promise<CotizacionDescuento> {
     const version = await this.versionRepo.findOneBy({ id: versionId });
     if (!version) throw new NotFoundException(`Versión ${versionId} no encontrada`);
@@ -379,7 +381,7 @@ export class CotizacionesService {
     await this.recalcularTotal(versionId);
 
     await this.historialService.registrar({
-      usuarioId: dto.usuarioId,
+      usuarioId: usuarioId ?? null,
       cotizacionId: version.cotizacionId,
       tipoEntidad: TipoEntidad.COTIZACION_VERSION,
       tipoAccion: TipoAccion.AGREGAR_DESCUENTO,

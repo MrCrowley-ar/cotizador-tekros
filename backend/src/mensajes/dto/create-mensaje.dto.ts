@@ -1,10 +1,6 @@
-import { IsArray, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, IsUrl } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, IsUrl } from 'class-validator';
 
 export class CreateMensajeDto {
-  @IsInt()
-  @IsPositive()
-  usuarioId: number;
-
   @IsString()
   @IsNotEmpty()
   contenido: string;

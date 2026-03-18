@@ -9,6 +9,9 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolUsuario, Usuario } from '../usuarios/usuario.entity';
 import { BandasService } from './bandas.service';
 import { CultivosService } from './cultivos.service';
 import { CreateBandaDto } from './dto/create-banda.dto';
@@ -56,17 +59,19 @@ export class CultivosController {
   }
 
   @Post()
-  create(@Body() dto: CreateCultivoDto, @Body('usuarioId') usuarioId?: number) {
-    return this.cultivosService.create(dto, usuarioId);
+  @Roles(RolUsuario.ADMIN)
+  create(@Body() dto: CreateCultivoDto, @CurrentUser() user: Usuario) {
+    return this.cultivosService.create(dto, user.id);
   }
 
   @Patch(':id')
+  @Roles(RolUsuario.ADMIN)
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateCultivoDto,
-    @Body('usuarioId') usuarioId?: number,
+    @CurrentUser() user: Usuario,
   ) {
-    return this.cultivosService.update(id, dto, usuarioId);
+    return this.cultivosService.update(id, dto, user.id);
   }
 }
 
@@ -82,17 +87,19 @@ export class HibridosController {
   }
 
   @Post()
-  create(@Body() dto: CreateHibridoDto, @Body('usuarioId') usuarioId?: number) {
-    return this.service.create(dto, usuarioId);
+  @Roles(RolUsuario.ADMIN)
+  create(@Body() dto: CreateHibridoDto, @CurrentUser() user: Usuario) {
+    return this.service.create(dto, user.id);
   }
 
   @Patch(':id')
+  @Roles(RolUsuario.ADMIN)
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateHibridoDto,
-    @Body('usuarioId') usuarioId?: number,
+    @CurrentUser() user: Usuario,
   ) {
-    return this.service.update(id, dto, usuarioId);
+    return this.service.update(id, dto, user.id);
   }
 }
 
@@ -108,16 +115,18 @@ export class BandasController {
   }
 
   @Post()
-  create(@Body() dto: CreateBandaDto, @Body('usuarioId') usuarioId?: number) {
-    return this.service.create(dto, usuarioId);
+  @Roles(RolUsuario.ADMIN)
+  create(@Body() dto: CreateBandaDto, @CurrentUser() user: Usuario) {
+    return this.service.create(dto, user.id);
   }
 
   @Patch(':id')
+  @Roles(RolUsuario.ADMIN)
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateBandaDto,
-    @Body('usuarioId') usuarioId?: number,
+    @CurrentUser() user: Usuario,
   ) {
-    return this.service.update(id, dto, usuarioId);
+    return this.service.update(id, dto, user.id);
   }
 }

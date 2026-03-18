@@ -31,12 +31,11 @@ export class ClientesService {
     return cliente;
   }
 
-  async create(dto: CreateClienteDto): Promise<Cliente> {
+  async create(dto: CreateClienteDto, usuarioId?: number): Promise<Cliente> {
     const existe = await this.repo.findOneBy({ cuit: dto.cuit });
     if (existe) throw new ConflictException('El CUIT ya está registrado');
 
-    const { usuarioId, ...clienteData } = dto;
-    const cliente = await this.repo.save(this.repo.create(clienteData));
+    const cliente = await this.repo.save(this.repo.create(dto));
 
     await this.historialService.registrar({
       usuarioId: usuarioId ?? null,
@@ -50,16 +49,15 @@ export class ClientesService {
     return cliente;
   }
 
-  async update(id: number, dto: UpdateClienteDto): Promise<Cliente> {
+  async update(id: number, dto: UpdateClienteDto, usuarioId?: number): Promise<Cliente> {
     const cliente = await this.findOne(id);
     if (dto.cuit && dto.cuit !== cliente.cuit) {
       const existe = await this.repo.findOneBy({ cuit: dto.cuit });
       if (existe) throw new ConflictException('El CUIT ya está registrado');
     }
 
-    const { usuarioId, ...updateData } = dto;
     const previo = { nombre: cliente.nombre, cuit: cliente.cuit, activo: cliente.activo };
-    Object.assign(cliente, updateData);
+    Object.assign(cliente, dto);
     const updated = await this.repo.save(cliente);
 
     await this.historialService.registrar({
@@ -69,7 +67,7 @@ export class ClientesService {
       entidadId: id,
       descripcion: `Cliente "${cliente.nombre}" actualizado`,
       datosPrevios: previo,
-      datosNuevos: updateData,
+      datosNuevos: dto,
     });
 
     return updated;
