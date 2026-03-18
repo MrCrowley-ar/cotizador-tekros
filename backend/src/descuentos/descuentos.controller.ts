@@ -12,16 +12,21 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolUsuario, Usuario } from '../usuarios/usuario.entity';
+import { DescuentoEvaluadorService } from './descuento-evaluador.service';
 import { DescuentosVolumenService } from './descuentos-volumen.service';
 import { DescuentosService } from './descuentos.service';
 import { CreateDescuentoVolumenDto } from './dto/create-descuento-volumen.dto';
 import { CreateDescuentoDto } from './dto/create-descuento.dto';
+import { EvaluarDescuentoDto } from './dto/evaluar-descuento.dto';
 
 // ─── DESCUENTOS ───────────────────────────────────────────────────────────────
 
 @Controller('descuentos')
 export class DescuentosController {
-  constructor(private readonly service: DescuentosService) {}
+  constructor(
+    private readonly service: DescuentosService,
+    private readonly evaluador: DescuentoEvaluadorService,
+  ) {}
 
   @Get()
   findAll(@Query('soloActivos', new ParseBoolPipe({ optional: true })) soloActivos?: boolean) {
@@ -43,6 +48,24 @@ export class DescuentosController {
   @Roles(RolUsuario.ADMIN)
   toggleActivo(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: Usuario) {
     return this.service.toggleActivo(id, user.id);
+  }
+
+  /**
+   * Evaluates which discounts apply to a given context.
+   * POST /descuentos/evaluar
+   * Body: { cantidad, tipoAplicacion, cultivoId?, hibridoId?, bandaId? }
+   */
+  @Post('evaluar')
+  evaluar(@Body() dto: EvaluarDescuentoDto) {
+    return this.evaluador.evaluar(
+      {
+        cantidad: dto.cantidad,
+        cultivoId: dto.cultivoId,
+        hibridoId: dto.hibridoId,
+        bandaId: dto.bandaId,
+      },
+      dto.tipoAplicacion,
+    );
   }
 }
 

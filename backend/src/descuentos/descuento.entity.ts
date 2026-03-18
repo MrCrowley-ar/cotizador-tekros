@@ -5,8 +5,20 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
+export enum TipoAplicacion {
+  GLOBAL = 'global',
+  CULTIVO = 'cultivo',
+  HIBRIDO = 'hibrido',
+}
+
+export enum ModoDescuento {
+  BASICO = 'basico',
+  AVANZADO = 'avanzado',
+}
+
 // El nombre puede repetirse en distintas fechas (historial de cambios).
-// El descuento vigente es el activo con MAX(fecha) para ese nombre.
+// Modo básico: porcentaje fijo en valorPorcentaje.
+// Modo avanzado: porcentaje definido por reglas (valorPorcentaje = null).
 @Entity('descuentos')
 export class Descuento {
   @PrimaryGeneratedColumn()
@@ -15,14 +27,39 @@ export class Descuento {
   @Column({ length: 200 })
   nombre: string;
 
-  @Column({ name: 'valor_porcentaje', type: 'decimal', precision: 5, scale: 2 })
-  valorPorcentaje: number;
+  @Column({
+    name: 'tipo_aplicacion',
+    type: 'enum',
+    enum: TipoAplicacion,
+    default: TipoAplicacion.GLOBAL,
+  })
+  tipoAplicacion: TipoAplicacion;
 
-  @Column({ type: 'date' })
-  fecha: Date;
+  @Column({
+    type: 'enum',
+    enum: ModoDescuento,
+    default: ModoDescuento.BASICO,
+  })
+  modo: ModoDescuento;
+
+  // Solo para modo BASICO; null en modo AVANZADO (el % viene de las reglas)
+  @Column({
+    name: 'valor_porcentaje',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
+  valorPorcentaje: number | null;
+
+  @Column({ name: 'fecha_vigencia', type: 'date' })
+  fechaVigencia: Date;
 
   @Column({ default: true })
   activo: boolean;
+
+  @OneToMany('DescuentoRegla', 'descuento', { cascade: true })
+  reglas: any[];
 
   @OneToMany('CotizacionItemDescuento', 'descuento')
   itemDescuentos: any[];

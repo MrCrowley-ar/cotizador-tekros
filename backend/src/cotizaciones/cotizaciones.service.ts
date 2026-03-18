@@ -313,11 +313,18 @@ export class CotizacionesService {
 
     const descuento = await this.descuentosService.findOne(dto.descuentoId);
 
+    const porcentaje = dto.porcentaje ?? (descuento.valorPorcentaje !== null ? Number(descuento.valorPorcentaje) : null);
+    if (porcentaje === null) {
+      throw new BadRequestException(
+        'Descuento en modo avanzado: incluye "porcentaje" obtenido de POST /descuentos/evaluar',
+      );
+    }
+
     const aplicado = await this.itemDescRepo.save(
       this.itemDescRepo.create({
         cotizacionItemId: itemId,
         descuentoId: descuento.id,
-        valorPorcentaje: Number(descuento.valorPorcentaje),
+        valorPorcentaje: porcentaje,
       }),
     );
 
@@ -330,8 +337,8 @@ export class CotizacionesService {
       tipoEntidad: TipoEntidad.COTIZACION_ITEM,
       tipoAccion: TipoAccion.AGREGAR_DESCUENTO,
       entidadId: aplicado.id,
-      descripcion: `Descuento "${descuento.nombre}" (${descuento.valorPorcentaje}%) aplicado al ítem ${itemId}`,
-      datosNuevos: { descuentoId: descuento.id, nombre: descuento.nombre, porcentaje: descuento.valorPorcentaje },
+      descripcion: `Descuento "${descuento.nombre}" (${porcentaje}%) aplicado al ítem ${itemId}`,
+      datosNuevos: { descuentoId: descuento.id, nombre: descuento.nombre, porcentaje },
     });
 
     return aplicado;
@@ -370,11 +377,18 @@ export class CotizacionesService {
 
     const descuento = await this.descuentosService.findOne(dto.descuentoId);
 
+    const porcentaje = dto.porcentaje ?? (descuento.valorPorcentaje !== null ? Number(descuento.valorPorcentaje) : null);
+    if (porcentaje === null) {
+      throw new BadRequestException(
+        'Descuento en modo avanzado: incluye "porcentaje" obtenido de POST /descuentos/evaluar',
+      );
+    }
+
     const aplicado = await this.descRepo.save(
       this.descRepo.create({
         versionId,
         descuentoId: descuento.id,
-        valorPorcentaje: Number(descuento.valorPorcentaje),
+        valorPorcentaje: porcentaje,
       }),
     );
 
@@ -386,8 +400,8 @@ export class CotizacionesService {
       tipoEntidad: TipoEntidad.COTIZACION_VERSION,
       tipoAccion: TipoAccion.AGREGAR_DESCUENTO,
       entidadId: aplicado.id,
-      descripcion: `Descuento global "${descuento.nombre}" (${descuento.valorPorcentaje}%) aplicado a versión ${versionId}`,
-      datosNuevos: { descuentoId: descuento.id, nombre: descuento.nombre, porcentaje: descuento.valorPorcentaje },
+      descripcion: `Descuento global "${descuento.nombre}" (${porcentaje}%) aplicado a versión ${versionId}`,
+      datosNuevos: { descuentoId: descuento.id, nombre: descuento.nombre, porcentaje },
     });
 
     return aplicado;
