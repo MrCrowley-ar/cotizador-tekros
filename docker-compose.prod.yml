@@ -1,0 +1,30 @@
+# Production overrides.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#   or simply: make prod-up
+version: '3.9'
+
+services:
+  postgres:
+    # Don't expose postgres port to the host in production
+    ports: []
+
+  backend:
+    build:
+      target: production
+    # No source-code volume mount in production — code is baked into the image
+    volumes: []
+    environment:
+      NODE_ENV: production
+    # TypeORM migrationsRun:true handles migrations on startup
+    command: ["node", "dist/main"]
+    ports: []   # backend is internal — nginx proxies /api
+
+  frontend:
+    build:
+      target: production
+    volumes: []
+    environment:
+      NODE_ENV: production
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
