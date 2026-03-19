@@ -1,23 +1,24 @@
-import { useEffect, useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { getToken } from './api/client';
+import { LoginPage } from './features/auth/LoginPage';
+import { CotizacionesPage } from './features/cotizaciones/CotizacionesPage';
+import { CotizacionEditorPage } from './features/cotizaciones/CotizacionEditorPage';
+import { DatosPage } from './features/datos/DatosPage';
 
-function App() {
-  const [apiStatus, setApiStatus] = useState<string>('Conectando...');
-
-  useEffect(() => {
-    fetch('/api')
-      .then((res) => res.text())
-      .then((data) => setApiStatus(data))
-      .catch(() => setApiStatus('Error al conectar con el backend'));
-  }, []);
-
-  return (
-    <div style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
-      <h1>Cotizador Tekros</h1>
-      <p>
-        <strong>Estado del backend:</strong> {apiStatus}
-      </p>
-    </div>
-  );
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  return getToken() ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/cotizaciones" element={<RequireAuth><CotizacionesPage /></RequireAuth>} />
+        <Route path="/cotizaciones/:id" element={<RequireAuth><CotizacionEditorPage /></RequireAuth>} />
+        <Route path="/datos" element={<RequireAuth><DatosPage /></RequireAuth>} />
+        <Route path="*" element={<Navigate to="/cotizaciones" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
