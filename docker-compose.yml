@@ -26,6 +26,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: development
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
     container_name: cotizador_backend
     restart: unless-stopped
     environment:
@@ -63,6 +70,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: development
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
     container_name: cotizador_frontend
     restart: unless-stopped
     environment:
