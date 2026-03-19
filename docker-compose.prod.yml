@@ -2,7 +2,6 @@
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #   or simply: make prod-up
-version: '3.9'
 
 services:
   postgres:
