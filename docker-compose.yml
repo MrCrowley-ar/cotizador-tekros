@@ -48,8 +48,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # run pending migrations then start the dev server
-    command: sh -c "npm run migration:run && npm run start:dev"
+    # TypeORM migrationsRun:true handles migrations automatically on NestJS startup
+    command: npm run start:dev
     healthcheck:
       test: ["CMD", "node", "-e",
              "require('http').get('http://localhost:3001/',r=>process.exit(0)).on('error',()=>process.exit(1))"]
