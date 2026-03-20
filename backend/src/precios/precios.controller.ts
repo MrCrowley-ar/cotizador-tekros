@@ -15,6 +15,11 @@ export class PreciosController {
     return this.service.registrar(dto, user.id);
   }
 
+  @Get('matriz')
+  getMatriz(@Query('cultivoId', ParseIntPipe) cultivoId: number) {
+    return this.service.getMatrizPorCultivo(cultivoId);
+  }
+
   @Get('actual')
   getActual(
     @Query('hibridoId', ParseIntPipe) hibridoId: number,

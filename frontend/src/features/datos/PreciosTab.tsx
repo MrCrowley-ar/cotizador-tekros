@@ -6,11 +6,8 @@ import { Spinner } from '../../components/Spinner';
 
 export function PreciosTab() {
   const [cultivoId, setCultivoId] = useState<number>(0);
-  const [hibridoId, setHibridoId] = useState<number>(0);
-  const [bandaId, setBandaId] = useState<number>(0);
-  const [addingNew, setAddingNew] = useState(false);
-  const [newPrecio, setNewPrecio] = useState('');
-  const [newFecha, setNewFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [editCell, setEditCell] = useState<{ hibridoId: number; bandaId: number } | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   const qc = useQueryClient();
 
@@ -20,159 +17,154 @@ export function PreciosTab() {
   });
   const { data: hibridos = [] } = useQuery({
     queryKey: ['hibridos', cultivoId],
-    queryFn: () => productosApi.getHibridos(cultivoId, true),
+    queryFn: () => productosApi.getHibridos(cultivoId, false),
     enabled: cultivoId > 0,
   });
   const { data: bandas = [] } = useQuery({
     queryKey: ['bandas', cultivoId],
-    queryFn: () => productosApi.getBandas(cultivoId, true),
+    queryFn: () => productosApi.getBandas(cultivoId, false),
     enabled: cultivoId > 0,
   });
-  const { data: historico = [], isLoading } = useQuery({
-    queryKey: ['precios', hibridoId, bandaId],
-    queryFn: () => preciosApi.getHistorico(hibridoId, bandaId),
-    enabled: hibridoId > 0 && bandaId > 0,
+  const { data: matriz = [], isLoading: loadingMatriz } = useQuery({
+    queryKey: ['precios-matriz', cultivoId],
+    queryFn: () => preciosApi.getMatriz(cultivoId),
+    enabled: cultivoId > 0,
   });
 
-  const createMut = useMutation({
-    mutationFn: () =>
-      preciosApi.registrar({ hibridoId, bandaId, precio: Number(newPrecio), fecha: newFecha }),
+  // Build a fast lookup map: "hibridoId-bandaId" → precio
+  const precioMap = new Map<string, number>(
+    matriz.map((p) => [`${p.hibridoId}-${p.bandaId}`, Number(p.precio)])
+  );
+
+  const saveMut = useMutation({
+    mutationFn: ({ hibridoId, bandaId }: { hibridoId: number; bandaId: number }) =>
+      preciosApi.registrar({
+        hibridoId,
+        bandaId,
+        precio: Number(editValue),
+        fecha: new Date().toISOString().split('T')[0],
+      }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['precios'] });
-      setAddingNew(false);
-      setNewPrecio('');
-      setNewFecha(new Date().toISOString().split('T')[0]);
+      qc.invalidateQueries({ queryKey: ['precios-matriz', cultivoId] });
+      setEditCell(null);
     },
   });
 
-  const canSave = newPrecio && Number(newPrecio) > 0 && newFecha;
-
-  const startNew = () => {
-    setNewPrecio('');
-    setNewFecha(new Date().toISOString().split('T')[0]);
-    setAddingNew(true);
+  const openCell = (hibridoId: number, bandaId: number) => {
+    const current = precioMap.get(`${hibridoId}-${bandaId}`);
+    setEditValue(current != null ? String(current) : '');
+    setEditCell({ hibridoId, bandaId });
   };
 
-  const cancel = () => setAddingNew(false);
+  const saveCell = () => {
+    if (!editCell || !editValue || Number(editValue) <= 0) return;
+    saveMut.mutate(editCell);
+  };
 
-  const filterReady = hibridoId > 0 && bandaId > 0;
+  const fmt = (v: number) =>
+    v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const isEditing = (hibridoId: number, bandaId: number) =>
+    editCell?.hibridoId === hibridoId && editCell?.bandaId === bandaId;
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-4">
+      <div className="mb-4">
         <select
           value={cultivoId}
-          onChange={(e) => { setCultivoId(Number(e.target.value)); setHibridoId(0); setBandaId(0); setAddingNew(false); }}
+          onChange={(e) => { setCultivoId(Number(e.target.value)); setEditCell(null); }}
           className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value={0}>Cultivo...</option>
+          <option value={0}>Seleccionar cultivo...</option>
           {cultivos.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-        </select>
-        <select
-          value={hibridoId}
-          onChange={(e) => { setHibridoId(Number(e.target.value)); setAddingNew(false); }}
-          disabled={cultivoId === 0}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-        >
-          <option value={0}>Híbrido...</option>
-          {hibridos.map((h) => <option key={h.id} value={h.id}>{h.nombre}</option>)}
-        </select>
-        <select
-          value={bandaId}
-          onChange={(e) => { setBandaId(Number(e.target.value)); setAddingNew(false); }}
-          disabled={cultivoId === 0}
-          className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-        >
-          <option value={0}>Banda...</option>
-          {bandas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
         </select>
       </div>
 
-      {!filterReady ? (
-        <p className="text-center py-8 text-gray-400 text-sm">
-          Seleccioná híbrido y banda para ver el historial de precios.
-        </p>
-      ) : isLoading ? (
+      {cultivoId === 0 ? (
+        <p className="text-center py-8 text-gray-400 text-sm">Seleccioná un cultivo para ver la tabla de precios.</p>
+      ) : loadingMatriz ? (
         <div className="flex justify-center py-8"><Spinner /></div>
+      ) : hibridos.length === 0 || bandas.length === 0 ? (
+        <p className="text-center py-8 text-gray-400 text-sm">
+          {hibridos.length === 0 ? 'Sin híbridos' : 'Sin bandas'} para este cultivo.
+        </p>
       ) : (
-        <div className="bg-white rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-xl border overflow-x-auto">
+          <table className="text-sm border-collapse w-full">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
               <tr>
-                <th className="text-left px-4 py-3">Fecha vigencia</th>
-                <th className="text-right px-4 py-3">Precio</th>
-                <th className="px-4 py-3 w-32" />
+                <th className="text-left px-4 py-3 border-b border-r border-gray-200 whitespace-nowrap">
+                  Híbrido
+                </th>
+                {bandas.map((b) => (
+                  <th key={b.id} className="text-center px-4 py-3 border-b border-r border-gray-200 whitespace-nowrap font-medium">
+                    {b.nombre}
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
-              {historico.map((p) => (
-                <tr key={p.id}>
-                  <td className="px-4 py-3 text-gray-700">
-                    {new Date(p.fecha).toLocaleDateString('es-AR')}
+            <tbody>
+              {hibridos.map((h) => (
+                <tr key={h.id} className="border-b border-gray-100">
+                  <td className="px-4 py-3 font-medium text-gray-900 border-r border-gray-200 whitespace-nowrap bg-gray-50">
+                    {h.nombre}
                   </td>
-                  <td className="px-4 py-3 text-right font-medium text-gray-900">
-                    ${Number(p.precio).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </td>
-                  <td />
+                  {bandas.map((b) => {
+                    const precio = precioMap.get(`${h.id}-${b.id}`);
+                    const editing = isEditing(h.id, b.id);
+                    return (
+                      <td
+                        key={b.id}
+                        className={`px-3 py-2 text-right border-r border-gray-100 ${
+                          editing ? 'bg-blue-50 p-1' : 'hover:bg-blue-50 cursor-pointer'
+                        }`}
+                        onClick={() => !editing && openCell(h.id, b.id)}
+                      >
+                        {editing ? (
+                          <div className="flex items-center gap-1 justify-end">
+                            <span className="text-gray-400 text-xs">$</span>
+                            <input
+                              autoFocus
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveCell();
+                                if (e.key === 'Escape') setEditCell(null);
+                              }}
+                              className="w-24 border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <button
+                              onClick={saveCell}
+                              disabled={!editValue || Number(editValue) <= 0 || saveMut.isPending}
+                              className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {saveMut.isPending ? '…' : '✓'}
+                            </button>
+                            <button
+                              onClick={() => setEditCell(null)}
+                              className="px-1 py-1 text-xs text-gray-400 hover:text-gray-700"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : precio != null ? (
+                          <span className="text-gray-900 font-medium">${fmt(precio)}</span>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
-
-              {addingNew ? (
-                <tr className="bg-green-50">
-                  <td className="px-3 py-2">
-                    <input
-                      type="date"
-                      value={newFecha}
-                      onChange={(e) => setNewFecha(e.target.value)}
-                      className="border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <span className="text-gray-500 text-sm">$</span>
-                      <input
-                        autoFocus
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={newPrecio}
-                        onChange={(e) => setNewPrecio(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && canSave) createMut.mutate();
-                          if (e.key === 'Escape') cancel();
-                        }}
-                        placeholder="0.00"
-                        className="w-28 border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-green-500"
-                      />
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex gap-1 justify-end items-center">
-                      <button
-                        onClick={() => { if (canSave) createMut.mutate(); }}
-                        disabled={!canSave || createMut.isPending}
-                        className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-                      >
-                        {createMut.isPending ? '…' : '✓ Guardar'}
-                      </button>
-                      <button onClick={cancel} className="px-2 py-1 text-xs text-gray-400 hover:text-gray-700">
-                        ✕
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                <tr
-                  onClick={startNew}
-                  className="hover:bg-gray-50 cursor-pointer transition-colors border-t border-dashed border-gray-200"
-                >
-                  <td colSpan={3} className="px-4 py-2 text-sm text-blue-500 font-medium">
-                    + Registrar precio
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
+          <p className="text-xs text-gray-400 px-4 py-2">
+            Clic en cualquier celda para ingresar o actualizar el precio. Fecha de vigencia: hoy.
+          </p>
         </div>
       )}
     </div>

@@ -8,4 +8,6 @@ export const preciosApi = {
     api.get<Precio>(`/precios/actual?hibridoId=${hibridoId}&bandaId=${bandaId}`),
   getHistorico: (hibridoId: number, bandaId: number) =>
     api.get<Precio[]>(`/precios/historico?hibridoId=${hibridoId}&bandaId=${bandaId}`),
+  getMatriz: (cultivoId: number) =>
+    api.get<Precio[]>(`/precios/matriz?cultivoId=${cultivoId}`),
 };

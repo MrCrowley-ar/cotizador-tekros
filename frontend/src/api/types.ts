@@ -37,7 +37,6 @@ export interface Hibrido {
   cultivoId: number;
   nombre: string;
   activo: boolean;
-  volumen?: number | null;
 }
 export interface Banda {
   id: number;
@@ -106,7 +105,7 @@ export interface CotizacionItem {
   cultivoId: number;
   hibridoId: number;
   bandaId: number;
-  cantidad: number;
+  bolsas: number;
   precioBase: number;
   subtotal: number;
   cultivo?: Cultivo;

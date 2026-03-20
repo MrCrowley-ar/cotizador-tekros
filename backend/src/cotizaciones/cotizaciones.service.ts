@@ -237,7 +237,7 @@ export class CotizacionesService {
     // Congela precio actual
     const precioActual = await this.preciosService.getPrecioActual(dto.hibridoId, dto.bandaId);
     const precioBase = Number(precioActual.precio);
-    const subtotal = precioBase * dto.cantidad;
+    const subtotal = precioBase * dto.bolsas;
 
     const item = await this.itemRepo.save(
       this.itemRepo.create({
@@ -245,16 +245,16 @@ export class CotizacionesService {
         cultivoId: dto.cultivoId,
         hibridoId: dto.hibridoId,
         bandaId: dto.bandaId,
-        cantidad: dto.cantidad,
+        bolsas: dto.bolsas,
         precioBase,
         subtotal,
       }),
     );
 
-    // Aplica descuento por volumen si existe para este cultivo y cantidad
+    // Aplica descuento por volumen si existe para este cultivo y bolsas
     const descVolumen = await this.descuentosVolumenService.getDescuentoAplicable(
       dto.cultivoId,
-      dto.cantidad,
+      dto.bolsas,
     );
     if (descVolumen) {
       await this.itemDescRepo.save(
@@ -274,8 +274,8 @@ export class CotizacionesService {
       tipoEntidad: TipoEntidad.COTIZACION_ITEM,
       tipoAccion: TipoAccion.AGREGAR_ITEM,
       entidadId: item.id,
-      descripcion: `Ítem agregado: híbrido ${dto.hibridoId}, banda ${dto.bandaId}, cantidad ${dto.cantidad}, precio base $${precioBase}`,
-      datosNuevos: { hibridoId: dto.hibridoId, bandaId: dto.bandaId, cantidad: dto.cantidad, precioBase, subtotal },
+      descripcion: `Ítem agregado: híbrido ${dto.hibridoId}, banda ${dto.bandaId}, bolsas ${dto.bolsas}, precio base $${precioBase}`,
+      datosNuevos: { hibridoId: dto.hibridoId, bandaId: dto.bandaId, bolsas: dto.bolsas, precioBase, subtotal },
     });
 
     return item;

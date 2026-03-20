@@ -15,5 +15,5 @@ export class AddItemDto {
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
-  cantidad: number;
+  bolsas: number;
 }

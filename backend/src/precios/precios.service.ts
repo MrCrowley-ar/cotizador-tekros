@@ -46,6 +46,23 @@ export class PreciosService {
     return precio;
   }
 
+  // Precio actual por cada combinación (híbrido, banda) de un cultivo — para vista matriz
+  async getMatrizPorCultivo(cultivoId: number): Promise<Precio[]> {
+    return this.repo.query(
+      `SELECT DISTINCT ON (p.hibrido_id, p.banda_id)
+         p.id,
+         p.hibrido_id AS "hibridoId",
+         p.banda_id   AS "bandaId",
+         p.precio,
+         p.fecha
+       FROM precios p
+       INNER JOIN hibridos h ON h.id = p.hibrido_id AND h.cultivo_id = $1
+       INNER JOIN bandas   b ON b.id = p.banda_id   AND b.cultivo_id = $1
+       ORDER BY p.hibrido_id, p.banda_id, p.fecha DESC`,
+      [cultivoId],
+    );
+  }
+
   // Historial completo ordenado por fecha descendente
   getHistorico(hibridoId: number, bandaId: number): Promise<Precio[]> {
     return this.repo.find({

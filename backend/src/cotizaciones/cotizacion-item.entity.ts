@@ -29,7 +29,7 @@ export class CotizacionItem {
   bandaId: number;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
-  cantidad: number;
+  bolsas: number;
 
   // Precio congelado al momento de generar la versión — no se actualiza aunque cambie el catálogo.
   @Column({ name: 'precio_base', type: 'decimal', precision: 10, scale: 2 })

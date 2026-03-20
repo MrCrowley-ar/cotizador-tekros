@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import { IsInt, IsNotEmpty, IsPositive, IsString } from 'class-validator';
 
 export class CreateHibridoDto {
   @IsInt()
@@ -8,8 +8,4 @@ export class CreateHibridoDto {
   @IsString()
   @IsNotEmpty()
   nombre: string;
-
-  @IsOptional()
-  @IsNumber()
-  volumen?: number;
 }

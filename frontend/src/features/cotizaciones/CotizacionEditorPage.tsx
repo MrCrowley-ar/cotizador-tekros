@@ -19,7 +19,7 @@ function NewItemRow({ cotizacionId, versionId, onDone }: {
   const [cultivoId, setCultivoId] = useState<number | ''>('');
   const [hibridoId, setHibridoId] = useState<number | ''>('');
   const [bandaId, setBandaId] = useState<number | ''>('');
-  const [cantidad, setCantidad] = useState('');
+  const [bolsas, setBolsas] = useState('');
   const [error, setError] = useState('');
 
   const { data: cultivos = [] } = useQuery({ queryKey: ['cultivos'], queryFn: () => productosApi.getCultivos() });
@@ -42,7 +42,7 @@ function NewItemRow({ cotizacionId, versionId, onDone }: {
         cultivoId: Number(cultivoId),
         hibridoId: Number(hibridoId),
         bandaId: Number(bandaId),
-        cantidad: Number(cantidad),
+        bolsas: Number(bolsas),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
@@ -78,9 +78,9 @@ function NewItemRow({ cotizacionId, versionId, onDone }: {
           type="number"
           min={0}
           step={0.01}
-          value={cantidad}
-          onChange={(e) => setCantidad(e.target.value)}
-          placeholder="Cantidad"
+          value={bolsas}
+          onChange={(e) => setBolsas(e.target.value)}
+          placeholder="Bolsas"
           className={`${sel} w-24`}
         />
       </td>
@@ -93,7 +93,7 @@ function NewItemRow({ cotizacionId, versionId, onDone }: {
         <div className="flex gap-2">
           <button
             onClick={() => addMut.mutate()}
-            disabled={!cultivoId || !hibridoId || !bandaId || !cantidad || addMut.isPending}
+            disabled={!cultivoId || !hibridoId || !bandaId || !bolsas || addMut.isPending}
             className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
             {addMut.isPending ? <Spinner /> : 'Agregar'}
@@ -136,7 +136,7 @@ function ItemRow({ item, cotizacionId, version, isEditable }: {
         <td className="px-4 py-2 text-sm text-gray-700">{item.cultivo?.nombre ?? item.cultivoId}</td>
         <td className="px-4 py-2 text-sm text-gray-700">{item.hibrido?.nombre ?? item.hibridoId}</td>
         <td className="px-4 py-2 text-sm text-gray-700">{item.banda?.nombre ?? item.bandaId}</td>
-        <td className="px-4 py-2 text-sm text-right text-gray-700">{fmt(Number(item.cantidad))}</td>
+        <td className="px-4 py-2 text-sm text-right text-gray-700">{fmt(Number(item.bolsas))}</td>
         <td className="px-4 py-2 text-sm text-right text-gray-700">${fmt(Number(item.precioBase))}</td>
         <td className="px-4 py-2 text-sm text-right font-medium text-gray-900">${fmt(Number(item.subtotal))}</td>
         <td className="px-4 py-2 text-sm">
@@ -434,7 +434,7 @@ export function CotizacionEditorPage() {
                       <th className="text-left px-4 py-2">Cultivo</th>
                       <th className="text-left px-4 py-2">Híbrido</th>
                       <th className="text-left px-4 py-2">Banda</th>
-                      <th className="text-right px-4 py-2">Cantidad</th>
+                      <th className="text-right px-4 py-2">Bolsas</th>
                       <th className="text-right px-4 py-2">P. Base</th>
                       <th className="text-right px-4 py-2">Subtotal</th>
                       <th className="text-left px-4 py-2">Descuentos</th>
