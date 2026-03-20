@@ -5,7 +5,7 @@ import { Descuento, ModoDescuento, TipoAplicacion } from './descuento.entity';
 import { DescuentosService } from './descuentos.service';
 
 export interface ContextoDescuento {
-  cantidad: number;
+  cantidad?: number;
   cultivoId?: number;
   hibridoId?: number;
   bandaId?: number;

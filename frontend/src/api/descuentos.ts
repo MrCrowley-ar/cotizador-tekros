@@ -30,7 +30,7 @@ export const descuentosApi = {
     api.patch<Descuento>(`/descuentos/${id}`, body),
   delete: (id: number) => api.delete(`/descuentos/${id}`),
   evaluar: (body: {
-    cantidad: number;
+    cantidad?: number;
     tipoAplicacion: TipoAplicacion;
     cultivoId?: number;
     hibridoId?: number;

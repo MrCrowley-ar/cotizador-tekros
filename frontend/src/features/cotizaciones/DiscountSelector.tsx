@@ -41,7 +41,7 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
         // For advanced discounts, evaluate first to get the percentage
         const ctx = item
           ? {
-              cantidad: item.bolsas,
+              ...(item.bolsas != null ? { cantidad: item.bolsas } : {}),
               tipoAplicacion: 'global' as const,
               cultivoId: item.cultivoId,
               hibridoId: item.hibridoId,
