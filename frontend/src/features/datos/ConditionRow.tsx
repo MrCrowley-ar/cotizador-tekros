@@ -15,10 +15,10 @@ interface Props {
 }
 
 const CAMPOS: { value: CampoCondicion; label: string }[] = [
-  { value: 'cantidad', label: 'Cantidad' },
-  { value: 'cultivo_id', label: 'Cultivo ID' },
-  { value: 'hibrido_id', label: 'Híbrido ID' },
-  { value: 'banda_id', label: 'Banda ID' },
+  { value: 'cantidad', label: 'Bolsas' },
+  { value: 'cultivo_id', label: 'Cultivo' },
+  { value: 'hibrido_id', label: 'Híbrido' },
+  { value: 'banda_id', label: 'Banda' },
 ];
 
 const OPERADORES: { value: OperadorCondicion; label: string }[] = [
