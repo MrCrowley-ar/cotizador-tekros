@@ -41,13 +41,13 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
         // For advanced discounts, evaluate first to get the percentage
         const ctx = item
           ? {
-              cantidad: item.cantidad,
+              cantidad: item.bolsas,
               tipoAplicacion: 'global' as const,
               cultivoId: item.cultivoId,
               hibridoId: item.hibridoId,
               bandaId: item.bandaId,
             }
-          : { cantidad: 0, tipoAplicacion: 'global' as const };
+          : { tipoAplicacion: 'global' as const };
 
         const resultados = await descuentosApi.evaluar({ ...ctx });
         const match = resultados.find((r) => r.descuentoId === descuentoId);

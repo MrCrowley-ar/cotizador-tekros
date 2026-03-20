@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ModalProps {
   title: string;
@@ -8,7 +9,7 @@ interface ModalProps {
 }
 
 export function Modal({ title, onClose, children, wide }: ModalProps) {
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div
         className={`relative bg-white rounded-xl shadow-xl max-h-[90vh] overflow-y-auto ${wide ? 'w-[700px]' : 'w-[480px]'}`}
@@ -24,6 +25,7 @@ export function Modal({ title, onClose, children, wide }: ModalProps) {
         </div>
         <div className="px-6 py-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

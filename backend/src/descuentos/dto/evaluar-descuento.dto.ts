@@ -1,10 +1,11 @@
-import { IsEnum, IsInt, IsNumber, IsOptional, IsPositive } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsPositive, Min } from 'class-validator';
 import { TipoAplicacion } from '../descuento.entity';
 
 export class EvaluarDescuentoDto {
   @IsNumber({ maxDecimalPlaces: 2 })
-  @IsPositive()
-  cantidad: number;
+  @Min(0)
+  @IsOptional()
+  cantidad?: number;
 
   @IsEnum(TipoAplicacion)
   tipoAplicacion: TipoAplicacion;
