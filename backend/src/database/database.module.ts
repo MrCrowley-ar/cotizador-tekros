@@ -1,3 +1,4 @@
+import { join } from 'path';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -16,6 +17,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
         database: config.get<string>('DB_DATABASE'),
         synchronize: false,
         autoLoadEntities: true,
+        migrations: [join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],
+        migrationsRun: true,
         logging: config.get<string>('NODE_ENV') !== 'production',
       }),
     }),

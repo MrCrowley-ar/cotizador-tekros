@@ -12,6 +12,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backups:/backups       # mounted so backup scripts can write from inside the container
+      - ./backups/restore:/docker-entrypoint-initdb.d  # auto-import on fresh volume start
     networks:
       - cotizador_network
     healthcheck:
@@ -45,6 +46,9 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-8h}
+      INITIAL_ADMIN_NOMBRE: ${INITIAL_ADMIN_NOMBRE:-Admin}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
     ports:
       - "3001:3001"
     volumes:
