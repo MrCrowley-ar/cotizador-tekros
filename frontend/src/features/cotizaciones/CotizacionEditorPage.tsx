@@ -191,8 +191,8 @@ function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versio
     queryFn: () => cotizacionesApi.getTotal(cotizacionId, versionId),
   });
 
-  const fmt = (n: number) =>
-    n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (n: number | null | undefined) =>
+    (n ?? 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   if (!totals) return null;
 
