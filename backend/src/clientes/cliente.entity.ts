@@ -14,6 +14,9 @@ export class Cliente {
   @Column({ length: 200 })
   nombre: string;
 
+  @Column({ name: 'razon_social', length: 300, nullable: true })
+  razonSocial: string;
+
   @Column({ unique: true, length: 20 })
   cuit: string;
 

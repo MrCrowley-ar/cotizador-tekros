@@ -400,10 +400,15 @@ export function CotizacionEditorPage() {
         </div>
 
         {/* Client info */}
-        <div className="bg-white rounded-xl border px-4 py-3 text-sm text-gray-600">
+        <div className="bg-white rounded-xl border px-4 py-3 text-sm text-gray-600 flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="font-medium text-gray-800">{cotizacion.cliente?.nombre}</span>
-          {cotizacion.cliente?.cuit && <span className="ml-3 text-gray-400">CUIT: {cotizacion.cliente.cuit}</span>}
-          <span className="ml-4 text-gray-400">
+          {cotizacion.cliente?.razonSocial && (
+            <span className="text-gray-500">{cotizacion.cliente.razonSocial}</span>
+          )}
+          {cotizacion.cliente?.cuit && (
+            <span className="text-gray-400 font-mono text-xs">CUIT: {cotizacion.cliente.cuit}</span>
+          )}
+          <span className="text-gray-400 ml-auto">
             {new Date(cotizacion.fechaCreacion).toLocaleDateString('es-AR', { dateStyle: 'long' })}
           </span>
         </div>

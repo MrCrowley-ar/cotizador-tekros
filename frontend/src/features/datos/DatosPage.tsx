@@ -2,17 +2,15 @@ import { useState } from 'react';
 import { Layout } from '../../components/Layout';
 import { CultivosTab } from './CultivosTab';
 import { HibridosTab } from './HibridosTab';
-import { BandasTab } from './BandasTab';
 import { PreciosTab } from './PreciosTab';
 import { ClientesTab } from './ClientesTab';
 import { DescuentosTab } from './DescuentosTab';
 
-type Tab = 'cultivos' | 'hibridos' | 'bandas' | 'precios' | 'clientes' | 'descuentos';
+type Tab = 'cultivos' | 'hibridos' | 'precios' | 'clientes' | 'descuentos';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'cultivos', label: 'Cultivos' },
   { id: 'hibridos', label: 'Híbridos' },
-  { id: 'bandas', label: 'Bandas' },
   { id: 'precios', label: 'Precios' },
   { id: 'clientes', label: 'Clientes' },
   { id: 'descuentos', label: 'Descuentos' },
@@ -46,7 +44,6 @@ export function DatosPage() {
 
         {tab === 'cultivos' && <CultivosTab />}
         {tab === 'hibridos' && <HibridosTab />}
-        {tab === 'bandas' && <BandasTab />}
         {tab === 'precios' && <PreciosTab />}
         {tab === 'clientes' && <ClientesTab />}
         {tab === 'descuentos' && <DescuentosTab />}

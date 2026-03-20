@@ -19,6 +19,7 @@ export interface Usuario {
 export interface Cliente {
   id: number;
   nombre: string;
+  razonSocial?: string;
   cuit: string;
   direccion?: string;
   telefono?: string;

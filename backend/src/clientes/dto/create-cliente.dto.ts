@@ -6,6 +6,10 @@ export class CreateClienteDto {
   nombre: string;
 
   @IsString()
+  @IsOptional()
+  razonSocial?: string;
+
+  @IsString()
   @Matches(/^\d{2}-\d{8}-\d$/, { message: 'CUIT debe tener formato XX-XXXXXXXX-X' })
   cuit: string;
 
