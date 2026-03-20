@@ -37,6 +37,7 @@ export interface Hibrido {
   cultivoId: number;
   nombre: string;
   activo: boolean;
+  volumen?: number | null;
 }
 export interface Banda {
   id: number;

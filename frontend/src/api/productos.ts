@@ -10,9 +10,9 @@ export const productosApi = {
 
   getHibridos: (cultivoId: number, soloActivos = true) =>
     api.get<Hibrido[]>(`/cultivos/${cultivoId}/hibridos?soloActivos=${soloActivos}`),
-  createHibrido: (body: { cultivoId: number; nombre: string }) =>
+  createHibrido: (body: { cultivoId: number; nombre: string; volumen?: number }) =>
     api.post<Hibrido>('/hibridos', body),
-  updateHibrido: (id: number, body: Partial<{ nombre: string; activo: boolean }>) =>
+  updateHibrido: (id: number, body: Partial<{ nombre: string; activo: boolean; volumen: number | null }>) =>
     api.patch<Hibrido>(`/hibridos/${id}`, body),
 
   getBandas: (cultivoId: number, soloActivas = true) =>

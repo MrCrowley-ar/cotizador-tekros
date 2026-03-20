@@ -22,6 +22,9 @@ export class Hibrido {
   @Column({ default: true })
   activo: boolean;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true, default: null })
+  volumen: number | null;
+
   @ManyToOne(() => Cultivo, (c) => c.hibridos)
   @JoinColumn({ name: 'cultivo_id' })
   cultivo: Cultivo;
