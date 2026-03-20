@@ -297,7 +297,7 @@ export class CotizacionesService {
       tipoAccion: TipoAccion.ELIMINAR_ITEM,
       entidadId: itemId,
       descripcion: `Ítem ${itemId} eliminado de versión ${versionId}`,
-      datosPrevios: { hibridoId: item.hibridoId, bandaId: item.bandaId, cantidad: item.cantidad, precioBase: item.precioBase },
+      datosPrevios: { hibridoId: item.hibridoId, bandaId: item.bandaId, bolsas: item.bolsas, precioBase: item.precioBase },
     });
   }
 

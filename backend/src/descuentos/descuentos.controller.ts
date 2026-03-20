@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseBoolPipe,
   ParseIntPipe,
@@ -17,6 +20,7 @@ import { DescuentosVolumenService } from './descuentos-volumen.service';
 import { DescuentosService } from './descuentos.service';
 import { CreateDescuentoVolumenDto } from './dto/create-descuento-volumen.dto';
 import { CreateDescuentoDto } from './dto/create-descuento.dto';
+import { UpdateDescuentoDto } from './dto/update-descuento.dto';
 import { EvaluarDescuentoDto } from './dto/evaluar-descuento.dto';
 
 // ─── DESCUENTOS ───────────────────────────────────────────────────────────────
@@ -48,6 +52,30 @@ export class DescuentosController {
   @Roles(RolUsuario.ADMIN)
   toggleActivo(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: Usuario) {
     return this.service.toggleActivo(id, user.id);
+  }
+
+  @Get(':id/uso')
+  @Roles(RolUsuario.ADMIN)
+  async countUso(@Param('id', ParseIntPipe) id: number) {
+    const count = await this.service.countUso(id);
+    return { count };
+  }
+
+  @Patch(':id')
+  @Roles(RolUsuario.ADMIN)
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateDescuentoDto,
+    @CurrentUser() user: Usuario,
+  ) {
+    return this.service.update(id, dto, user.id);
+  }
+
+  @Delete(':id')
+  @Roles(RolUsuario.ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  delete(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: Usuario) {
+    return this.service.delete(id, user.id);
   }
 
   /**

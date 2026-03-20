@@ -7,6 +7,7 @@ import { DescuentoCondicion } from './descuento-condicion.entity';
 import { DescuentoRegla } from './descuento-regla.entity';
 import { Descuento, ModoDescuento, TipoAplicacion } from './descuento.entity';
 import { CreateDescuentoDto } from './dto/create-descuento.dto';
+import { UpdateDescuentoDto } from './dto/update-descuento.dto';
 
 @Injectable()
 export class DescuentosService {
@@ -122,5 +123,89 @@ export class DescuentosService {
     });
 
     return updated;
+  }
+
+  // Cuenta cuántas referencias a este descuento existen en cotizaciones
+  async countUso(id: number): Promise<number> {
+    const [{ count }] = await this.repo.query(
+      `SELECT (
+         (SELECT COUNT(*) FROM cotizacion_item_descuentos WHERE descuento_id = $1) +
+         (SELECT COUNT(*) FROM cotizacion_descuentos WHERE descuento_id = $1)
+       )::int AS count`,
+      [id],
+    );
+    return count;
+  }
+
+  async update(id: number, dto: UpdateDescuentoDto, usuarioId?: number): Promise<Descuento> {
+    const descuento = await this.findOne(id);
+    const datosPrevios = {
+      nombre: descuento.nombre,
+      tipoAplicacion: descuento.tipoAplicacion,
+      valorPorcentaje: descuento.valorPorcentaje,
+      fechaVigencia: descuento.fechaVigencia,
+    };
+
+    if (dto.nombre !== undefined) descuento.nombre = dto.nombre;
+    if (dto.tipoAplicacion !== undefined) descuento.tipoAplicacion = dto.tipoAplicacion;
+    if (dto.fechaVigencia !== undefined) descuento.fechaVigencia = dto.fechaVigencia as any;
+    if (dto.valorPorcentaje !== undefined) descuento.valorPorcentaje = dto.valorPorcentaje;
+
+    await this.repo.save(descuento);
+
+    // Modo avanzado: si se proveen reglas, reemplazarlas
+    if (descuento.modo === ModoDescuento.AVANZADO && dto.reglas) {
+      await this.reglaRepo.delete({ descuentoId: id });
+      for (const reglaDto of dto.reglas) {
+        const regla = await this.reglaRepo.save(
+          this.reglaRepo.create({
+            descuentoId: id,
+            valor: reglaDto.valor,
+            prioridad: reglaDto.prioridad ?? 0,
+          }),
+        );
+        if (reglaDto.condiciones?.length) {
+          await this.condicionRepo.save(
+            reglaDto.condiciones.map((c) =>
+              this.condicionRepo.create({
+                reglaId: regla.id,
+                campo: c.campo,
+                operador: c.operador,
+                valor: c.valor,
+                valor2: c.valor2 ?? null,
+              }),
+            ),
+          );
+        }
+      }
+    }
+
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      tipoEntidad: TipoEntidad.DESCUENTO,
+      tipoAccion: TipoAccion.ACTUALIZAR,
+      entidadId: id,
+      descripcion: `Descuento "${descuento.nombre}" actualizado`,
+      datosPrevios,
+      datosNuevos: dto,
+    });
+
+    return this.findOne(id);
+  }
+
+  async delete(id: number, usuarioId?: number): Promise<void> {
+    const descuento = await this.repo.findOneBy({ id });
+    if (!descuento) throw new NotFoundException(`Descuento ${id} no encontrado`);
+
+    await this.repo.remove(descuento);
+
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      tipoEntidad: TipoEntidad.DESCUENTO,
+      tipoAccion: TipoAccion.ELIMINAR,
+      entidadId: id,
+      descripcion: `Descuento "${descuento.nombre}" eliminado`,
+      datosPrevios: { nombre: descuento.nombre, modo: descuento.modo },
+    });
   }
 }

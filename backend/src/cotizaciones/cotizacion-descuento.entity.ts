@@ -16,8 +16,8 @@ export class CotizacionDescuento {
   @Column({ name: 'version_id' })
   versionId: number;
 
-  @Column({ name: 'descuento_id' })
-  descuentoId: number;
+  @Column({ name: 'descuento_id', nullable: true })
+  descuentoId: number | null;
 
   // Valor congelado al momento de cotizar.
   @Column({ name: 'valor_porcentaje', type: 'decimal', precision: 5, scale: 2 })

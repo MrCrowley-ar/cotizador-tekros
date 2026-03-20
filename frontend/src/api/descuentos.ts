@@ -25,6 +25,10 @@ export const descuentosApi = {
   getOne: (id: number) => api.get<Descuento>(`/descuentos/${id}`),
   create: (body: CreateDescuentoPayload) => api.post<Descuento>('/descuentos', body),
   toggle: (id: number) => api.patch<Descuento>(`/descuentos/${id}/toggle`),
+  getUso: (id: number) => api.get<{ count: number }>(`/descuentos/${id}/uso`),
+  update: (id: number, body: Partial<CreateDescuentoPayload>) =>
+    api.patch<Descuento>(`/descuentos/${id}`, body),
+  delete: (id: number) => api.delete(`/descuentos/${id}`),
   evaluar: (body: {
     cantidad: number;
     tipoAplicacion: TipoAplicacion;

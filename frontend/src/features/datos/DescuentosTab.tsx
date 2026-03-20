@@ -10,22 +10,37 @@ import type { Descuento, TipoAplicacion } from '../../api/types';
 
 const TIPOS: TipoAplicacion[] = ['global', 'cultivo', 'hibrido'];
 
-function DescuentoModal({ onClose }: { onClose: () => void }) {
+function DescuentoFormModal({
+  initial,
+  onClose,
+}: {
+  initial?: Descuento;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
-  const [nombre, setNombre] = useState('');
-  const [tipoAplicacion, setTipoAplicacion] = useState<TipoAplicacion>('global');
-  const [modo, setModo] = useState<'basico' | 'avanzado'>('basico');
-  const [valorPorcentaje, setValorPorcentaje] = useState('');
-  const [fechaVigencia, setFechaVigencia] = useState(new Date().toISOString().split('T')[0]);
+  const isEdit = !!initial;
+
+  const [nombre, setNombre] = useState(initial?.nombre ?? '');
+  const [tipoAplicacion, setTipoAplicacion] = useState<TipoAplicacion>(
+    initial?.tipoAplicacion ?? 'global',
+  );
+  const [modo] = useState<'basico' | 'avanzado'>(initial?.modo ?? 'basico');
+  const [valorPorcentaje, setValorPorcentaje] = useState(
+    initial?.valorPorcentaje != null ? String(initial.valorPorcentaje) : '',
+  );
+  const [fechaVigencia, setFechaVigencia] = useState(
+    initial?.fechaVigencia
+      ? new Date(initial.fechaVigencia).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0],
+  );
   const [rules, setRules] = useState<RuleData[]>([]);
   const [error, setError] = useState('');
 
-  const createMut = useMutation({
-    mutationFn: () =>
-      descuentosApi.create({
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const payload = {
         nombre,
         tipoAplicacion,
-        modo,
         fechaVigencia,
         ...(modo === 'basico'
           ? { valorPorcentaje: Number(valorPorcentaje) }
@@ -41,8 +56,15 @@ function DescuentoModal({ onClose }: { onClose: () => void }) {
                 })),
               })),
             }),
-      }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['descuentos'] }); onClose(); },
+      };
+      return isEdit
+        ? descuentosApi.update(initial!.id, payload)
+        : descuentosApi.create({ ...payload, modo });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['descuentos'] });
+      onClose();
+    },
     onError: (e: any) => setError(e.message),
   });
 
@@ -52,7 +74,7 @@ function DescuentoModal({ onClose }: { onClose: () => void }) {
     (modo === 'basico' ? valorPorcentaje !== '' : rules.length > 0);
 
   return (
-    <Modal title="Nuevo descuento" onClose={onClose}>
+    <Modal title={isEdit ? 'Editar descuento' : 'Nuevo descuento'} onClose={onClose}>
       <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
         {error && <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2">{error}</p>}
 
@@ -90,25 +112,6 @@ function DescuentoModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Modo</label>
-          <div className="flex gap-3">
-            {(['basico', 'avanzado'] as const).map((m) => (
-              <label key={m} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="modo"
-                  value={m}
-                  checked={modo === m}
-                  onChange={() => setModo(m)}
-                  className="text-blue-600"
-                />
-                <span className="text-sm text-gray-700 capitalize">{m}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
         {modo === 'basico' ? (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Porcentaje (%)</label>
@@ -138,23 +141,85 @@ function DescuentoModal({ onClose }: { onClose: () => void }) {
           Cancelar
         </button>
         <button
-          disabled={!canSave || createMut.isPending}
-          onClick={() => createMut.mutate()}
+          disabled={!canSave || saveMut.isPending}
+          onClick={() => saveMut.mutate()}
           className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
         >
-          {createMut.isPending ? 'Guardando…' : 'Guardar'}
+          {saveMut.isPending ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Guardar'}
         </button>
       </div>
     </Modal>
   );
 }
 
-function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; onClose: () => void }) {
+function DescuentoDetailModal({
+  descuento,
+  onClose,
+}: {
+  descuento: Descuento;
+  onClose: () => void;
+}) {
   const qc = useQueryClient();
+  const [mode, setMode] = useState<'view' | 'edit' | 'deleteConfirm'>('view');
+  const [usoCount, setUsoCount] = useState<number | null>(null);
+
   const toggleMut = useMutation({
     mutationFn: () => descuentosApi.toggle(descuento.id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['descuentos'] }); onClose(); },
   });
+
+  const deleteMut = useMutation({
+    mutationFn: () => descuentosApi.delete(descuento.id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['descuentos'] }); onClose(); },
+  });
+
+  const handleDeleteClick = async () => {
+    const count = await descuentosApi.getUso(descuento.id).then((r) => r.count);
+    setUsoCount(count);
+    setMode('deleteConfirm');
+  };
+
+  if (mode === 'edit') {
+    return <DescuentoFormModal initial={descuento} onClose={onClose} />;
+  }
+
+  if (mode === 'deleteConfirm') {
+    return (
+      <Modal title="Eliminar descuento" onClose={onClose}>
+        <div className="space-y-4">
+          {usoCount !== null && usoCount > 0 ? (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+              <p className="font-medium mb-1">Este descuento está en uso</p>
+              <p>
+                Está aplicado en <strong>{usoCount}</strong> cotización(es). Al eliminarlo, esas
+                referencias quedarán sin descuento asociado. Los porcentajes ya calculados
+                <strong> no cambian</strong>.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600">
+              ¿Confirmar eliminación del descuento <strong>"{descuento.nombre}"</strong>?
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <button
+              onClick={() => setMode('view')}
+              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+            >
+              Cancelar
+            </button>
+            <button
+              disabled={deleteMut.isPending}
+              onClick={() => deleteMut.mutate()}
+              className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+            >
+              {deleteMut.isPending ? 'Eliminando…' : 'Eliminar'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal title={descuento.nombre} onClose={onClose}>
@@ -195,7 +260,7 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
                 <div className="font-medium text-gray-800 mb-1">
                   #{regla.prioridad} — {regla.valor}%
                 </div>
-                {regla.condiciones.map((c) => (
+                {regla.condiciones.map((c: any) => (
                   <div key={c.id} className="text-xs text-gray-500">
                     {c.campo} {c.operador} {c.valor}
                     {c.valor2 != null ? ` y ${c.valor2}` : ''}
@@ -206,21 +271,33 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-2 border-t">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
-            Cerrar
-          </button>
+        <div className="flex justify-between pt-2 border-t">
           <button
-            disabled={toggleMut.isPending}
-            onClick={() => toggleMut.mutate()}
-            className={`px-4 py-2 text-sm rounded-lg disabled:opacity-50 ${
-              descuento.activo
-                ? 'bg-gray-200 hover:bg-gray-300 text-gray-800'
-                : 'bg-green-600 hover:bg-green-700 text-white'
-            }`}
+            disabled={deleteMut.isPending}
+            onClick={handleDeleteClick}
+            className="px-4 py-2 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg disabled:opacity-50"
           >
-            {toggleMut.isPending ? '...' : descuento.activo ? 'Desactivar' : 'Activar'}
+            Eliminar
           </button>
+          <div className="flex gap-2">
+            <button
+              disabled={toggleMut.isPending}
+              onClick={() => toggleMut.mutate()}
+              className={`px-4 py-2 text-sm rounded-lg disabled:opacity-50 ${
+                descuento.activo
+                  ? 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                  : 'bg-green-600 hover:bg-green-700 text-white'
+              }`}
+            >
+              {toggleMut.isPending ? '...' : descuento.activo ? 'Desactivar' : 'Activar'}
+            </button>
+            <button
+              onClick={() => setMode('edit')}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Editar
+            </button>
+          </div>
         </div>
       </div>
     </Modal>
@@ -291,7 +368,7 @@ export function DescuentosTab() {
         )}
       </div>
 
-      {showNew && <DescuentoModal onClose={() => setShowNew(false)} />}
+      {showNew && <DescuentoFormModal onClose={() => setShowNew(false)} />}
       {selected && <DescuentoDetailModal descuento={selected} onClose={() => setSelected(null)} />}
     </div>
   );
