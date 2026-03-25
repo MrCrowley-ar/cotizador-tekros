@@ -31,6 +31,7 @@ function CultivoTable({ cultivo }: { cultivo: Cultivo }) {
   const { data: matriz = [], isLoading: loadingMatriz } = useQuery({
     queryKey: ['precios-matriz', cultivo.id],
     queryFn: () => preciosApi.getMatriz(cultivo.id),
+    staleTime: 0,
   });
 
   const precioMap = new Map<string, number>(

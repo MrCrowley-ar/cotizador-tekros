@@ -71,7 +71,7 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, extr
         bolsas: Number(bolsas),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
+      qc.refetchQueries({ queryKey: ['version', cotizacionId] });
       onDone();
     },
     onError: (e: any) => setError(e.message),
@@ -140,16 +140,16 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
   const deleteMut = useMutation({
     mutationFn: () => cotizacionesApi.deleteItem(cotizacionId, version.id, item.id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
-      qc.invalidateQueries({ queryKey: ['total', cotizacionId] });
+      qc.refetchQueries({ queryKey: ['version', cotizacionId] });
+      qc.refetchQueries({ queryKey: ['total', cotizacionId] });
     },
   });
   const deleteDiscMut = useMutation({
     mutationFn: (discId: number) =>
       cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, discId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
-      qc.invalidateQueries({ queryKey: ['total', cotizacionId] });
+      qc.refetchQueries({ queryKey: ['version', cotizacionId] });
+      qc.refetchQueries({ queryKey: ['total', cotizacionId] });
     },
   });
 
@@ -172,7 +172,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
                 −{applied.valorPorcentaje}%
                 {isEditable && (
                   <button
-                    onClick={() => deleteDiscMut.mutate(applied.id)}
+                    onClick={() => deleteDiscMut.mutate(applied.descuentoId)}
                     disabled={deleteDiscMut.isPending}
                     className="hover:text-red-600 leading-none ml-0.5 disabled:opacity-50"
                   >
@@ -239,8 +239,8 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
     return null;
   }
   function invalidate() {
-    qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
-    qc.invalidateQueries({ queryKey: ['total', cotizacionId] });
+    qc.refetchQueries({ queryKey: ['version', cotizacionId] });
+    qc.refetchQueries({ queryKey: ['total', cotizacionId] });
   }
   function showNoAplica(id: number) {
     setNoAplicaId(id);
@@ -297,7 +297,7 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
         items.flatMap((item) => {
           const itemDesc = item.descuentos.find((d) => d.descuentoId === desc.id);
           if (!itemDesc) return [];
-          return [cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, itemDesc.id)];
+          return [cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, itemDesc.descuentoId)];
         })
       );
       invalidate();
@@ -569,8 +569,8 @@ function DescuentosPanel({ cotizacionId, version, isEditable }: {
     return version.descuentos.find((d) => d.descuentoId === desc.id)?.valorPorcentaje ?? null;
   }
   function invalidate() {
-    qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
-    qc.invalidateQueries({ queryKey: ['total', cotizacionId] });
+    qc.refetchQueries({ queryKey: ['version', cotizacionId] });
+    qc.refetchQueries({ queryKey: ['total', cotizacionId] });
   }
   function showNoAplica(id: number) {
     setNoAplicaId(id);
@@ -711,21 +711,21 @@ export function CotizacionEditorPage() {
 
   useEffect(() => {
     if (selectedVersionId) {
-      qc.invalidateQueries({ queryKey: ['total', cotizacionId, selectedVersionId] });
+      qc.refetchQueries({ queryKey: ['total', cotizacionId, selectedVersionId] });
     }
   }, [version, selectedVersionId, cotizacionId, qc]);
 
   const newVersionMut = useMutation({
     mutationFn: () => cotizacionesApi.crearVersion(cotizacionId),
     onSuccess: (v) => {
-      qc.invalidateQueries({ queryKey: ['versiones', cotizacionId] });
+      qc.refetchQueries({ queryKey: ['versiones', cotizacionId] });
       setSelectedVersionId(v.id);
     },
   });
   const estadoMut = useMutation({
     mutationFn: (estado: string) =>
       cotizacionesApi.updateEstado(cotizacionId, estado as any),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cotizacion', cotizacionId] }),
+    onSuccess: () => qc.refetchQueries({ queryKey: ['cotizacion', cotizacionId] }),
   });
 
   if (loadingCot) {

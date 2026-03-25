@@ -345,7 +345,7 @@ export class CotizacionesService {
   }
 
   async eliminarDescuentoItem(itemId: number, descuentoItemId: number, usuarioId?: number): Promise<void> {
-    const d = await this.itemDescRepo.findOneBy({ id: descuentoItemId, cotizacionItemId: itemId });
+    const d = await this.itemDescRepo.findOneBy({ descuentoId: descuentoItemId, cotizacionItemId: itemId });
     if (!d) throw new NotFoundException(`Descuento ${descuentoItemId} no encontrado en ítem ${itemId}`);
 
     const item = await this.itemRepo.findOneBy({ id: itemId });
