@@ -3,43 +3,37 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cotizacionesApi } from '../../api/cotizaciones';
 import { productosApi } from '../../api/productos';
+import { descuentosApi } from '../../api/descuentos';
 import { Layout } from '../../components/Layout';
 import { Badge } from '../../components/Badge';
 import { Spinner } from '../../components/Spinner';
-import { DiscountSelector } from './DiscountSelector';
 import { VersionHistory } from './VersionHistory';
-import type { CotizacionVersion, CotizacionItem } from '../../api/types';
+import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../../api/types';
 
-// ─── New Item Row ─────────────────────────────────────────────────────────────
+// ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRow({ cotizacionId, versionId, onDone }: {
-  cotizacionId: number; versionId: number; onDone: () => void;
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone }: {
+  cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
 }) {
   const qc = useQueryClient();
-  const [cultivoId, setCultivoId] = useState<number | ''>('');
   const [hibridoId, setHibridoId] = useState<number | ''>('');
   const [bandaId, setBandaId] = useState<number | ''>('');
   const [bolsas, setBolsas] = useState('');
   const [error, setError] = useState('');
 
-  const { data: cultivos = [] } = useQuery({ queryKey: ['cultivos'], queryFn: () => productosApi.getCultivos() });
   const { data: hibridos = [] } = useQuery({
     queryKey: ['hibridos', cultivoId],
-    queryFn: () => productosApi.getHibridos(Number(cultivoId)),
-    enabled: !!cultivoId,
+    queryFn: () => productosApi.getHibridos(cultivoId),
   });
   const { data: bandas = [] } = useQuery({
     queryKey: ['bandas', cultivoId],
-    queryFn: () => productosApi.getBandas(Number(cultivoId)),
-    enabled: !!cultivoId,
+    queryFn: () => productosApi.getBandas(cultivoId),
   });
-
-  useEffect(() => { setHibridoId(''); setBandaId(''); }, [cultivoId]);
 
   const addMut = useMutation({
     mutationFn: () =>
       cotizacionesApi.addItem(cotizacionId, versionId, {
-        cultivoId: Number(cultivoId),
+        cultivoId,
         hibridoId: Number(hibridoId),
         bandaId: Number(bandaId),
         bolsas: Number(bolsas),
@@ -56,19 +50,13 @@ function NewItemRow({ cotizacionId, versionId, onDone }: {
   return (
     <tr className="bg-blue-50">
       <td className="px-3 py-2">
-        <select value={cultivoId} onChange={(e) => setCultivoId(Number(e.target.value) || '')} className={sel}>
-          <option value="">Cultivo</option>
-          {cultivos.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-        </select>
-      </td>
-      <td className="px-3 py-2">
-        <select value={hibridoId} onChange={(e) => setHibridoId(Number(e.target.value) || '')} className={sel} disabled={!cultivoId}>
+        <select value={hibridoId} onChange={(e) => setHibridoId(Number(e.target.value) || '')} className={sel}>
           <option value="">Híbrido</option>
           {hibridos.map((h) => <option key={h.id} value={h.id}>{h.nombre}</option>)}
         </select>
       </td>
       <td className="px-3 py-2">
-        <select value={bandaId} onChange={(e) => setBandaId(Number(e.target.value) || '')} className={sel} disabled={!cultivoId}>
+        <select value={bandaId} onChange={(e) => setBandaId(Number(e.target.value) || '')} className={sel}>
           <option value="">Banda</option>
           {bandas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
         </select>
@@ -93,7 +81,7 @@ function NewItemRow({ cotizacionId, versionId, onDone }: {
         <div className="flex gap-2">
           <button
             onClick={() => addMut.mutate()}
-            disabled={!cultivoId || !hibridoId || !bandaId || !bolsas || addMut.isPending}
+            disabled={!hibridoId || !bandaId || !bolsas || addMut.isPending}
             className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
             {addMut.isPending ? <Spinner /> : 'Agregar'}
@@ -116,7 +104,6 @@ function ItemRow({ item, cotizacionId, version, isEditable }: {
   isEditable: boolean;
 }) {
   const qc = useQueryClient();
-  const [showDiscount, setShowDiscount] = useState(false);
 
   const deleteMut = useMutation({
     mutationFn: () => cotizacionesApi.deleteItem(cotizacionId, version.id, item.id),
@@ -124,62 +111,156 @@ function ItemRow({ item, cotizacionId, version, isEditable }: {
   });
   const deleteDiscMut = useMutation({
     mutationFn: (did: number) => cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, did),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['version', cotizacionId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
+      qc.invalidateQueries({ queryKey: ['total', cotizacionId] });
+    },
   });
 
   const fmt = (n: number) =>
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <>
-      <tr className="hover:bg-gray-50">
-        <td className="px-4 py-2 text-sm text-gray-700">{item.cultivo?.nombre ?? item.cultivoId}</td>
-        <td className="px-4 py-2 text-sm text-gray-700">{item.hibrido?.nombre ?? item.hibridoId}</td>
-        <td className="px-4 py-2 text-sm text-gray-700">{item.banda?.nombre ?? item.bandaId}</td>
-        <td className="px-4 py-2 text-sm text-right text-gray-700">{fmt(Number(item.bolsas))}</td>
-        <td className="px-4 py-2 text-sm text-right text-gray-700">${fmt(Number(item.precioBase))}</td>
-        <td className="px-4 py-2 text-sm text-right font-medium text-gray-900">${fmt(Number(item.subtotal))}</td>
-        <td className="px-4 py-2 text-sm">
-          <div className="flex flex-wrap gap-1">
-            {item.descuentos.map((d) => (
-              <span key={d.id} className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 text-xs px-1.5 py-0.5 rounded">
-                -{d.valorPorcentaje}%
-                {isEditable && (
-                  <button onClick={() => deleteDiscMut.mutate(d.id)} className="hover:text-red-600 leading-none">×</button>
-                )}
-              </span>
-            ))}
-            {isEditable && (
-              <button
-                onClick={() => setShowDiscount(true)}
-                className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
-              >
-                + descuento
-              </button>
-            )}
-          </div>
-        </td>
-        <td className="px-4 py-2">
-          {isEditable && (
-            <button
-              onClick={() => deleteMut.mutate()}
-              disabled={deleteMut.isPending}
-              className="text-gray-400 hover:text-red-500 transition-colors text-lg leading-none"
-            >
-              ×
-            </button>
+    <tr className="hover:bg-gray-50">
+      <td className="px-4 py-2 text-sm text-gray-700">{item.hibrido?.nombre ?? item.hibridoId}</td>
+      <td className="px-4 py-2 text-sm text-gray-700">{item.banda?.nombre ?? item.bandaId}</td>
+      <td className="px-4 py-2 text-sm text-right text-gray-700">{fmt(Number(item.bolsas))}</td>
+      <td className="px-4 py-2 text-sm text-right text-gray-700">${fmt(Number(item.precioBase))}</td>
+      <td className="px-4 py-2 text-sm text-right font-medium text-gray-900">${fmt(Number(item.subtotal))}</td>
+      <td className="px-4 py-2 text-sm">
+        <div className="flex flex-wrap gap-1">
+          {item.descuentos.map((d) => (
+            <span key={d.id} className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 text-xs px-1.5 py-0.5 rounded">
+              -{d.valorPorcentaje}%
+              {isEditable && (
+                <button onClick={() => deleteDiscMut.mutate(d.id)} className="hover:text-red-600 leading-none">×</button>
+              )}
+            </span>
+          ))}
+        </div>
+      </td>
+      <td className="px-4 py-2">
+        {isEditable && (
+          <button
+            onClick={() => deleteMut.mutate()}
+            disabled={deleteMut.isPending}
+            className="text-gray-400 hover:text-red-500 transition-colors text-lg leading-none"
+          >
+            ×
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+// ─── Cultivo Section ──────────────────────────────────────────────────────────
+
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
+  cultivo: Cultivo;
+  items: CotizacionItem[];
+  cotizacionId: number;
+  version: CotizacionVersion;
+  isEditable: boolean;
+}) {
+  const [showNewItem, setShowNewItem] = useState(false);
+
+  return (
+    <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+        <h2 className="text-sm font-semibold text-gray-800">{cultivo.nombre}</h2>
+        {isEditable && (
+          <button
+            onClick={() => setShowNewItem(true)}
+            className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            + Agregar ítem
+          </button>
+        )}
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+          <tr>
+            <th className="text-left px-4 py-2">Híbrido</th>
+            <th className="text-left px-4 py-2">Banda</th>
+            <th className="text-right px-4 py-2">Bolsas</th>
+            <th className="text-right px-4 py-2">P. Base</th>
+            <th className="text-right px-4 py-2">Subtotal</th>
+            <th className="text-left px-4 py-2">Descuentos</th>
+            <th className="px-4 py-2 w-8"></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {items.map((item) => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              cotizacionId={cotizacionId}
+              version={version}
+              isEditable={isEditable}
+            />
+          ))}
+          {showNewItem && (
+            <NewItemRowForCultivo
+              cotizacionId={cotizacionId}
+              versionId={version.id}
+              cultivoId={cultivo.id}
+              onDone={() => setShowNewItem(false)}
+            />
           )}
-        </td>
-      </tr>
-      {showDiscount && (
-        <DiscountSelector
-          cotizacionId={cotizacionId}
-          version={version}
-          item={item}
-          onClose={() => setShowDiscount(false)}
-        />
-      )}
-    </>
+          {!showNewItem && items.length === 0 && (
+            <tr>
+              <td colSpan={7} className="px-4 py-5 text-center text-gray-400 text-xs">
+                Sin ítems. {isEditable && 'Hacé clic en "+ Agregar ítem" para comenzar.'}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Cultivo Selector ─────────────────────────────────────────────────────────
+
+function CultivoSelector({ cultivos, activeCultivoIds, withItemIds, onToggle }: {
+  cultivos: Cultivo[];
+  activeCultivoIds: Set<number>;
+  withItemIds: Set<number>;
+  onToggle: (id: number) => void;
+}) {
+  if (cultivos.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-xl border px-4 py-3">
+      <p className="text-xs font-medium text-gray-500 mb-2">Cultivos</p>
+      <div className="flex flex-wrap gap-2">
+        {cultivos.map((c) => {
+          const hasItems = withItemIds.has(c.id);
+          const isActive = activeCultivoIds.has(c.id);
+          return (
+            <label
+              key={c.id}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border cursor-pointer transition-colors select-none
+                ${isActive
+                  ? 'bg-blue-50 border-blue-300 text-blue-800'
+                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}
+                ${hasItems ? 'cursor-default' : ''}`}
+            >
+              <input
+                type="checkbox"
+                checked={isActive}
+                disabled={hasItems}
+                onChange={() => onToggle(c.id)}
+                className="rounded text-blue-600"
+              />
+              {c.nombre}
+              {hasItems && <span className="text-xs text-blue-500">({withItemIds.has(c.id) ? '●' : ''})</span>}
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -226,62 +307,197 @@ function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versio
   );
 }
 
-// ─── Global Discounts ─────────────────────────────────────────────────────────
+// ─── Descuentos Panel ─────────────────────────────────────────────────────────
 
-function GlobalDiscounts({ cotizacionId, version, isEditable }: {
+function DescuentosPanel({ cotizacionId, version, isEditable }: {
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
 }) {
   const qc = useQueryClient();
-  const [showSelector, setShowSelector] = useState(false);
+  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  const [noAplicaId, setNoAplicaId] = useState<number | null>(null);
 
-  const deleteMut = useMutation({
-    mutationFn: (did: number) => cotizacionesApi.deleteGlobalDescuento(cotizacionId, version.id, did),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['version', cotizacionId] }),
+  const { data: descuentos = [] } = useQuery({
+    queryKey: ['descuentos', 'activos'],
+    queryFn: () => descuentosApi.getAll(true),
   });
+
+  function isApplied(desc: Descuento): boolean {
+    if (desc.tipoAplicacion === 'global') {
+      return version.descuentos.some((d) => d.descuentoId === desc.id);
+    }
+    return version.items.some((item) => item.descuentos.some((d) => d.descuentoId === desc.id));
+  }
+
+  function getAppliedPct(desc: Descuento): number | null {
+    if (desc.tipoAplicacion === 'global') {
+      return version.descuentos.find((d) => d.descuentoId === desc.id)?.valorPorcentaje ?? null;
+    }
+    for (const item of version.items) {
+      const found = item.descuentos.find((d) => d.descuentoId === desc.id);
+      if (found) return found.valorPorcentaje;
+    }
+    return null;
+  }
+
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
+    qc.invalidateQueries({ queryKey: ['total', cotizacionId] });
+  }
+
+  function showNoAplica(id: number) {
+    setNoAplicaId(id);
+    setTimeout(() => setNoAplicaId(null), 2000);
+  }
+
+  function markPending(id: number, on: boolean) {
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      on ? next.add(id) : next.delete(id);
+      return next;
+    });
+  }
+
+  async function applyDescuento(desc: Descuento) {
+    markPending(desc.id, true);
+    try {
+      if (desc.modo === 'basico') {
+        if (desc.tipoAplicacion === 'global') {
+          await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
+            descuentoId: desc.id,
+            porcentaje: desc.valorPorcentaje,
+          });
+        } else {
+          if (version.items.length === 0) { showNoAplica(desc.id); return; }
+          await Promise.all(
+            version.items.map((item) =>
+              cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
+                descuentoId: desc.id,
+                porcentaje: desc.valorPorcentaje,
+              })
+            )
+          );
+        }
+      } else {
+        // avanzado
+        if (desc.tipoAplicacion === 'global') {
+          const results = await descuentosApi.evaluar({ tipoAplicacion: 'global' });
+          const match = results.find((r) => r.descuentoId === desc.id);
+          if (!match) { showNoAplica(desc.id); return; }
+          await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
+            descuentoId: desc.id,
+            porcentaje: match.porcentaje,
+          });
+        } else {
+          if (version.items.length === 0) { showNoAplica(desc.id); return; }
+          let applied = false;
+          for (const item of version.items) {
+            const results = await descuentosApi.evaluar({
+              tipoAplicacion: desc.tipoAplicacion as 'global',
+              cultivoId: item.cultivoId,
+              hibridoId: item.hibridoId,
+              bandaId: item.bandaId,
+              cantidad: Number(item.bolsas),
+            });
+            const match = results.find((r) => r.descuentoId === desc.id);
+            if (match) {
+              await cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
+                descuentoId: desc.id,
+                porcentaje: match.porcentaje,
+              });
+              applied = true;
+            }
+          }
+          if (!applied) { showNoAplica(desc.id); return; }
+        }
+      }
+      invalidate();
+    } catch {
+      // silently fail
+    } finally {
+      markPending(desc.id, false);
+    }
+  }
+
+  async function removeDescuento(desc: Descuento) {
+    markPending(desc.id, true);
+    try {
+      if (desc.tipoAplicacion === 'global') {
+        const applied = version.descuentos.find((d) => d.descuentoId === desc.id);
+        if (applied) {
+          await cotizacionesApi.deleteGlobalDescuento(cotizacionId, version.id, applied.id);
+        }
+      } else {
+        for (const item of version.items) {
+          const itemDesc = item.descuentos.find((d) => d.descuentoId === desc.id);
+          if (itemDesc) {
+            await cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, itemDesc.id);
+          }
+        }
+      }
+      invalidate();
+    } finally {
+      markPending(desc.id, false);
+    }
+  }
+
+  async function toggleDescuento(desc: Descuento) {
+    if (!isEditable || pendingIds.has(desc.id)) return;
+    if (isApplied(desc)) {
+      await removeDescuento(desc);
+    } else {
+      await applyDescuento(desc);
+    }
+  }
 
   return (
     <div className="bg-white rounded-xl border p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-700">Descuentos globales</h3>
-        {isEditable && (
-          <button
-            onClick={() => setShowSelector(true)}
-            className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
-          >
-            + Agregar
-          </button>
-        )}
-      </div>
-      {version.descuentos.length === 0 ? (
-        <p className="text-xs text-gray-400">Sin descuentos globales</p>
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos disponibles</h3>
+      {descuentos.length === 0 ? (
+        <p className="text-xs text-gray-400">Sin descuentos activos</p>
       ) : (
-        <div className="space-y-1">
-          {version.descuentos.map((d) => (
-            <div key={d.id} className="flex items-center justify-between text-sm">
-              <span className="text-gray-700">{d.descuento?.nombre ?? `Descuento #${d.descuentoId}`}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-orange-600 font-medium">−{d.valorPorcentaje}%</span>
-                {isEditable && (
-                  <button
-                    onClick={() => deleteMut.mutate(d.id)}
-                    className="text-gray-400 hover:text-red-500"
-                  >
-                    ×
-                  </button>
+        <div className="space-y-2">
+          {descuentos.map((desc) => {
+            const applied = isApplied(desc);
+            const pct = getAppliedPct(desc);
+            const pending = pendingIds.has(desc.id);
+            const noAplica = noAplicaId === desc.id;
+            return (
+              <label
+                key={desc.id}
+                className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors
+                  ${applied ? 'bg-orange-50' : 'hover:bg-gray-50'}
+                  ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+              >
+                {pending ? (
+                  <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
+                ) : (
+                  <input
+                    type="checkbox"
+                    checked={applied}
+                    disabled={!isEditable}
+                    onChange={() => toggleDescuento(desc)}
+                    className="rounded text-blue-600 cursor-pointer"
+                  />
                 )}
-              </div>
-            </div>
-          ))}
+                <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                  {desc.nombre}
+                  <span className="block text-xs text-gray-400 font-normal">
+                    {desc.tipoAplicacion} · {desc.modo}
+                  </span>
+                </span>
+                {noAplica ? (
+                  <span className="text-xs text-gray-400 italic">No aplica</span>
+                ) : applied && pct != null ? (
+                  <span className="text-xs font-semibold text-orange-600">−{pct}%</span>
+                ) : (
+                  <span className="text-xs text-gray-400">{desc.valorPorcentaje ?? '?'}%</span>
+                )}
+              </label>
+            );
+          })}
         </div>
-      )}
-      {showSelector && (
-        <DiscountSelector
-          cotizacionId={cotizacionId}
-          version={version}
-          onClose={() => setShowSelector(false)}
-        />
       )}
     </div>
   );
@@ -298,7 +514,7 @@ export function CotizacionEditorPage() {
   const qc = useQueryClient();
 
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
-  const [showNewItem, setShowNewItem] = useState(false);
+  const [selectedCultivos, setSelectedCultivos] = useState<Set<number>>(new Set());
   const [showHistory, setShowHistory] = useState(false);
 
   const { data: cotizacion, isLoading: loadingCot } = useQuery({
@@ -309,6 +525,10 @@ export function CotizacionEditorPage() {
     queryKey: ['versiones', cotizacionId],
     queryFn: () => cotizacionesApi.getVersiones(cotizacionId),
     enabled: !!cotizacion,
+  });
+  const { data: cultivos = [] } = useQuery({
+    queryKey: ['cultivos'],
+    queryFn: () => productosApi.getCultivos(),
   });
 
   // Default to the latest version
@@ -357,6 +577,23 @@ export function CotizacionEditorPage() {
 
   const isLatestVersion = versiones[0]?.id === selectedVersionId;
   const isEditable = cotizacion.estado === 'borrador' && isLatestVersion;
+
+  // Cultivos that already have items — always shown, checkbox disabled
+  const existingCultivoIds = new Set(version?.items?.map((i) => i.cultivoId) ?? []);
+  const activeCultivoIds = new Set([...existingCultivoIds, ...selectedCultivos]);
+
+  function toggleCultivo(id: number) {
+    if (existingCultivoIds.has(id)) return;
+    setSelectedCultivos((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  const activeCultivos = cultivos
+    .filter((c) => activeCultivoIds.has(c.id))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   return (
     <Layout title={cotizacion.numero}>
@@ -413,75 +650,36 @@ export function CotizacionEditorPage() {
           </span>
         </div>
 
+        {/* Cultivo selector */}
+        <CultivoSelector
+          cultivos={cultivos}
+          activeCultivoIds={activeCultivoIds}
+          withItemIds={existingCultivoIds}
+          onToggle={toggleCultivo}
+        />
+
         <div className="flex gap-5">
           {/* Main content */}
           <div className="flex-1 min-w-0 space-y-4">
-            {/* Items table */}
-            <div className="bg-white rounded-xl border overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b">
-                <h2 className="text-sm font-semibold text-gray-700">Ítems</h2>
-                {isEditable && (
-                  <button
-                    onClick={() => setShowNewItem(true)}
-                    className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                  >
-                    + Agregar ítem
-                  </button>
-                )}
+            {loadingVer ? (
+              <div className="flex justify-center py-10"><Spinner /></div>
+            ) : activeCultivos.length === 0 ? (
+              <div className="bg-white rounded-xl border px-4 py-10 text-center text-gray-400 text-sm">
+                {isEditable
+                  ? 'Seleccioná un cultivo arriba para comenzar a cargar ítems.'
+                  : 'Sin ítems en esta versión.'}
               </div>
-
-              {loadingVer ? (
-                <div className="flex justify-center py-6"><Spinner /></div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
-                    <tr>
-                      <th className="text-left px-4 py-2">Cultivo</th>
-                      <th className="text-left px-4 py-2">Híbrido</th>
-                      <th className="text-left px-4 py-2">Banda</th>
-                      <th className="text-right px-4 py-2">Bolsas</th>
-                      <th className="text-right px-4 py-2">P. Base</th>
-                      <th className="text-right px-4 py-2">Subtotal</th>
-                      <th className="text-left px-4 py-2">Descuentos</th>
-                      <th className="px-4 py-2 w-8"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {version?.items?.map((item) => (
-                      <ItemRow
-                        key={item.id}
-                        item={item}
-                        cotizacionId={cotizacionId}
-                        version={version}
-                        isEditable={isEditable}
-                      />
-                    ))}
-                    {showNewItem && version && (
-                      <NewItemRow
-                        cotizacionId={cotizacionId}
-                        versionId={version.id}
-                        onDone={() => setShowNewItem(false)}
-                      />
-                    )}
-                    {!showNewItem && (!version?.items || version.items.length === 0) && (
-                      <tr>
-                        <td colSpan={8} className="px-4 py-6 text-center text-gray-400 text-xs">
-                          Sin ítems. {isEditable && 'Hacé clic en "+ Agregar ítem" para comenzar.'}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            {/* Global discounts */}
-            {version && (
-              <GlobalDiscounts
-                cotizacionId={cotizacionId}
-                version={version}
-                isEditable={isEditable}
-              />
+            ) : (
+              activeCultivos.map((cultivo) => (
+                <CultivoSection
+                  key={cultivo.id}
+                  cultivo={cultivo}
+                  items={(version?.items ?? []).filter((i) => i.cultivoId === cultivo.id)}
+                  cotizacionId={cotizacionId}
+                  version={version!}
+                  isEditable={isEditable}
+                />
+              ))
             )}
           </div>
 
@@ -489,6 +687,13 @@ export function CotizacionEditorPage() {
           <div className="w-72 shrink-0 space-y-4">
             {selectedVersionId && (
               <TotalsPanel cotizacionId={cotizacionId} versionId={selectedVersionId} />
+            )}
+            {version && (
+              <DescuentosPanel
+                cotizacionId={cotizacionId}
+                version={version}
+                isEditable={isEditable}
+              />
             )}
             {showHistory && (
               <div className="bg-white rounded-xl border p-4">
