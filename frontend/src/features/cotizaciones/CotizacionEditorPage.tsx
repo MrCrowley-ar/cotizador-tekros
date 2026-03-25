@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cotizacionesApi } from '../../api/cotizaciones';
@@ -10,11 +10,42 @@ import { Spinner } from '../../components/Spinner';
 import { VersionHistory } from './VersionHistory';
 import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../../api/types';
 
+// ─── Resize Divider ───────────────────────────────────────────────────────────
+
+function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
+  const state = useRef({ active: false, x: 0, fn: onDrag });
+  state.current.fn = onDrag;
+
+  useEffect(() => {
+    const mm = (e: MouseEvent) => {
+      if (!state.current.active) return;
+      state.current.fn(state.current.x - e.clientX);
+      state.current.x = e.clientX;
+    };
+    const mu = () => { state.current.active = false; };
+    window.addEventListener('mousemove', mm);
+    window.addEventListener('mouseup', mu);
+    return () => {
+      window.removeEventListener('mousemove', mm);
+      window.removeEventListener('mouseup', mu);
+    };
+  }, []);
+
+  return (
+    <div
+      className="w-3 mx-0.5 shrink-0 cursor-col-resize flex items-stretch justify-center group select-none"
+      onMouseDown={(e) => { state.current.active = true; state.current.x = e.clientX; e.preventDefault(); }}
+    >
+      <div className="w-px bg-gray-200 group-hover:bg-blue-400 transition-colors" />
+    </div>
+  );
+}
+
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCols }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, extraCols }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
-  discountCols: Array<{ id: number; nombre: string }>;
+  extraCols: number;
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -75,8 +106,7 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
       </td>
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
-      {discountCols.map((col) => <td key={col.id} />)}
-      {discountCols.length > 0 && <td />}
+      {Array.from({ length: extraCols }).map((_, i) => <td key={i} />)}
       <td className="px-3 py-2">
         {error && <span className="text-xs text-red-600 block mb-1">{error}</span>}
         <div className="flex gap-2">
@@ -109,10 +139,14 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
 
   const deleteMut = useMutation({
     mutationFn: () => cotizacionesApi.deleteItem(cotizacionId, version.id, item.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['version', cotizacionId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
+      qc.invalidateQueries({ queryKey: ['total', cotizacionId] });
+    },
   });
   const deleteDiscMut = useMutation({
-    mutationFn: (did: number) => cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, did),
+    mutationFn: (discId: number) =>
+      cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, discId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
       qc.invalidateQueries({ queryKey: ['total', cotizacionId] });
@@ -124,20 +158,26 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
 
   return (
     <tr className="hover:bg-gray-50">
-      <td className="px-4 py-2 text-sm text-gray-700">{item.hibrido?.nombre ?? item.hibridoId}</td>
-      <td className="px-4 py-2 text-sm text-gray-700">{item.banda?.nombre ?? item.bandaId}</td>
+      <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{item.hibrido?.nombre ?? item.hibridoId}</td>
+      <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{item.banda?.nombre ?? item.bandaId}</td>
       <td className="px-4 py-2 text-sm text-right text-gray-700">{fmt(Number(item.bolsas))}</td>
-      <td className="px-4 py-2 text-sm text-right text-gray-700">${fmt(Number(item.precioBase))}</td>
-      <td className="px-4 py-2 text-sm text-right font-medium text-gray-700">${fmt(Number(item.subtotal))}</td>
+      <td className="px-4 py-2 text-sm text-right text-gray-700 whitespace-nowrap">${fmt(Number(item.precioBase))}</td>
+      <td className="px-4 py-2 text-sm text-right font-medium text-gray-700 whitespace-nowrap">${fmt(Number(item.subtotal))}</td>
       {discountCols.map((col) => {
         const applied = item.descuentos.find((d) => d.descuentoId === col.id);
         return (
-          <td key={col.id} className="px-4 py-2 text-sm text-right">
+          <td key={col.id} className="px-4 py-2 text-sm text-right whitespace-nowrap">
             {applied ? (
               <span className="inline-flex items-center gap-1 text-orange-600 text-xs font-medium">
                 −{applied.valorPorcentaje}%
                 {isEditable && (
-                  <button onClick={() => deleteDiscMut.mutate(applied.id)} className="hover:text-red-600 leading-none ml-0.5">×</button>
+                  <button
+                    onClick={() => deleteDiscMut.mutate(applied.id)}
+                    disabled={deleteDiscMut.isPending}
+                    className="hover:text-red-600 leading-none ml-0.5 disabled:opacity-50"
+                  >
+                    ×
+                  </button>
                 )}
               </span>
             ) : (
@@ -150,7 +190,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
         let total = Number(item.subtotal);
         for (const d of item.descuentos) total *= (1 - d.valorPorcentaje / 100);
         return (
-          <td className="px-4 py-2 text-sm text-right font-semibold text-gray-900">${fmt(total)}</td>
+          <td className="px-4 py-2 text-sm text-right font-semibold text-gray-900 whitespace-nowrap">${fmt(total)}</td>
         );
       })()}
       <td className="px-4 py-2">
@@ -165,6 +205,153 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
         )}
       </td>
     </tr>
+  );
+}
+
+// ─── Cultivo Descuentos ───────────────────────────────────────────────────────
+
+function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
+  cotizacionId: number;
+  version: CotizacionVersion;
+  items: CotizacionItem[];
+  isEditable: boolean;
+}) {
+  const qc = useQueryClient();
+  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  const [noAplicaId, setNoAplicaId] = useState<number | null>(null);
+
+  const { data: allDescuentos = [] } = useQuery({
+    queryKey: ['descuentos', 'activos'],
+    queryFn: () => descuentosApi.getAll(true),
+  });
+
+  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion !== 'global');
+  if (descuentos.length === 0) return null;
+
+  function isApplied(desc: Descuento) {
+    return items.some((item) => item.descuentos.some((d) => d.descuentoId === desc.id));
+  }
+  function getAppliedPct(desc: Descuento) {
+    for (const item of items) {
+      const found = item.descuentos.find((d) => d.descuentoId === desc.id);
+      if (found) return found.valorPorcentaje;
+    }
+    return null;
+  }
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
+    qc.invalidateQueries({ queryKey: ['total', cotizacionId] });
+  }
+  function showNoAplica(id: number) {
+    setNoAplicaId(id);
+    setTimeout(() => setNoAplicaId(null), 2000);
+  }
+  function markPending(id: number, on: boolean) {
+    setPendingIds((prev) => { const next = new Set(prev); on ? next.add(id) : next.delete(id); return next; });
+  }
+
+  async function applyDescuento(desc: Descuento) {
+    if (items.length === 0) { showNoAplica(desc.id); return; }
+    markPending(desc.id, true);
+    try {
+      if (desc.modo === 'basico') {
+        await Promise.all(
+          items.map((item) =>
+            cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
+              descuentoId: desc.id,
+              porcentaje: desc.valorPorcentaje,
+            })
+          )
+        );
+      } else {
+        let applied = false;
+        for (const item of items) {
+          const results = await descuentosApi.evaluar({
+            tipoAplicacion: desc.tipoAplicacion as 'global',
+            cultivoId: item.cultivoId,
+            hibridoId: item.hibridoId,
+            bandaId: item.bandaId,
+            cantidad: Number(item.bolsas),
+          });
+          const match = results.find((r) => r.descuentoId === desc.id);
+          if (match) {
+            await cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
+              descuentoId: desc.id,
+              porcentaje: match.porcentaje,
+            });
+            applied = true;
+          }
+        }
+        if (!applied) { showNoAplica(desc.id); return; }
+      }
+      invalidate();
+    } catch { /* silently fail */ } finally {
+      markPending(desc.id, false);
+    }
+  }
+
+  async function removeDescuento(desc: Descuento) {
+    markPending(desc.id, true);
+    try {
+      await Promise.all(
+        items
+          .map((item) => item.descuentos.find((d) => d.descuentoId === desc.id))
+          .filter(Boolean)
+          .map((itemDesc) => {
+            const item = items.find((i) => i.descuentos.some((d) => d.id === itemDesc!.id))!;
+            return cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, itemDesc!.id);
+          })
+      );
+      invalidate();
+    } finally {
+      markPending(desc.id, false);
+    }
+  }
+
+  async function toggle(desc: Descuento) {
+    if (!isEditable || pendingIds.has(desc.id)) return;
+    if (isApplied(desc)) await removeDescuento(desc);
+    else await applyDescuento(desc);
+  }
+
+  return (
+    <div className="px-4 py-3 border-t bg-gray-50/50">
+      <p className="text-xs font-medium text-gray-500 mb-2">Descuentos</p>
+      <div className="flex flex-wrap gap-2">
+        {descuentos.map((desc) => {
+          const applied = isApplied(desc);
+          const pct = getAppliedPct(desc);
+          const pending = pendingIds.has(desc.id);
+          const noAplica = noAplicaId === desc.id;
+          return (
+            <label
+              key={desc.id}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors select-none
+                ${applied ? 'bg-orange-50 border-orange-300 text-orange-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}
+                ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+            >
+              {pending ? <Spinner className="w-3 h-3" /> : (
+                <input
+                  type="checkbox"
+                  checked={applied}
+                  disabled={!isEditable}
+                  onChange={() => toggle(desc)}
+                  className="rounded text-orange-500 w-3 h-3"
+                />
+              )}
+              <span>{desc.nombre}</span>
+              {noAplica ? (
+                <span className="text-gray-400 italic">No aplica</span>
+              ) : applied && pct != null ? (
+                <span className="font-semibold">−{pct}%</span>
+              ) : (
+                <span className="text-gray-400">{desc.valorPorcentaje ?? '?'}%</span>
+              )}
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -194,7 +381,9 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
     return Array.from(map.values());
   }, [items]);
 
-  const totalCols = 6 + uniqueDiscounts.length + (uniqueDiscounts.length > 0 ? 1 : 0);
+  // extra cols = discount cols + total col (if any discounts)
+  const extraCols = uniqueDiscounts.length + (uniqueDiscounts.length > 0 ? 1 : 0);
+  const totalCols = 6 + extraCols;
 
   return (
     <div className="bg-white rounded-xl border overflow-hidden">
@@ -209,54 +398,62 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
           </button>
         )}
       </div>
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
-          <tr>
-            <th className="text-left px-4 py-2">Híbrido</th>
-            <th className="text-left px-4 py-2">Banda</th>
-            <th className="text-right px-4 py-2">Bolsas</th>
-            <th className="text-right px-4 py-2">P. Base</th>
-            <th className="text-right px-4 py-2">Subtotal</th>
-            {uniqueDiscounts.map((d) => (
-              <th key={d.id} className="text-right px-4 py-2 text-orange-500 font-medium normal-case tracking-normal whitespace-nowrap">
-                {d.nombre}
-              </th>
-            ))}
-            {uniqueDiscounts.length > 0 && (
-              <th className="text-right px-4 py-2 text-gray-700">Total</th>
-            )}
-            <th className="px-4 py-2 w-8"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {items.map((item) => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              cotizacionId={cotizacionId}
-              version={version}
-              isEditable={isEditable}
-              discountCols={uniqueDiscounts}
-            />
-          ))}
-          {showNewItem && (
-            <NewItemRowForCultivo
-              cotizacionId={cotizacionId}
-              versionId={version.id}
-              cultivoId={cultivo.id}
-              onDone={() => setShowNewItem(false)}
-              discountCols={uniqueDiscounts}
-            />
-          )}
-          {!showNewItem && items.length === 0 && (
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
             <tr>
-              <td colSpan={totalCols} className="px-4 py-5 text-center text-gray-400 text-xs">
-                Sin ítems. {isEditable && 'Hacé clic en "+ Agregar ítem" para comenzar.'}
-              </td>
+              <th className="text-left px-4 py-2 whitespace-nowrap">Híbrido</th>
+              <th className="text-left px-4 py-2 whitespace-nowrap">Banda</th>
+              <th className="text-right px-4 py-2">Bolsas</th>
+              <th className="text-right px-4 py-2 whitespace-nowrap">P. Base</th>
+              <th className="text-right px-4 py-2">Subtotal</th>
+              {uniqueDiscounts.map((d) => (
+                <th key={d.id} className="text-right px-4 py-2 text-orange-500 font-medium normal-case tracking-normal whitespace-nowrap">
+                  {d.nombre}
+                </th>
+              ))}
+              {uniqueDiscounts.length > 0 && (
+                <th className="text-right px-4 py-2 text-gray-700 whitespace-nowrap">Total</th>
+              )}
+              <th className="px-4 py-2 w-8"></th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {items.map((item) => (
+              <ItemRow
+                key={item.id}
+                item={item}
+                cotizacionId={cotizacionId}
+                version={version}
+                isEditable={isEditable}
+                discountCols={uniqueDiscounts}
+              />
+            ))}
+            {showNewItem && (
+              <NewItemRowForCultivo
+                cotizacionId={cotizacionId}
+                versionId={version.id}
+                cultivoId={cultivo.id}
+                onDone={() => setShowNewItem(false)}
+                extraCols={extraCols}
+              />
+            )}
+            {!showNewItem && items.length === 0 && (
+              <tr>
+                <td colSpan={totalCols} className="px-4 py-5 text-center text-gray-400 text-xs">
+                  Sin ítems. {isEditable && 'Hacé clic en "+ Agregar ítem" para comenzar.'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <CultivoDescuentos
+        cotizacionId={cotizacionId}
+        version={version}
+        items={items}
+        isEditable={isEditable}
+      />
     </div>
   );
 }
@@ -295,7 +492,7 @@ function CultivoSelector({ cultivos, activeCultivoIds, withItemIds, onToggle }: 
                 className="rounded text-blue-600"
               />
               {c.nombre}
-              {hasItems && <span className="text-xs text-blue-500">({withItemIds.has(c.id) ? '●' : ''})</span>}
+              {hasItems && <span className="text-xs text-blue-500">●</span>}
             </label>
           );
         })}
@@ -325,7 +522,7 @@ function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versio
       </div>
       {totals.descuentosItems > 0 && (
         <div className="flex justify-between text-orange-600">
-          <span>Descuentos ítems</span>
+          <span>Desc. ítems</span>
           <span>−${fmt(totals.descuentosItems)}</span>
         </div>
       )}
@@ -335,7 +532,7 @@ function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versio
       </div>
       {totals.descuentosGlobales > 0 && (
         <div className="flex justify-between text-orange-600">
-          <span>Descuentos globales</span>
+          <span>Desc. globales</span>
           <span>−${fmt(totals.descuentosGlobales)}</span>
         </div>
       )}
@@ -347,7 +544,7 @@ function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versio
   );
 }
 
-// ─── Descuentos Panel ─────────────────────────────────────────────────────────
+// ─── Descuentos Globales Panel ────────────────────────────────────────────────
 
 function DescuentosPanel({ cotizacionId, version, isEditable }: {
   cotizacionId: number;
@@ -358,104 +555,51 @@ function DescuentosPanel({ cotizacionId, version, isEditable }: {
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [noAplicaId, setNoAplicaId] = useState<number | null>(null);
 
-  const { data: descuentos = [] } = useQuery({
+  const { data: allDescuentos = [] } = useQuery({
     queryKey: ['descuentos', 'activos'],
     queryFn: () => descuentosApi.getAll(true),
   });
 
-  function isApplied(desc: Descuento): boolean {
-    if (desc.tipoAplicacion === 'global') {
-      return version.descuentos.some((d) => d.descuentoId === desc.id);
-    }
-    return version.items.some((item) => item.descuentos.some((d) => d.descuentoId === desc.id));
-  }
+  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion === 'global');
+  if (descuentos.length === 0) return null;
 
-  function getAppliedPct(desc: Descuento): number | null {
-    if (desc.tipoAplicacion === 'global') {
-      return version.descuentos.find((d) => d.descuentoId === desc.id)?.valorPorcentaje ?? null;
-    }
-    for (const item of version.items) {
-      const found = item.descuentos.find((d) => d.descuentoId === desc.id);
-      if (found) return found.valorPorcentaje;
-    }
-    return null;
+  function isApplied(desc: Descuento) {
+    return version.descuentos.some((d) => d.descuentoId === desc.id);
   }
-
+  function getAppliedPct(desc: Descuento) {
+    return version.descuentos.find((d) => d.descuentoId === desc.id)?.valorPorcentaje ?? null;
+  }
   function invalidate() {
     qc.invalidateQueries({ queryKey: ['version', cotizacionId] });
     qc.invalidateQueries({ queryKey: ['total', cotizacionId] });
   }
-
   function showNoAplica(id: number) {
     setNoAplicaId(id);
     setTimeout(() => setNoAplicaId(null), 2000);
   }
-
   function markPending(id: number, on: boolean) {
-    setPendingIds((prev) => {
-      const next = new Set(prev);
-      on ? next.add(id) : next.delete(id);
-      return next;
-    });
+    setPendingIds((prev) => { const next = new Set(prev); on ? next.add(id) : next.delete(id); return next; });
   }
 
   async function applyDescuento(desc: Descuento) {
     markPending(desc.id, true);
     try {
       if (desc.modo === 'basico') {
-        if (desc.tipoAplicacion === 'global') {
-          await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
-            descuentoId: desc.id,
-            porcentaje: desc.valorPorcentaje,
-          });
-        } else {
-          if (version.items.length === 0) { showNoAplica(desc.id); return; }
-          await Promise.all(
-            version.items.map((item) =>
-              cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
-                descuentoId: desc.id,
-                porcentaje: desc.valorPorcentaje,
-              })
-            )
-          );
-        }
+        await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
+          descuentoId: desc.id,
+          porcentaje: desc.valorPorcentaje,
+        });
       } else {
-        // avanzado
-        if (desc.tipoAplicacion === 'global') {
-          const results = await descuentosApi.evaluar({ tipoAplicacion: 'global' });
-          const match = results.find((r) => r.descuentoId === desc.id);
-          if (!match) { showNoAplica(desc.id); return; }
-          await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
-            descuentoId: desc.id,
-            porcentaje: match.porcentaje,
-          });
-        } else {
-          if (version.items.length === 0) { showNoAplica(desc.id); return; }
-          let applied = false;
-          for (const item of version.items) {
-            const results = await descuentosApi.evaluar({
-              tipoAplicacion: desc.tipoAplicacion as 'global',
-              cultivoId: item.cultivoId,
-              hibridoId: item.hibridoId,
-              bandaId: item.bandaId,
-              cantidad: Number(item.bolsas),
-            });
-            const match = results.find((r) => r.descuentoId === desc.id);
-            if (match) {
-              await cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
-                descuentoId: desc.id,
-                porcentaje: match.porcentaje,
-              });
-              applied = true;
-            }
-          }
-          if (!applied) { showNoAplica(desc.id); return; }
-        }
+        const results = await descuentosApi.evaluar({ tipoAplicacion: 'global' });
+        const match = results.find((r) => r.descuentoId === desc.id);
+        if (!match) { showNoAplica(desc.id); return; }
+        await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
+          descuentoId: desc.id,
+          porcentaje: match.porcentaje,
+        });
       }
       invalidate();
-    } catch {
-      // silently fail
-    } finally {
+    } catch { /* silently fail */ } finally {
       markPending(desc.id, false);
     }
   }
@@ -463,18 +607,9 @@ function DescuentosPanel({ cotizacionId, version, isEditable }: {
   async function removeDescuento(desc: Descuento) {
     markPending(desc.id, true);
     try {
-      if (desc.tipoAplicacion === 'global') {
-        const applied = version.descuentos.find((d) => d.descuentoId === desc.id);
-        if (applied) {
-          await cotizacionesApi.deleteGlobalDescuento(cotizacionId, version.id, applied.id);
-        }
-      } else {
-        for (const item of version.items) {
-          const itemDesc = item.descuentos.find((d) => d.descuentoId === desc.id);
-          if (itemDesc) {
-            await cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, itemDesc.id);
-          }
-        }
+      const applied = version.descuentos.find((d) => d.descuentoId === desc.id);
+      if (applied) {
+        await cotizacionesApi.deleteGlobalDescuento(cotizacionId, version.id, applied.id);
       }
       invalidate();
     } finally {
@@ -482,63 +617,53 @@ function DescuentosPanel({ cotizacionId, version, isEditable }: {
     }
   }
 
-  async function toggleDescuento(desc: Descuento) {
+  async function toggle(desc: Descuento) {
     if (!isEditable || pendingIds.has(desc.id)) return;
-    if (isApplied(desc)) {
-      await removeDescuento(desc);
-    } else {
-      await applyDescuento(desc);
-    }
+    if (isApplied(desc)) await removeDescuento(desc);
+    else await applyDescuento(desc);
   }
 
   return (
     <div className="bg-white rounded-xl border p-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos disponibles</h3>
-      {descuentos.length === 0 ? (
-        <p className="text-xs text-gray-400">Sin descuentos activos</p>
-      ) : (
-        <div className="space-y-2">
-          {descuentos.map((desc) => {
-            const applied = isApplied(desc);
-            const pct = getAppliedPct(desc);
-            const pending = pendingIds.has(desc.id);
-            const noAplica = noAplicaId === desc.id;
-            return (
-              <label
-                key={desc.id}
-                className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors
-                  ${applied ? 'bg-orange-50' : 'hover:bg-gray-50'}
-                  ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
-              >
-                {pending ? (
-                  <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
-                ) : (
-                  <input
-                    type="checkbox"
-                    checked={applied}
-                    disabled={!isEditable}
-                    onChange={() => toggleDescuento(desc)}
-                    className="rounded text-blue-600 cursor-pointer"
-                  />
-                )}
-                <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
-                  {desc.nombre}
-                  <span className="block text-xs text-gray-400 font-normal">
-                    {desc.tipoAplicacion} · {desc.modo}
-                  </span>
-                </span>
-                {noAplica ? (
-                  <span className="text-xs text-gray-400 italic">No aplica</span>
-                ) : applied && pct != null ? (
-                  <span className="text-xs font-semibold text-orange-600">−{pct}%</span>
-                ) : (
-                  <span className="text-xs text-gray-400">{desc.valorPorcentaje ?? '?'}%</span>
-                )}
-              </label>
-            );
-          })}
-        </div>
-      )}
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos globales</h3>
+      <div className="space-y-2">
+        {descuentos.map((desc) => {
+          const applied = isApplied(desc);
+          const pct = getAppliedPct(desc);
+          const pending = pendingIds.has(desc.id);
+          const noAplica = noAplicaId === desc.id;
+          return (
+            <label
+              key={desc.id}
+              className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors
+                ${applied ? 'bg-orange-50' : 'hover:bg-gray-50'}
+                ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+            >
+              {pending ? (
+                <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
+              ) : (
+                <input
+                  type="checkbox"
+                  checked={applied}
+                  disabled={!isEditable}
+                  onChange={() => toggle(desc)}
+                  className="rounded text-blue-600 cursor-pointer"
+                />
+              )}
+              <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                {desc.nombre}
+              </span>
+              {noAplica ? (
+                <span className="text-xs text-gray-400 italic">No aplica</span>
+              ) : applied && pct != null ? (
+                <span className="text-xs font-semibold text-orange-600">−{pct}%</span>
+              ) : (
+                <span className="text-xs text-gray-400">{desc.valorPorcentaje ?? '?'}%</span>
+              )}
+            </label>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -556,6 +681,7 @@ export function CotizacionEditorPage() {
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
   const [selectedCultivos, setSelectedCultivos] = useState<Set<number>>(new Set());
   const [showHistory, setShowHistory] = useState(false);
+  const [rightWidth, setRightWidth] = useState(288);
 
   const { data: cotizacion, isLoading: loadingCot } = useQuery({
     queryKey: ['cotizacion', cotizacionId],
@@ -571,7 +697,6 @@ export function CotizacionEditorPage() {
     queryFn: () => productosApi.getCultivos(),
   });
 
-  // Default to the latest version
   useEffect(() => {
     if (versiones.length > 0 && !selectedVersionId) {
       setSelectedVersionId(versiones[0].id);
@@ -584,7 +709,6 @@ export function CotizacionEditorPage() {
     enabled: !!selectedVersionId,
   });
 
-  // Invalidate totals whenever version data changes
   useEffect(() => {
     if (selectedVersionId) {
       qc.invalidateQueries({ queryKey: ['total', cotizacionId, selectedVersionId] });
@@ -618,7 +742,6 @@ export function CotizacionEditorPage() {
   const isLatestVersion = versiones[0]?.id === selectedVersionId;
   const isEditable = cotizacion.estado === 'borrador' && isLatestVersion;
 
-  // Cultivos that already have items — always shown, checkbox disabled
   const existingCultivoIds = new Set(version?.items?.map((i) => i.cultivoId) ?? []);
   const activeCultivoIds = new Set([...existingCultivoIds, ...selectedCultivos]);
 
@@ -637,7 +760,7 @@ export function CotizacionEditorPage() {
 
   return (
     <Layout title={cotizacion.numero}>
-      <div className="max-w-6xl mx-auto space-y-5">
+      <div className="max-w-[1400px] mx-auto space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -698,7 +821,7 @@ export function CotizacionEditorPage() {
           onToggle={toggleCultivo}
         />
 
-        <div className="flex gap-5">
+        <div className="flex items-start">
           {/* Main content */}
           <div className="flex-1 min-w-0 space-y-4">
             {loadingVer ? (
@@ -723,8 +846,10 @@ export function CotizacionEditorPage() {
             )}
           </div>
 
+          <ResizeDivider onDrag={(dx) => setRightWidth((w) => Math.max(200, Math.min(600, w + dx)))} />
+
           {/* Right column */}
-          <div className="w-72 shrink-0 space-y-4">
+          <div style={{ width: rightWidth }} className="shrink-0 space-y-4">
             {selectedVersionId && (
               <TotalsPanel cotizacionId={cotizacionId} versionId={selectedVersionId} />
             )}
