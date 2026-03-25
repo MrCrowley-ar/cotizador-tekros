@@ -505,6 +505,7 @@ function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versio
   const { data: totals } = useQuery({
     queryKey: ['total', cotizacionId, versionId],
     queryFn: () => cotizacionesApi.getTotal(cotizacionId, versionId),
+    staleTime: 0,
   });
 
   const fmt = (n: number | null | undefined) =>
@@ -705,6 +706,7 @@ export function CotizacionEditorPage() {
     queryKey: ['version', cotizacionId, selectedVersionId],
     queryFn: () => cotizacionesApi.getVersion(cotizacionId, selectedVersionId!),
     enabled: !!selectedVersionId,
+    staleTime: 0,
   });
 
   useEffect(() => {
