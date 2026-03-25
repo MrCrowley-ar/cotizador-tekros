@@ -28,13 +28,13 @@ export function BandasTab() {
 
   const createMut = useMutation({
     mutationFn: () => productosApi.createBanda({ cultivoId: cultivoFilter, nombre: editNombre.trim() }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['bandas'] }); setEditing(null); },
+    onSuccess: () => { qc.refetchQueries({ queryKey: ['bandas'] }); setEditing(null); },
   });
 
   const updateMut = useMutation({
-    mutationFn: ({ id, nombre, activa }: { id: number; nombre: string; activa: boolean }) =>
-      productosApi.updateBanda(id, { nombre, activa }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['bandas'] }); setEditing(null); },
+    mutationFn: ({ id, nombre, activo }: { id: number; nombre: string; activo: boolean }) =>
+      productosApi.updateBanda(id, { nombre, activo }),
+    onSuccess: () => { qc.refetchQueries({ queryKey: ['bandas'] }); setEditing(null); },
   });
 
   const startNew = () => { setEditNombre(''); setEditing('new'); };
@@ -81,26 +81,26 @@ export function BandasTab() {
                         onChange={(e) => setEditNombre(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && editNombre.trim())
-                            updateMut.mutate({ id: b.id, nombre: editNombre.trim(), activa: b.activa });
+                            updateMut.mutate({ id: b.id, nombre: editNombre.trim(), activo: b.activo });
                           if (e.key === 'Escape') cancel();
                         }}
                         className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </td>
                     <td className="px-4 py-2">
-                      <Badge label={b.activa ? 'activa' : 'inactiva'} />
+                      <Badge label={b.activo ? 'activa' : 'inactiva'} />
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex gap-1 justify-end items-center">
                         <button
-                          onClick={() => updateMut.mutate({ id: b.id, nombre: editNombre.trim() || b.nombre, activa: !b.activa })}
+                          onClick={() => updateMut.mutate({ id: b.id, nombre: editNombre.trim() || b.nombre, activo: !b.activo })}
                           disabled={updateMut.isPending}
                           className="px-2 py-1 text-xs border rounded hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
                         >
-                          {b.activa ? 'Desactivar' : 'Activar'}
+                          {b.activo ? 'Desactivar' : 'Activar'}
                         </button>
                         <button
-                          onClick={() => { if (editNombre.trim()) updateMut.mutate({ id: b.id, nombre: editNombre.trim(), activa: b.activa }); }}
+                          onClick={() => { if (editNombre.trim()) updateMut.mutate({ id: b.id, nombre: editNombre.trim(), activo: b.activo }); }}
                           disabled={!editNombre.trim() || updateMut.isPending}
                           className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                         >
@@ -119,7 +119,7 @@ export function BandasTab() {
                     className="hover:bg-blue-50 cursor-pointer transition-colors"
                   >
                     <td className="px-4 py-3 font-medium text-gray-900">{b.nombre}</td>
-                    <td className="px-4 py-3"><Badge label={b.activa ? 'activa' : 'inactiva'} /></td>
+                    <td className="px-4 py-3"><Badge label={b.activo ? 'activa' : 'inactiva'} /></td>
                     <td className="px-4 py-3 text-right text-gray-300 text-xs">editar</td>
                   </tr>
                 )

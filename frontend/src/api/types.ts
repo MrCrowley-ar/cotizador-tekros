@@ -43,7 +43,7 @@ export interface Banda {
   id: number;
   cultivoId: number;
   nombre: string;
-  activa: boolean;
+  activo: boolean;
 }
 
 // ─── Precios ──────────────────────────────────────────────────────────────────

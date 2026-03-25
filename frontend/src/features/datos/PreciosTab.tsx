@@ -17,6 +17,9 @@ function CultivoTable({ cultivo }: { cultivo: Cultivo }) {
   const [addingBanda, setAddingBanda] = useState(false);
   const [newBandaNombre, setNewBandaNombre] = useState('');
 
+  // Renombrar banda
+  const [editBanda, setEditBanda] = useState<{ id: number; nombre: string } | null>(null);
+
   const { data: hibridos = [] } = useQuery({
     queryKey: ['hibridos', cultivo.id],
     queryFn: () => productosApi.getHibridos(cultivo.id, false),
@@ -43,7 +46,7 @@ function CultivoTable({ cultivo }: { cultivo: Cultivo }) {
         fecha: new Date().toISOString().split('T')[0],
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['precios-matriz', cultivo.id] });
+      qc.refetchQueries({ queryKey: ['precios-matriz', cultivo.id] });
       setEditCell(null);
     },
   });
@@ -52,9 +55,26 @@ function CultivoTable({ cultivo }: { cultivo: Cultivo }) {
     mutationFn: () =>
       productosApi.createBanda({ cultivoId: cultivo.id, nombre: newBandaNombre.trim() }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bandas', cultivo.id] });
+      qc.refetchQueries({ queryKey: ['bandas', cultivo.id] });
       setNewBandaNombre('');
       setAddingBanda(false);
+    },
+  });
+
+  const renameBandaMut = useMutation({
+    mutationFn: ({ id, nombre }: { id: number; nombre: string }) =>
+      productosApi.updateBanda(id, { nombre }),
+    onSuccess: () => {
+      qc.refetchQueries({ queryKey: ['bandas', cultivo.id] });
+      setEditBanda(null);
+    },
+  });
+
+  const deleteBandaMut = useMutation({
+    mutationFn: (id: number) => productosApi.updateBanda(id, { activo: false }),
+    onSuccess: () => {
+      qc.refetchQueries({ queryKey: ['bandas', cultivo.id] });
+      qc.refetchQueries({ queryKey: ['precios-matriz', cultivo.id] });
     },
   });
 
@@ -104,9 +124,57 @@ function CultivoTable({ cultivo }: { cultivo: Cultivo }) {
               {bandas.map((b) => (
                 <th
                   key={b.id}
-                  className="text-center px-4 py-3 border-b border-r border-gray-200 whitespace-nowrap font-medium"
+                  className="text-center px-4 py-3 border-b border-r border-gray-200 whitespace-nowrap font-medium group"
                 >
-                  {b.nombre}
+                  {editBanda?.id === b.id ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        autoFocus
+                        value={editBanda.nombre}
+                        onChange={(e) => setEditBanda({ id: b.id, nombre: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && editBanda.nombre.trim())
+                            renameBandaMut.mutate({ id: b.id, nombre: editBanda.nombre.trim() });
+                          if (e.key === 'Escape') setEditBanda(null);
+                        }}
+                        className="border rounded px-2 py-0.5 text-xs w-24 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <button
+                        onClick={() => { if (editBanda.nombre.trim()) renameBandaMut.mutate({ id: b.id, nombre: editBanda.nombre.trim() }); }}
+                        disabled={!editBanda.nombre.trim() || renameBandaMut.isPending}
+                        className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {renameBandaMut.isPending ? '…' : '✓'}
+                      </button>
+                      <button
+                        onClick={() => setEditBanda(null)}
+                        className="px-1 py-0.5 text-xs text-gray-400 hover:text-gray-700"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-1">
+                      <span
+                        className="cursor-pointer hover:text-blue-600"
+                        title="Doble clic para renombrar"
+                        onDoubleClick={() => setEditBanda({ id: b.id, nombre: b.nombre })}
+                      >
+                        {b.nombre}
+                      </span>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`¿Eliminar la banda "${b.nombre}"? Los precios registrados se conservarán.`))
+                            deleteBandaMut.mutate(b.id);
+                        }}
+                        disabled={deleteBandaMut.isPending}
+                        className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 text-xs leading-none transition-opacity disabled:opacity-30"
+                        title="Eliminar banda"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
                 </th>
               ))}
               {/* Columna de nueva banda si se está agregando */}

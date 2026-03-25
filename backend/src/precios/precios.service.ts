@@ -58,7 +58,7 @@ export class PreciosService {
        FROM precios p
        INNER JOIN hibridos h ON h.id = p.hibrido_id AND h.cultivo_id = $1
        INNER JOIN bandas   b ON b.id = p.banda_id   AND b.cultivo_id = $1
-       ORDER BY p.hibrido_id, p.banda_id, p.fecha DESC`,
+       ORDER BY p.hibrido_id, p.banda_id, p.fecha DESC, p.id DESC`,
       [cultivoId],
     );
   }

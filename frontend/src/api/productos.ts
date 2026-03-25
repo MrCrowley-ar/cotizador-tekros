@@ -19,6 +19,6 @@ export const productosApi = {
     api.get<Banda[]>(`/cultivos/${cultivoId}/bandas?soloActivas=${soloActivas}`),
   createBanda: (body: { cultivoId: number; nombre: string }) =>
     api.post<Banda>('/bandas', body),
-  updateBanda: (id: number, body: Partial<{ nombre: string; activa: boolean }>) =>
+  updateBanda: (id: number, body: Partial<{ nombre: string; activo: boolean }>) =>
     api.patch<Banda>(`/bandas/${id}`, body),
 };
