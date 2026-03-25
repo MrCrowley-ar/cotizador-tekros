@@ -27,3 +27,6 @@ Thumbs.db
 # Database backups — keep the directory but not the actual dumps
 backups/*.sql
 backups/*.sql.gz
+
+# Seeds locales (no subir al repo)
+backend/src/database/seeds/
