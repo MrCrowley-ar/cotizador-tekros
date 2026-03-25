@@ -71,7 +71,7 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, extr
         bolsas: Number(bolsas),
       }),
     onSuccess: () => {
-      qc.refetchQueries({ queryKey: ['version', cotizacionId] });
+      qc.refetchQueries({ queryKey: ['version', cotizacionId, versionId] });
       onDone();
     },
     onError: (e: any) => setError(e.message),
@@ -137,20 +137,24 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
 }) {
   const qc = useQueryClient();
 
+  const [deleteError, setDeleteError] = useState('');
+
   const deleteMut = useMutation({
     mutationFn: () => cotizacionesApi.deleteItem(cotizacionId, version.id, item.id),
     onSuccess: () => {
-      qc.refetchQueries({ queryKey: ['version', cotizacionId] });
-      qc.refetchQueries({ queryKey: ['total', cotizacionId] });
+      qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
+      qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
     },
+    onError: (e: any) => setDeleteError(e.message),
   });
   const deleteDiscMut = useMutation({
     mutationFn: (discId: number) =>
       cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, discId),
     onSuccess: () => {
-      qc.refetchQueries({ queryKey: ['version', cotizacionId] });
-      qc.refetchQueries({ queryKey: ['total', cotizacionId] });
+      qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
+      qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
     },
+    onError: (e: any) => setDeleteError(e.message),
   });
 
   const fmt = (n: number) =>
@@ -194,9 +198,10 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
         );
       })()}
       <td className="px-4 py-2">
+        {deleteError && <span className="text-xs text-red-600 block mb-1">{deleteError}</span>}
         {isEditable && (
           <button
-            onClick={() => deleteMut.mutate()}
+            onClick={() => { setDeleteError(''); deleteMut.mutate(); }}
             disabled={deleteMut.isPending}
             className="text-gray-400 hover:text-red-500 transition-colors text-lg leading-none"
           >
@@ -219,6 +224,7 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
   const qc = useQueryClient();
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [noAplicaId, setNoAplicaId] = useState<number | null>(null);
+  const [descError, setDescError] = useState('');
 
   const { data: allDescuentos = [] } = useQuery({
     queryKey: ['descuentos', 'activos'],
@@ -239,8 +245,8 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
     return null;
   }
   function invalidate() {
-    qc.refetchQueries({ queryKey: ['version', cotizacionId] });
-    qc.refetchQueries({ queryKey: ['total', cotizacionId] });
+    qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
+    qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
   }
   function showNoAplica(id: number) {
     setNoAplicaId(id);
@@ -292,6 +298,7 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
 
   async function removeDescuento(desc: Descuento) {
     markPending(desc.id, true);
+    setDescError('');
     try {
       await Promise.all(
         items.flatMap((item) => {
@@ -301,6 +308,8 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
         })
       );
       invalidate();
+    } catch (e: any) {
+      setDescError(e.message ?? 'Error al quitar descuento');
     } finally {
       markPending(desc.id, false);
     }
@@ -315,6 +324,7 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
   return (
     <div className="px-4 py-3 border-t bg-gray-50/50">
       <p className="text-xs font-medium text-gray-500 mb-2">Descuentos</p>
+      {descError && <p className="text-xs text-red-600 mb-2">{descError}</p>}
       <div className="flex flex-wrap gap-2">
         {descuentos.map((desc) => {
           const applied = isApplied(desc);
@@ -569,8 +579,8 @@ function DescuentosPanel({ cotizacionId, version, isEditable }: {
     return version.descuentos.find((d) => d.descuentoId === desc.id)?.valorPorcentaje ?? null;
   }
   function invalidate() {
-    qc.refetchQueries({ queryKey: ['version', cotizacionId] });
-    qc.refetchQueries({ queryKey: ['total', cotizacionId] });
+    qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
+    qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
   }
   function showNoAplica(id: number) {
     setNoAplicaId(id);
