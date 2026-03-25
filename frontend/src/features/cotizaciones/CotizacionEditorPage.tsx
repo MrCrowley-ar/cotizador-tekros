@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cotizacionesApi } from '../../api/cotizaciones';
@@ -12,8 +12,9 @@ import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../.
 
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCols }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
+  discountCols: Array<{ id: number; nombre: string }>;
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -74,10 +75,10 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone }: {
       </td>
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
+      {discountCols.map((col) => <td key={col.id} />)}
+      {discountCols.length > 0 && <td />}
       <td className="px-3 py-2">
-        {error && <span className="text-xs text-red-600">{error}</span>}
-      </td>
-      <td className="px-3 py-2">
+        {error && <span className="text-xs text-red-600 block mb-1">{error}</span>}
         <div className="flex gap-2">
           <button
             onClick={() => addMut.mutate()}
@@ -97,11 +98,12 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone }: {
 
 // ─── Item Row ─────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, cotizacionId, version, isEditable }: {
+function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
   item: CotizacionItem;
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
+  discountCols: Array<{ id: number; nombre: string }>;
 }) {
   const qc = useQueryClient();
 
@@ -126,19 +128,31 @@ function ItemRow({ item, cotizacionId, version, isEditable }: {
       <td className="px-4 py-2 text-sm text-gray-700">{item.banda?.nombre ?? item.bandaId}</td>
       <td className="px-4 py-2 text-sm text-right text-gray-700">{fmt(Number(item.bolsas))}</td>
       <td className="px-4 py-2 text-sm text-right text-gray-700">${fmt(Number(item.precioBase))}</td>
-      <td className="px-4 py-2 text-sm text-right font-medium text-gray-900">${fmt(Number(item.subtotal))}</td>
-      <td className="px-4 py-2 text-sm">
-        <div className="flex flex-wrap gap-1">
-          {item.descuentos.map((d) => (
-            <span key={d.id} className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 text-xs px-1.5 py-0.5 rounded">
-              -{d.valorPorcentaje}%
-              {isEditable && (
-                <button onClick={() => deleteDiscMut.mutate(d.id)} className="hover:text-red-600 leading-none">×</button>
-              )}
-            </span>
-          ))}
-        </div>
-      </td>
+      <td className="px-4 py-2 text-sm text-right font-medium text-gray-700">${fmt(Number(item.subtotal))}</td>
+      {discountCols.map((col) => {
+        const applied = item.descuentos.find((d) => d.descuentoId === col.id);
+        return (
+          <td key={col.id} className="px-4 py-2 text-sm text-right">
+            {applied ? (
+              <span className="inline-flex items-center gap-1 text-orange-600 text-xs font-medium">
+                −{applied.valorPorcentaje}%
+                {isEditable && (
+                  <button onClick={() => deleteDiscMut.mutate(applied.id)} className="hover:text-red-600 leading-none ml-0.5">×</button>
+                )}
+              </span>
+            ) : (
+              <span className="text-gray-300 text-xs">—</span>
+            )}
+          </td>
+        );
+      })}
+      {discountCols.length > 0 && (() => {
+        let total = Number(item.subtotal);
+        for (const d of item.descuentos) total *= (1 - d.valorPorcentaje / 100);
+        return (
+          <td className="px-4 py-2 text-sm text-right font-semibold text-gray-900">${fmt(total)}</td>
+        );
+      })()}
       <td className="px-4 py-2">
         {isEditable && (
           <button
@@ -165,6 +179,23 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
 }) {
   const [showNewItem, setShowNewItem] = useState(false);
 
+  const uniqueDiscounts = useMemo(() => {
+    const map = new Map<number, { id: number; nombre: string }>();
+    for (const item of items) {
+      for (const d of item.descuentos) {
+        if (!map.has(d.descuentoId)) {
+          map.set(d.descuentoId, {
+            id: d.descuentoId,
+            nombre: d.descuento?.nombre ?? `Desc. ${d.descuentoId}`,
+          });
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [items]);
+
+  const totalCols = 6 + uniqueDiscounts.length + (uniqueDiscounts.length > 0 ? 1 : 0);
+
   return (
     <div className="bg-white rounded-xl border overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
@@ -186,7 +217,14 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
             <th className="text-right px-4 py-2">Bolsas</th>
             <th className="text-right px-4 py-2">P. Base</th>
             <th className="text-right px-4 py-2">Subtotal</th>
-            <th className="text-left px-4 py-2">Descuentos</th>
+            {uniqueDiscounts.map((d) => (
+              <th key={d.id} className="text-right px-4 py-2 text-orange-500 font-medium normal-case tracking-normal whitespace-nowrap">
+                {d.nombre}
+              </th>
+            ))}
+            {uniqueDiscounts.length > 0 && (
+              <th className="text-right px-4 py-2 text-gray-700">Total</th>
+            )}
             <th className="px-4 py-2 w-8"></th>
           </tr>
         </thead>
@@ -198,6 +236,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
               cotizacionId={cotizacionId}
               version={version}
               isEditable={isEditable}
+              discountCols={uniqueDiscounts}
             />
           ))}
           {showNewItem && (
@@ -206,11 +245,12 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
               versionId={version.id}
               cultivoId={cultivo.id}
               onDone={() => setShowNewItem(false)}
+              discountCols={uniqueDiscounts}
             />
           )}
           {!showNewItem && items.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-4 py-5 text-center text-gray-400 text-xs">
+              <td colSpan={totalCols} className="px-4 py-5 text-center text-gray-400 text-xs">
                 Sin ítems. {isEditable && 'Hacé clic en "+ Agregar ítem" para comenzar.'}
               </td>
             </tr>
