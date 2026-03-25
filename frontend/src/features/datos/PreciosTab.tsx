@@ -26,7 +26,7 @@ function CultivoTable({ cultivo }: { cultivo: Cultivo }) {
   });
   const { data: bandas = [] } = useQuery({
     queryKey: ['bandas', cultivo.id],
-    queryFn: () => productosApi.getBandas(cultivo.id, false),
+    queryFn: () => productosApi.getBandas(cultivo.id, true),
   });
   const { data: matriz = [], isLoading: loadingMatriz } = useQuery({
     queryKey: ['precios-matriz', cultivo.id],
