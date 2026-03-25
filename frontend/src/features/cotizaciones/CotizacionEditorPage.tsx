@@ -172,7 +172,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
                 −{applied.valorPorcentaje}%
                 {isEditable && (
                   <button
-                    onClick={() => deleteDiscMut.mutate(applied.descuentoId)}
+                    onClick={() => deleteDiscMut.mutate(applied.id)}
                     disabled={deleteDiscMut.isPending}
                     className="hover:text-red-600 leading-none ml-0.5 disabled:opacity-50"
                   >
@@ -294,11 +294,11 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
     markPending(desc.id, true);
     try {
       await Promise.all(
-        items
-          .filter((item) => item.descuentos.some((d) => d.descuentoId === desc.id))
-          .map((item) =>
-            cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, desc.id)
-          )
+        items.flatMap((item) => {
+          const itemDesc = item.descuentos.find((d) => d.descuentoId === desc.id);
+          if (!itemDesc) return [];
+          return [cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, itemDesc.id)];
+        })
       );
       invalidate();
     } finally {
