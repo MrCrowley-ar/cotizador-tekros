@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -109,6 +110,7 @@ export class CotizacionesController {
   }
 
   @Delete(':id/versiones/:versionId/items/:itemId/descuentos/:did')
+  @HttpCode(204)
   eliminarDescuentoItem(
     @Param('itemId', ParseIntPipe) itemId: number,
     @Param('did', ParseIntPipe) did: number,
@@ -130,6 +132,7 @@ export class CotizacionesController {
 
   @Delete(':id/versiones/:versionId/descuentos/:did')
   @Roles(RolUsuario.ADMIN)
+  @HttpCode(204)
   eliminarDescuentoGlobal(
     @Param('versionId', ParseIntPipe) versionId: number,
     @Param('did', ParseIntPipe) did: number,
