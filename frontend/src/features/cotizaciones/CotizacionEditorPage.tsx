@@ -265,7 +265,7 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
           items.map((item) =>
             cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
               descuentoId: desc.id,
-              porcentaje: desc.valorPorcentaje,
+              porcentaje: Number(desc.valorPorcentaje),
             })
           )
         );
@@ -620,7 +620,7 @@ function DescuentosPanel({ cotizacionId, version, isEditable }: {
       if (desc.modo === 'basico') {
         await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
           descuentoId: desc.id,
-          porcentaje: desc.valorPorcentaje,
+          porcentaje: Number(desc.valorPorcentaje),
         });
       } else {
         const results = await descuentosApi.evaluar({ tipoAplicacion: 'global' });

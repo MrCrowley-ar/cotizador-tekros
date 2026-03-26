@@ -76,6 +76,18 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   );
   const [alcance, setAlcance] = useState<Alcance>(initial ? inferirAlcance(initial) : 'hibrido');
 
+  // Por cultivo: { cultivoId → porcentaje string }
+  const [pctPorCultivo, setPctPorCultivo] = useState<Record<number, string>>(() => {
+    if (!initial || inferirAlcance(initial) !== 'cultivo') return {};
+    if (initial.modo !== 'avanzado' || esCondicional(initial)) return {};
+    const map: Record<number, string> = {};
+    (initial.reglas ?? []).forEach((r) => {
+      const cond = r.condiciones?.find((c) => c.campo === 'cultivo_id');
+      if (cond) map[cond.valor] = String(r.valor);
+    });
+    return map;
+  });
+
   // Personalizado: IDs de híbridos seleccionados
   const [hibridosSelec, setHibridosSelec] = useState<Set<number>>(() => {
     if (!initial || inferirAlcance(initial) !== 'personalizado') return new Set();
@@ -103,11 +115,11 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
 
   const [error, setError] = useState('');
 
-  // Híbridos por cultivo (para Personalizado)
+  // Cultivos (para "Por cultivo" y "Personalizado")
   const { data: cultivos = [] } = useQuery({
     queryKey: ['cultivos'],
     queryFn: () => productosApi.getCultivos(true),
-    enabled: alcance === 'personalizado',
+    enabled: alcance === 'personalizado' || alcance === 'cultivo',
   });
   const hibridosPorCultivo = useQuery({
     queryKey: ['hibridos-todos'],
@@ -141,7 +153,23 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
-      // Sin condicional: basico
+      // Cultivo sin condicional: avanzado con reglas por cultivo (una regla por cultivo con %)
+      if (alcance === 'cultivo' && !condicional) {
+        const reglas = cultivos
+          .filter((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0)
+          .map((c, i) => ({
+            valor: Number(pctPorCultivo[c.id]),
+            prioridad: i + 1,
+            condiciones: [{ campo: 'cultivo_id' as const, operador: '=' as const, valor: c.id }],
+          }));
+        const payload = {
+          nombre, tipoAplicacion: 'cultivo' as const,
+          modo: 'avanzado' as const, fechaVigencia, reglas,
+        };
+        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
+      }
+
+      // Sin condicional (híbrido): basico
       if (!condicional) {
         const payload = {
           nombre, tipoAplicacion,
@@ -183,6 +211,8 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   const canSave = (() => {
     if (!nombre.trim() || !fechaVigencia) return false;
     if (alcance === 'personalizado') return hibridosSelec.size > 0 && porcentaje !== '';
+    if (alcance === 'cultivo' && !condicional)
+      return cultivos.some((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0);
     if (!condicional) return porcentaje !== '' && Number(porcentaje) >= 0;
     return tramos.some((t) => t.pct !== '' && Number(t.pct) >= 0);
   })();
@@ -218,8 +248,8 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           </div>
         </div>
 
-        {/* Porcentaje — se muestra siempre excepto en condicional */}
-        {(alcance !== 'personalizado' && !condicional) || alcance === 'personalizado' ? (
+        {/* Porcentaje — para híbrido sin condicional y personalizado */}
+        {(alcance === 'hibrido' && !condicional) || alcance === 'personalizado' ? (
           <div>
             <label className={labelCls}>
               {alcance === 'personalizado' ? 'Porcentaje para los híbridos seleccionados' : 'Porcentaje de descuento'}
@@ -239,6 +269,40 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
             </div>
           </div>
         ) : null}
+
+        {/* Por cultivo sin condicional: inputs individuales por cultivo */}
+        {alcance === 'cultivo' && !condicional && (
+          <div>
+            <label className={labelCls}>Porcentaje por cultivo</label>
+            <p className="text-xs text-gray-400 mb-2">
+              Dejá en 0 o vacío los cultivos sin descuento (se visualizan con "−").
+            </p>
+            {cultivos.length === 0 ? (
+              <div className="flex justify-center py-4"><Spinner /></div>
+            ) : (
+              <div className="space-y-2">
+                {cultivos.map((c) => (
+                  <div key={c.id} className="flex items-center gap-3">
+                    <span className="text-sm text-gray-700 w-28 shrink-0">{c.nombre}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.01}
+                      value={pctPorCultivo[c.id] ?? ''}
+                      onChange={(e) =>
+                        setPctPorCultivo((prev) => ({ ...prev, [c.id]: e.target.value }))
+                      }
+                      placeholder="0"
+                      className={`${inputCls} w-24 text-right`}
+                    />
+                    <span className="text-sm text-gray-500">%</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <hr className="border-gray-100" />
 
@@ -523,6 +587,24 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           <div className="bg-blue-50 rounded-lg p-3 text-sm flex items-center gap-2">
             <span className="text-gray-600">Porcentaje fijo:</span>
             <span className="font-bold text-blue-700 text-lg">{descuento.valorPorcentaje}%</span>
+          </div>
+        )}
+
+        {alcance === 'cultivo' && !cond && descuento.modo === 'avanzado' && (
+          <div className="text-sm">
+            <div className="font-medium text-gray-700 mb-2">Porcentaje por cultivo:</div>
+            <div className="space-y-1">
+              {(descuento.reglas ?? []).map((r) => (
+                <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
+                  <span className="text-gray-600">
+                    {r.condiciones?.[0]?.campo === 'cultivo_id'
+                      ? `Cultivo #${r.condiciones[0].valor}`
+                      : `Regla #${r.prioridad}`}
+                  </span>
+                  <span className="font-semibold text-blue-700">{r.valor}%</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
