@@ -12,7 +12,11 @@ import type { Descuento, Hibrido, TipoAplicacion } from '../../api/types';
 type Alcance = 'cultivo' | 'hibrido' | 'personalizado';
 type CampoCond = 'cantidad' | 'precio' | 'subtotal';
 
-interface Tramo { desde: number; hasta: number | null; pct: string }
+// Conditional block: "SI campo >= desde → aplicar pct%"
+interface Tramo { id: string; desde: string; pct: string }
+
+let _tramoCtr = 0;
+function newTramoId() { return `t${++_tramoCtr}`; }
 
 // ─── Inferir alcance para display ────────────────────────────────────────────
 
@@ -101,16 +105,26 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   // Condicional
   const [condicional, setCondicional] = useState(initial ? esCondicional(initial) : false);
   const [campo, setCampo] = useState<CampoCond>(initial ? inferirCampo(initial) : 'cantidad');
+
+  // Build tramos + pctDefault from existing reglas
   const [tramos, setTramos] = useState<Tramo[]>(() => {
-    if (!initial || !esCondicional(initial)) return [{ desde: 0, hasta: null, pct: '' }];
+    if (!initial || !esCondicional(initial)) return [];
     return [...(initial.reglas ?? [])]
-      .sort((a, b) => a.prioridad - b.prioridad)
+      .sort((a, b) => b.prioridad - a.prioridad) // highest priority (threshold) first
       .map((r) => {
-        const conds = r.condiciones ?? [];
-        const gteC = conds.find((c) => c.operador === '>=' || c.operador === '>');
-        const lteC = conds.find((c) => c.operador === '<=' || c.operador === '<');
-        return { desde: gteC?.valor ?? 0, hasta: lteC?.valor ?? null, pct: String(r.valor) };
-      });
+        const gteC = r.condiciones?.find((c) => c.operador === '>=' || c.operador === '>');
+        return { id: newTramoId(), desde: String(gteC?.valor ?? 0), pct: String(r.valor) };
+      })
+      .filter((t) => t.desde !== '0'); // desde=0 becomes pctDefault
+  });
+
+  const [pctDefault, setPctDefault] = useState(() => {
+    if (!initial || !esCondicional(initial)) return '';
+    const defaultRegla = (initial.reglas ?? []).find((r) => {
+      const gteC = r.condiciones?.find((c) => c.operador === '>=' || c.operador === '>');
+      return !gteC || gteC.valor === 0;
+    });
+    return defaultRegla ? String(defaultRegla.valor) : '';
   });
 
   const [error, setError] = useState('');
@@ -180,21 +194,27 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
-      // Condicional: avanzado con tramos
+      // Condicional: avanzado con tramos visuales
       const tramosValidos = [...tramos]
-        .filter((t) => t.pct !== '' && Number(t.pct) >= 0)
-        .sort((a, b) => b.desde - a.desde);
+        .filter((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '')
+        .sort((a, b) => Number(b.desde) - Number(a.desde)); // highest threshold = highest priority
 
-      const reglas = tramosValidos.map((t, i) => ({
-        valor: Number(t.pct),
-        prioridad: i + 1,
-        condiciones: t.hasta == null
-          ? [{ campo: campo as const, operador: '>=' as const, valor: t.desde }]
-          : [
-              { campo: campo as const, operador: '>=' as const, valor: t.desde },
-              { campo: campo as const, operador: '<=' as const, valor: t.hasta },
-            ],
-      }));
+      type CondOp = '>=' | '<=';
+      const reglas = [
+        ...tramosValidos.map((t, i) => ({
+          valor: Number(t.pct),
+          prioridad: tramosValidos.length + 1 - i,
+          condiciones: [{ campo, operador: '>=' as CondOp, valor: Number(t.desde) }],
+        })),
+        // Default catch-all (lowest priority, matches everything via campo >= 0)
+        ...(pctDefault !== ''
+          ? [{
+              valor: Number(pctDefault),
+              prioridad: 1,
+              condiciones: [{ campo, operador: '>=' as CondOp, valor: 0 }],
+            }]
+          : []),
+      ];
 
       const payload = {
         nombre, tipoAplicacion,
@@ -214,7 +234,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     if (alcance === 'cultivo' && !condicional)
       return cultivos.some((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0);
     if (!condicional) return porcentaje !== '' && Number(porcentaje) >= 0;
-    return tramos.some((t) => t.pct !== '' && Number(t.pct) >= 0);
+    return pctDefault !== '' || tramos.some((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '');
   })();
 
   const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
@@ -372,99 +392,119 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           <>
             <hr className="border-gray-100" />
             <div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer font-medium text-gray-700">
+              <label className="flex items-center gap-2 text-sm cursor-pointer font-medium text-gray-700 select-none">
                 <input
                   type="checkbox"
                   checked={condicional}
                   onChange={(e) => setCondicional(e.target.checked)}
+                  className="rounded"
                 />
-                ¿Es condicional? (varía según un valor de referencia)
+                ¿Varía según una condición?
               </label>
+              {!condicional && (
+                <p className="text-xs text-gray-400 mt-1 ml-5">
+                  Activá esto para aplicar distintos porcentajes según bolsas, precio u otras variables.
+                </p>
+              )}
             </div>
 
             {condicional && (
-              <div className="space-y-4 pl-1">
-                <div>
-                  <label className={labelCls}>Valor de referencia</label>
-                  <select
-                    value={campo}
-                    onChange={(e) => setCampo(e.target.value as CampoCond)}
-                    className={`${inputCls} w-48`}
-                  >
+              <div className="space-y-3">
+                {/* Reference field selector */}
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-medium text-gray-600 shrink-0">Comparar por</span>
+                  <div className="flex gap-2">
                     {(Object.entries(CAMPO_LABEL) as [CampoCond, string][]).map(([v, l]) => (
-                      <option key={v} value={v}>{l}</option>
+                      <button
+                        key={v}
+                        onClick={() => setCampo(v)}
+                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                          campo === v
+                            ? 'bg-blue-600 border-blue-600 text-white font-medium'
+                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        {l}
+                      </button>
                     ))}
-                  </select>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Se aplica el primer tramo que coincida (de mayor a menor umbral).
-                  </p>
+                  </div>
                 </div>
 
-                <div>
-                  <label className={labelCls}>Tramos</label>
-                  <div className="space-y-2">
-                    {tramos.map((t, i) => (
-                      <div key={i} className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-gray-500 w-10 text-right shrink-0">desde</span>
+                {/* Visual condition blocks */}
+                <div className="space-y-2">
+                  {/* Conditional tramos — sorted highest threshold first for display */}
+                  {[...tramos]
+                    .sort((a, b) => Number(b.desde) - Number(a.desde))
+                    .map((t) => (
+                      <div key={t.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5 group">
+                        <span className="text-xs font-semibold text-blue-700 shrink-0 w-4">SI</span>
+                        <span className="text-xs text-gray-500 shrink-0">{CAMPO_LABEL[campo]}</span>
+                        <span className="text-xs font-mono text-blue-500 shrink-0">≥</span>
                         <input
                           type="number"
-                          min={0}
+                          min={1}
+                          step={1}
                           value={t.desde}
-                          onChange={(e) => {
-                            const next = [...tramos];
-                            next[i] = { ...next[i], desde: Number(e.target.value) };
-                            setTramos(next);
-                          }}
-                          className={`${inputCls} w-24 text-right`}
-                          placeholder="0"
+                          onChange={(e) =>
+                            setTramos((prev) =>
+                              prev.map((x) => x.id === t.id ? { ...x, desde: e.target.value } : x)
+                            )
+                          }
+                          className="w-20 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="umbral"
                         />
-                        <span className="text-xs text-gray-500">hasta</span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={t.hasta ?? ''}
-                          onChange={(e) => {
-                            const next = [...tramos];
-                            next[i] = { ...next[i], hasta: e.target.value === '' ? null : Number(e.target.value) };
-                            setTramos(next);
-                          }}
-                          className={`${inputCls} w-24 text-right`}
-                          placeholder="sin límite"
-                        />
-                        <span className="text-gray-300">→</span>
+                        <span className="text-xs text-gray-400 mx-0.5">→</span>
+                        <span className="text-xs text-gray-500 shrink-0">aplicar</span>
                         <input
                           type="number"
                           min={0}
                           max={100}
                           step={0.01}
                           value={t.pct}
-                          onChange={(e) => {
-                            const next = [...tramos];
-                            next[i] = { ...next[i], pct: e.target.value };
-                            setTramos(next);
-                          }}
-                          className={`${inputCls} w-20 text-right`}
+                          onChange={(e) =>
+                            setTramos((prev) =>
+                              prev.map((x) => x.id === t.id ? { ...x, pct: e.target.value } : x)
+                            )
+                          }
+                          className="w-16 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                           placeholder="0"
                         />
                         <span className="text-xs text-gray-500">%</span>
-                        {tramos.length > 1 && (
-                          <button
-                            onClick={() => setTramos(tramos.filter((_, j) => j !== i))}
-                            className="text-red-400 hover:text-red-600 text-lg leading-none px-1"
-                          >
-                            ×
-                          </button>
-                        )}
+                        <button
+                          onClick={() => setTramos((prev) => prev.filter((x) => x.id !== t.id))}
+                          className="ml-auto text-gray-300 hover:text-red-500 text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Quitar condición"
+                        >
+                          ×
+                        </button>
                       </div>
                     ))}
+
+                  {/* Default catch-all block — always shown */}
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+                    <span className="text-xs font-semibold text-amber-700 shrink-0">EN LOS DEMÁS CASOS</span>
+                    <span className="text-xs text-gray-400 mx-0.5">→</span>
+                    <span className="text-xs text-gray-500 shrink-0">aplicar</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.01}
+                      value={pctDefault}
+                      onChange={(e) => setPctDefault(e.target.value)}
+                      className="w-16 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                      placeholder="0"
+                    />
+                    <span className="text-xs text-gray-500">%</span>
                   </div>
-                  <button
-                    onClick={() => setTramos([...tramos, { desde: 0, hasta: null, pct: '' }])}
-                    className="mt-3 text-sm text-blue-600 hover:text-blue-800 hover:underline"
-                  >
-                    + Agregar tramo
-                  </button>
                 </div>
+
+                <button
+                  onClick={() => setTramos((prev) => [...prev, { id: newTramoId(), desde: '', pct: '' }])}
+                  className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  + Agregar condición
+                </button>
               </div>
             )}
           </>

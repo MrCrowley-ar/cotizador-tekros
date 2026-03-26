@@ -43,9 +43,10 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
 
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
   discountCount: number;
+  activeDescuentos: Descuento[];
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -63,13 +64,46 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
   });
 
   const addMut = useMutation({
-    mutationFn: () =>
-      cotizacionesApi.addItem(cotizacionId, versionId, {
+    mutationFn: async () => {
+      const newItem = await cotizacionesApi.addItem(cotizacionId, versionId, {
         cultivoId,
         hibridoId: Number(hibridoId),
         bandaId: Number(bandaId),
         bolsas: Number(bolsas),
-      }),
+      });
+
+      // Auto-apply active discounts to the new item
+      for (const desc of activeDescuentos) {
+        try {
+          if (desc.modo === 'basico') {
+            await cotizacionesApi.applyItemDescuento(cotizacionId, versionId, newItem.id, {
+              descuentoId: desc.id,
+              porcentaje: Number(desc.valorPorcentaje),
+            });
+          } else {
+            const results = await descuentosApi.evaluar({
+              tipoAplicacion: desc.tipoAplicacion as 'global',
+              cultivoId,
+              hibridoId: Number(hibridoId),
+              bandaId: Number(bandaId),
+              cantidad: Number(bolsas),
+              // precio/subtotal not available for new item before price calculation
+            });
+            const match = results.find((r) => r.descuentoId === desc.id);
+            if (match) {
+              await cotizacionesApi.applyItemDescuento(cotizacionId, versionId, newItem.id, {
+                descuentoId: desc.id,
+                porcentaje: match.porcentaje,
+              });
+            }
+          }
+        } catch {
+          // Skip if discount doesn't apply to this item
+        }
+      }
+
+      return newItem;
+    },
     onSuccess: () => {
       qc.refetchQueries({ queryKey: ['version', cotizacionId, versionId] });
       onDone();
@@ -104,11 +138,8 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
           className={`${sel} w-24`}
         />
       </td>
-      {/* P. Base placeholder */}
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
-      {/* Discount columns placeholders */}
       {Array.from({ length: discountCount }).map((_, i) => <td key={i} />)}
-      {/* Subtotal placeholder */}
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
       <td className="px-3 py-2">
         {error && <span className="text-xs text-red-600 block mb-1">{error}</span>}
@@ -131,12 +162,12 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
 
 // ─── Item Row ─────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, cotizacionId, version, isEditable, allDescuentos }: {
+function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: {
   item: CotizacionItem;
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
-  allDescuentos: Descuento[];
+  activeDescuentos: Descuento[];
 }) {
   const qc = useQueryClient();
   const [deleteError, setDeleteError] = useState('');
@@ -154,8 +185,8 @@ function ItemRow({ item, cotizacionId, version, isEditable, allDescuentos }: {
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Subtotal = bruto × all applied discount multipliers
-  const bruto = Number(item.subtotal); // precioBase × bolsas
-  const subtotal = allDescuentos.reduce((acc, d) => {
+  const bruto = Number(item.subtotal);
+  const subtotal = activeDescuentos.reduce((acc, d) => {
     const applied = item.descuentos.find((x) => x.descuentoId === d.id);
     if (!applied) return acc;
     return acc * (1 - Number(applied.valorPorcentaje) / 100);
@@ -167,7 +198,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, allDescuentos }: {
       <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{item.banda?.nombre ?? item.bandaId}</td>
       <td className="px-4 py-2 text-sm text-right text-gray-700">{fmt(Number(item.bolsas))}</td>
       <td className="px-4 py-2 text-sm text-right text-gray-500 whitespace-nowrap">${fmt(Number(item.precioBase))}</td>
-      {allDescuentos.map((d) => {
+      {activeDescuentos.map((d) => {
         const applied = item.descuentos.find((x) => x.descuentoId === d.id);
         return (
           <td key={d.id} className="px-4 py-2 text-sm text-right whitespace-nowrap">
@@ -202,123 +233,17 @@ function ItemRow({ item, cotizacionId, version, isEditable, allDescuentos }: {
 
 // ─── Cultivo Section ──────────────────────────────────────────────────────────
 
-function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos }: {
   cultivo: Cultivo;
   items: CotizacionItem[];
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
+  activeDescuentos: Descuento[];
 }) {
-  const qc = useQueryClient();
   const [showNewItem, setShowNewItem] = useState(false);
-  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
-  const [noAplicaIds, setNoAplicaIds] = useState<Set<number>>(new Set());
-  const [descError, setDescError] = useState('');
 
-  const { data: allDescuentos = [] } = useQuery({
-    queryKey: ['descuentos', 'activos'],
-    queryFn: () => descuentosApi.getAll(true),
-  });
-
-  // Only item-level descuentos (not global)
-  const descuentos = useMemo(
-    () => allDescuentos.filter((d) => d.tipoAplicacion !== 'global'),
-    [allDescuentos],
-  );
-
-  function isApplied(desc: Descuento) {
-    return items.some((item) => item.descuentos.some((d) => d.descuentoId === desc.id));
-  }
-
-  function invalidate() {
-    qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
-    qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
-  }
-
-  function markPending(id: number, on: boolean) {
-    setPendingIds((prev) => { const next = new Set(prev); on ? next.add(id) : next.delete(id); return next; });
-  }
-
-  function showNoAplica(id: number) {
-    setNoAplicaIds((prev) => new Set([...prev, id]));
-    setTimeout(() => setNoAplicaIds((prev) => { const next = new Set(prev); next.delete(id); return next; }), 2500);
-  }
-
-  async function applyDescuento(desc: Descuento) {
-    if (items.length === 0) { showNoAplica(desc.id); return; }
-    markPending(desc.id, true);
-    setDescError('');
-    try {
-      if (desc.modo === 'basico') {
-        await Promise.all(
-          items.map((item) =>
-            cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
-              descuentoId: desc.id,
-              porcentaje: Number(desc.valorPorcentaje),
-            })
-          )
-        );
-      } else {
-        const rulesCampos = new Set(
-          (desc.reglas ?? []).flatMap((r) => r.condiciones?.map((c) => c.campo) ?? []),
-        );
-        let applied = false;
-        for (const item of items) {
-          const results = await descuentosApi.evaluar({
-            tipoAplicacion: desc.tipoAplicacion as 'global',
-            cultivoId: item.cultivoId,
-            hibridoId: item.hibridoId,
-            bandaId: item.bandaId,
-            cantidad: Number(item.bolsas),
-            ...(rulesCampos.has('precio')   && { precio:   Number(item.precioBase) }),
-            ...(rulesCampos.has('subtotal') && { subtotal: Number(item.subtotal) }),
-          });
-          const match = results.find((r) => r.descuentoId === desc.id);
-          if (match) {
-            await cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
-              descuentoId: desc.id,
-              porcentaje: match.porcentaje,
-            });
-            applied = true;
-          }
-        }
-        if (!applied) { showNoAplica(desc.id); return; }
-      }
-      invalidate();
-    } catch (e: any) {
-      setDescError(e?.message ?? 'Error al aplicar descuento');
-    } finally {
-      markPending(desc.id, false);
-    }
-  }
-
-  async function removeDescuento(desc: Descuento) {
-    markPending(desc.id, true);
-    setDescError('');
-    try {
-      await Promise.all(
-        items.flatMap((item) => {
-          const found = item.descuentos.find((d) => d.descuentoId === desc.id);
-          if (!found) return [];
-          return [cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, found.descuentoId)];
-        })
-      );
-      invalidate();
-    } catch (e: any) {
-      setDescError(e?.message ?? 'Error al quitar descuento');
-    } finally {
-      markPending(desc.id, false);
-    }
-  }
-
-  async function toggle(desc: Descuento) {
-    if (!isEditable || pendingIds.has(desc.id)) return;
-    if (isApplied(desc)) await removeDescuento(desc);
-    else await applyDescuento(desc);
-  }
-
-  // totalCols: híbrido + banda + bolsas + P.Base + [discs] + subtotal + × = 6 + N
-  const totalCols = 6 + descuentos.length;
+  const totalCols = 6 + activeDescuentos.length;
 
   return (
     <div className="bg-white rounded-xl border overflow-hidden">
@@ -334,10 +259,6 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
         )}
       </div>
 
-      {descError && (
-        <p className="px-4 py-2 text-xs text-red-600 bg-red-50 border-b">{descError}</p>
-      )}
-
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
@@ -346,36 +267,12 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
               <th className="text-left px-4 py-2 whitespace-nowrap">Banda</th>
               <th className="text-right px-4 py-2">Bolsas</th>
               <th className="text-right px-4 py-2 whitespace-nowrap">P. Base</th>
-              {descuentos.map((d) => {
-                const applied = isApplied(d);
-                const pending = pendingIds.has(d.id);
-                const noAplica = noAplicaIds.has(d.id);
-                return (
-                  <th
-                    key={d.id}
-                    className="px-4 py-2 whitespace-nowrap normal-case tracking-normal"
-                  >
-                    <label className={`inline-flex items-center gap-1.5 cursor-pointer select-none font-medium ${applied ? 'text-orange-600' : 'text-gray-500'}`}>
-                      {pending ? (
-                        <Spinner className="w-3 h-3 shrink-0" />
-                      ) : (
-                        <input
-                          type="checkbox"
-                          checked={applied}
-                          disabled={!isEditable}
-                          onChange={() => toggle(d)}
-                          className="rounded text-orange-500 w-3 h-3 disabled:opacity-50 cursor-pointer"
-                        />
-                      )}
-                      <span>{d.nombre}</span>
-                      {noAplica && (
-                        <span className="text-gray-400 font-normal italic text-xs">No aplica</span>
-                      )}
-                    </label>
-                  </th>
-                );
-              })}
-              <th className="text-right px-4 py-2 whitespace-nowrap text-gray-700 font-semibold normal-case tracking-normal">
+              {activeDescuentos.map((d) => (
+                <th key={d.id} className="px-4 py-2 text-right whitespace-nowrap normal-case tracking-normal text-orange-500 font-medium">
+                  {d.nombre}
+                </th>
+              ))}
+              <th className="text-right px-4 py-2 whitespace-nowrap normal-case tracking-normal text-gray-700 font-semibold">
                 Subtotal
               </th>
               <th className="px-4 py-2 w-8"></th>
@@ -389,7 +286,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
                 cotizacionId={cotizacionId}
                 version={version}
                 isEditable={isEditable}
-                allDescuentos={descuentos}
+                activeDescuentos={activeDescuentos}
               />
             ))}
             {showNewItem && (
@@ -398,7 +295,8 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
                 versionId={version.id}
                 cultivoId={cultivo.id}
                 onDone={() => setShowNewItem(false)}
-                discountCount={descuentos.length}
+                discountCount={activeDescuentos.length}
+                activeDescuentos={activeDescuentos}
               />
             )}
             {!showNewItem && items.length === 0 && (
@@ -502,9 +400,63 @@ function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versio
   );
 }
 
-// ─── Descuentos Globales Panel ────────────────────────────────────────────────
+// ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
-function DescuentosPanel({ cotizacionId, version, isEditable }: {
+function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle }: {
+  isEditable: boolean;
+  activeIds: Set<number>;
+  pendingIds: Set<number>;
+  allDescuentos: Descuento[];
+  onToggle: (desc: Descuento) => void;
+}) {
+  const nonGlobal = allDescuentos.filter((d) => d.tipoAplicacion !== 'global');
+  if (nonGlobal.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-xl border p-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos</h3>
+      <div className="space-y-1">
+        {nonGlobal.map((desc) => {
+          const applied = activeIds.has(desc.id);
+          const pending = pendingIds.has(desc.id);
+          return (
+            <label
+              key={desc.id}
+              className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors select-none
+                ${applied ? 'bg-orange-50' : 'hover:bg-gray-50'}
+                ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+            >
+              {pending ? (
+                <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
+              ) : (
+                <input
+                  type="checkbox"
+                  checked={applied}
+                  disabled={!isEditable}
+                  onChange={() => onToggle(desc)}
+                  className="rounded text-orange-500 cursor-pointer"
+                />
+              )}
+              <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                {desc.nombre}
+              </span>
+              {desc.modo === 'basico' && desc.valorPorcentaje != null && (
+                <span className="text-xs text-gray-400">{desc.valorPorcentaje}%</span>
+              )}
+              {desc.modo === 'avanzado' && (
+                <span className="text-xs text-gray-400">{desc.reglas?.length ?? 0} reglas</span>
+              )}
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Global Discounts Panel (right sidebar) ───────────────────────────────────
+
+function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
@@ -584,7 +536,7 @@ function DescuentosPanel({ cotizacionId, version, isEditable }: {
   return (
     <div className="bg-white rounded-xl border p-4">
       <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos globales</h3>
-      <div className="space-y-2">
+      <div className="space-y-1">
         {descuentos.map((desc) => {
           const applied = isApplied(desc);
           const pct = getAppliedPct(desc);
@@ -641,6 +593,10 @@ export function CotizacionEditorPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [rightWidth, setRightWidth] = useState(288);
 
+  // Discount state lifted to page level
+  const [activeDiscountIds, setActiveDiscountIds] = useState<Set<number>>(new Set());
+  const [pendingDiscountIds, setPendingDiscountIds] = useState<Set<number>>(new Set());
+
   const { data: cotizacion, isLoading: loadingCot } = useQuery({
     queryKey: ['cotizacion', cotizacionId],
     queryFn: () => cotizacionesApi.getOne(cotizacionId),
@@ -653,6 +609,10 @@ export function CotizacionEditorPage() {
   const { data: cultivos = [] } = useQuery({
     queryKey: ['cultivos'],
     queryFn: () => productosApi.getCultivos(),
+  });
+  const { data: allDescuentos = [] } = useQuery({
+    queryKey: ['descuentos', 'activos'],
+    queryFn: () => descuentosApi.getAll(true),
   });
 
   useEffect(() => {
@@ -668,11 +628,105 @@ export function CotizacionEditorPage() {
     staleTime: 0,
   });
 
+  // Sync active discounts from version on version change
+  useEffect(() => {
+    if (!version) return;
+    const applied = new Set(
+      (version.items ?? []).flatMap((i) => i.descuentos.map((d) => d.descuentoId))
+    );
+    setActiveDiscountIds(applied);
+  }, [version?.id]); // only on version switch, not every refetch
+
   useEffect(() => {
     if (selectedVersionId) {
       qc.refetchQueries({ queryKey: ['total', cotizacionId, selectedVersionId] });
     }
   }, [version, selectedVersionId, cotizacionId, qc]);
+
+  // Active discounts as full objects (for passing to CultivoSection)
+  const activeDescuentos = useMemo(
+    () => allDescuentos.filter((d) => d.tipoAplicacion !== 'global' && activeDiscountIds.has(d.id)),
+    [allDescuentos, activeDiscountIds],
+  );
+
+  function markDiscPending(id: number, on: boolean) {
+    setPendingDiscountIds((prev) => { const n = new Set(prev); on ? n.add(id) : n.delete(id); return n; });
+  }
+
+  function invalidateVersion() {
+    qc.refetchQueries({ queryKey: ['version', cotizacionId, selectedVersionId] });
+    qc.refetchQueries({ queryKey: ['total', cotizacionId, selectedVersionId] });
+  }
+
+  async function toggleDiscount(desc: Descuento) {
+    if (!isEditable || pendingDiscountIds.has(desc.id) || !version) return;
+    markDiscPending(desc.id, true);
+
+    const isActive = activeDiscountIds.has(desc.id);
+    const allItems = version.items ?? [];
+
+    // Optimistic update
+    setActiveDiscountIds((prev) => {
+      const n = new Set(prev);
+      isActive ? n.delete(desc.id) : n.add(desc.id);
+      return n;
+    });
+
+    try {
+      if (isActive) {
+        await Promise.all(
+          allItems.flatMap((item) => {
+            const found = item.descuentos.find((d) => d.descuentoId === desc.id);
+            if (!found) return [];
+            return [cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, found.descuentoId)];
+          })
+        );
+      } else {
+        if (desc.modo === 'basico') {
+          await Promise.all(
+            allItems.map((item) =>
+              cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
+                descuentoId: desc.id,
+                porcentaje: Number(desc.valorPorcentaje),
+              })
+            )
+          );
+        } else {
+          const rulesCampos = new Set(
+            (desc.reglas ?? []).flatMap((r) => r.condiciones?.map((c) => c.campo) ?? [])
+          );
+          for (const item of allItems) {
+            const results = await descuentosApi.evaluar({
+              tipoAplicacion: desc.tipoAplicacion as 'global',
+              cultivoId: item.cultivoId,
+              hibridoId: item.hibridoId,
+              bandaId: item.bandaId,
+              cantidad: Number(item.bolsas),
+              ...(rulesCampos.has('precio')   && { precio:   Number(item.precioBase) }),
+              ...(rulesCampos.has('subtotal') && { subtotal: Number(item.subtotal) }),
+            });
+            const match = results.find((r) => r.descuentoId === desc.id);
+            if (match) {
+              await cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
+                descuentoId: desc.id,
+                porcentaje: match.porcentaje,
+              });
+            }
+          }
+        }
+      }
+      invalidateVersion();
+    } catch {
+      // Revert optimistic update on error
+      setActiveDiscountIds((prev) => {
+        const n = new Set(prev);
+        isActive ? n.add(desc.id) : n.delete(desc.id);
+        return n;
+      });
+    } finally {
+      markDiscPending(desc.id, false);
+    }
+  }
 
   const newVersionMut = useMutation({
     mutationFn: () => cotizacionesApi.crearVersion(cotizacionId),
@@ -800,6 +854,7 @@ export function CotizacionEditorPage() {
                   cotizacionId={cotizacionId}
                   version={version!}
                   isEditable={isEditable}
+                  activeDescuentos={activeDescuentos}
                 />
               ))
             )}
@@ -807,13 +862,20 @@ export function CotizacionEditorPage() {
 
           <ResizeDivider onDrag={(dx) => setRightWidth((w) => Math.max(200, Math.min(600, w + dx)))} />
 
-          {/* Right column */}
+          {/* Right panel */}
           <div style={{ width: rightWidth }} className="shrink-0 space-y-4">
             {selectedVersionId && (
               <TotalsPanel cotizacionId={cotizacionId} versionId={selectedVersionId} />
             )}
+            <ItemDescuentosPanel
+              isEditable={isEditable}
+              activeIds={activeDiscountIds}
+              pendingIds={pendingDiscountIds}
+              allDescuentos={allDescuentos}
+              onToggle={toggleDiscount}
+            />
             {version && (
-              <DescuentosPanel
+              <DescuentosGlobalesPanel
                 cotizacionId={cotizacionId}
                 version={version}
                 isEditable={isEditable}
