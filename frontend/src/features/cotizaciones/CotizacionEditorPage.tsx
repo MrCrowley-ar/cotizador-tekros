@@ -270,6 +270,9 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
           )
         );
       } else {
+        const rulesCampos = new Set(
+          (desc.reglas ?? []).flatMap((r) => r.condiciones?.map((c) => c.campo) ?? []),
+        );
         let applied = false;
         for (const item of items) {
           const results = await descuentosApi.evaluar({
@@ -278,8 +281,8 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
             hibridoId: item.hibridoId,
             bandaId: item.bandaId,
             cantidad: Number(item.bolsas),
-            precio: Number(item.precioBase),
-            subtotal: Number(item.subtotal),
+            ...(rulesCampos.has('precio')   && { precio:   Number(item.precioBase) }),
+            ...(rulesCampos.has('subtotal') && { subtotal: Number(item.subtotal) }),
           });
           const match = results.find((r) => r.descuentoId === desc.id);
           if (match) {

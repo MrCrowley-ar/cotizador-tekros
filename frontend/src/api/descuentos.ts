@@ -35,5 +35,7 @@ export const descuentosApi = {
     cultivoId?: number;
     hibridoId?: number;
     bandaId?: number;
+    precio?: number;
+    subtotal?: number;
   }) => api.post<DescuentoAplicado[]>('/descuentos/evaluar', body),
 };
