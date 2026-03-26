@@ -772,10 +772,10 @@ export function CotizacionEditorPage() {
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   return (
-    <Layout title={cotizacion.numero}>
-      <div className="max-w-[1400px] mx-auto space-y-5">
+    <Layout title={cotizacion.numero} fullHeight>
+      <div className="h-full flex flex-col gap-3 p-5 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate('/cotizaciones')} className="text-gray-400 hover:text-gray-700">←</button>
             <h1 className="text-xl font-semibold text-gray-900">{cotizacion.numero}</h1>
@@ -813,7 +813,7 @@ export function CotizacionEditorPage() {
         </div>
 
         {/* Client info */}
-        <div className="bg-white rounded-xl border px-4 py-3 text-sm text-gray-600 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="bg-white rounded-xl border px-4 py-2.5 text-sm text-gray-600 flex flex-wrap items-center gap-x-4 gap-y-1 shrink-0">
           <span className="font-medium text-gray-800">{cotizacion.cliente?.nombre}</span>
           {cotizacion.cliente?.razonSocial && (
             <span className="text-gray-500">{cotizacion.cliente.razonSocial}</span>
@@ -827,16 +827,19 @@ export function CotizacionEditorPage() {
         </div>
 
         {/* Cultivo selector */}
-        <CultivoSelector
-          cultivos={cultivos}
-          activeCultivoIds={activeCultivoIds}
-          withItemIds={existingCultivoIds}
-          onToggle={toggleCultivo}
-        />
+        <div className="shrink-0">
+          <CultivoSelector
+            cultivos={cultivos}
+            activeCultivoIds={activeCultivoIds}
+            withItemIds={existingCultivoIds}
+            onToggle={toggleCultivo}
+          />
+        </div>
 
-        <div className="flex items-start">
-          {/* Main content */}
-          <div className="flex-1 min-w-0 space-y-4">
+        {/* Main area — fills remaining height, both sides scroll independently */}
+        <div className="flex-1 flex min-h-0">
+          {/* Tables */}
+          <div className="flex-1 overflow-y-auto min-w-0 space-y-4 pr-1">
             {loadingVer ? (
               <div className="flex justify-center py-10"><Spinner /></div>
             ) : activeCultivos.length === 0 ? (
@@ -862,8 +865,8 @@ export function CotizacionEditorPage() {
 
           <ResizeDivider onDrag={(dx) => setRightWidth((w) => Math.max(200, Math.min(600, w + dx)))} />
 
-          {/* Right panel */}
-          <div style={{ width: rightWidth }} className="shrink-0 space-y-4">
+          {/* Right panel — independent scroll */}
+          <div style={{ width: rightWidth }} className="shrink-0 overflow-y-auto space-y-4">
             {selectedVersionId && (
               <TotalsPanel cotizacionId={cotizacionId} versionId={selectedVersionId} />
             )}
