@@ -5,119 +5,58 @@ import { productosApi } from '../../api/productos';
 import { Modal } from '../../components/Modal';
 import { Spinner } from '../../components/Spinner';
 import { Badge } from '../../components/Badge';
-import { RuleBuilder } from './RuleBuilder';
-import type { RuleData } from './RuleBuilder';
-import type { Descuento, TipoAplicacion } from '../../api/types';
+import type { Descuento, Hibrido, TipoAplicacion } from '../../api/types';
 
-// ─── Inferir tipo desde un descuento existente ────────────────────────────────
+// ─── Tipos internos ───────────────────────────────────────────────────────────
 
-type TipoDescuento = 'fijo' | 'por_cultivo' | 'por_volumen' | 'personalizado';
+type Alcance = 'cultivo' | 'hibrido' | 'personalizado';
+type CampoCond = 'cantidad' | 'precio' | 'subtotal';
 
-function inferirTipo(d: Descuento): TipoDescuento {
-  if (d.modo === 'basico') return 'fijo';
-  const reglas = d.reglas ?? [];
-  if (reglas.length === 0) return 'personalizado';
-  const todasPorCultivo = reglas.every(
-    (r: any) =>
-      r.condiciones?.length === 1 &&
-      r.condiciones[0].campo === 'cultivo_id' &&
-      r.condiciones[0].operador === '=',
+interface Tramo { desde: number; hasta: number | null; pct: string }
+
+// ─── Inferir alcance para display ────────────────────────────────────────────
+
+function inferirAlcance(d: Descuento): Alcance {
+  if (d.tipoAplicacion === 'cultivo') return 'cultivo';
+  if (d.modo === 'basico') return 'hibrido';
+  const esPersonalizado = (d.reglas ?? []).every(
+    (r) => r.condiciones?.length === 1 && r.condiciones[0].campo === 'hibrido_id',
   );
-  if (todasPorCultivo) return 'por_cultivo';
-  const todasPorVolumen = reglas.every(
-    (r: any) =>
-      r.condiciones?.length === 1 &&
-      r.condiciones[0].campo === 'cantidad' &&
-      (r.condiciones[0].operador === '>=' || r.condiciones[0].operador === '>'),
-  );
-  if (todasPorVolumen) return 'por_volumen';
-  return 'personalizado';
+  return esPersonalizado ? 'personalizado' : 'hibrido';
 }
 
-// ─── Selector de tipo (paso 1) ────────────────────────────────────────────────
-
-const TIPOS_INFO: { id: TipoDescuento; icon: string; titulo: string; desc: string }[] = [
-  {
-    id: 'fijo',
-    icon: '🏷️',
-    titulo: 'Fijo',
-    desc: 'Un porcentaje igual para todos los ítems. Se aplica manualmente al cotizar.',
-  },
-  {
-    id: 'por_cultivo',
-    icon: '🌱',
-    titulo: 'Por cultivo',
-    desc: 'Distintos porcentajes según el cultivo del ítem (Soja, Maíz, etc.).',
-  },
-  {
-    id: 'por_volumen',
-    icon: '📦',
-    titulo: 'Por volumen',
-    desc: 'El porcentaje sube con la cantidad de bolsas pedidas.',
-  },
-  {
-    id: 'personalizado',
-    icon: '⚙️',
-    titulo: 'Personalizado',
-    desc: 'Reglas con condiciones propias para casos avanzados.',
-  },
-];
-
-// ─── Campos compartidos ───────────────────────────────────────────────────────
-
-function CamposComunes({
-  nombre, setNombre,
-  fechaVigencia, setFechaVigencia,
-  aplica, setAplica,
-  mostrarAplica,
-}: {
-  nombre: string; setNombre: (v: string) => void;
-  fechaVigencia: string; setFechaVigencia: (v: string) => void;
-  aplica: 'item' | 'global'; setAplica: (v: 'item' | 'global') => void;
-  mostrarAplica: boolean;
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Nombre *</label>
-          <input
-            autoFocus
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-            placeholder="ej: Descuento Soja 2025"
-            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Vigencia hasta *</label>
-          <input
-            type="date"
-            value={fechaVigencia}
-            onChange={(e) => setFechaVigencia(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-      </div>
-
-      {mostrarAplica && (
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">¿Dónde aplica?</label>
-          <div className="flex gap-3">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="radio" checked={aplica === 'item'} onChange={() => setAplica('item')} />
-              <span>En cada línea de ítem</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="radio" checked={aplica === 'global'} onChange={() => setAplica('global')} />
-              <span>En la cotización completa</span>
-            </label>
-          </div>
-        </div>
-      )}
-    </div>
+function esCondicional(d: Descuento): boolean {
+  if (d.modo !== 'avanzado') return false;
+  if (inferirAlcance(d) === 'personalizado') return false;
+  return (d.reglas ?? []).some(
+    (r) => r.condiciones?.some((c) =>
+      c.campo === 'cantidad' || c.campo === 'precio' || c.campo === 'subtotal',
+    ),
   );
 }
+
+function inferirCampo(d: Descuento): CampoCond {
+  for (const r of d.reglas ?? []) {
+    for (const c of r.condiciones ?? []) {
+      if (c.campo === 'precio') return 'precio';
+      if (c.campo === 'subtotal') return 'subtotal';
+      if (c.campo === 'cantidad') return 'cantidad';
+    }
+  }
+  return 'cantidad';
+}
+
+const ALCANCE_LABEL: Record<Alcance, string> = {
+  cultivo: 'Por cultivo',
+  hibrido: 'Por híbrido',
+  personalizado: 'Personalizado',
+};
+
+const CAMPO_LABEL: Record<CampoCond, string> = {
+  cantidad: 'Bolsas',
+  precio: 'Precio base ($)',
+  subtotal: 'Subtotal ($)',
+};
 
 // ─── Modal de formulario ──────────────────────────────────────────────────────
 
@@ -125,140 +64,114 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   const qc = useQueryClient();
   const isEdit = !!initial;
 
-  // Paso 1: tipo
-  const [tipo, setTipo] = useState<TipoDescuento | null>(
-    initial ? inferirTipo(initial) : null,
-  );
-
-  // Campos comunes
+  // Campos
   const [nombre, setNombre] = useState(initial?.nombre ?? '');
   const [fechaVigencia, setFechaVigencia] = useState(
     initial?.fechaVigencia
       ? new Date(initial.fechaVigencia).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
   );
-  const [aplica, setAplica] = useState<'item' | 'global'>(
-    initial?.tipoAplicacion === 'global' ? 'global' : 'item',
-  );
-
-  // Fijo
-  const [porcentajeFijo, setPorcentajeFijo] = useState(
+  const [porcentaje, setPorcentaje] = useState(
     initial?.valorPorcentaje != null ? String(initial.valorPorcentaje) : '',
   );
+  const [alcance, setAlcance] = useState<Alcance>(initial ? inferirAlcance(initial) : 'hibrido');
 
-  // Por cultivo: { cultivoId → porcentaje string }
-  const [pctPorCultivo, setPctPorCultivo] = useState<Record<number, string>>(() => {
-    if (!initial || inferirTipo(initial) !== 'por_cultivo') return {};
-    const map: Record<number, string> = {};
-    (initial.reglas ?? []).forEach((r: any) => {
-      const cond = r.condiciones?.[0];
-      if (cond) map[cond.valor] = String(r.valor);
+  // Personalizado: IDs de híbridos seleccionados
+  const [hibridosSelec, setHibridosSelec] = useState<Set<number>>(() => {
+    if (!initial || inferirAlcance(initial) !== 'personalizado') return new Set();
+    const ids = new Set<number>();
+    (initial.reglas ?? []).forEach((r) => {
+      r.condiciones?.forEach((c) => { if (c.campo === 'hibrido_id') ids.add(c.valor); });
     });
-    return map;
+    return ids;
   });
 
-  // Por volumen: { desde: number, pct: string }[]
-  const [tramos, setTramos] = useState<{ desde: number; pct: string }[]>(() => {
-    if (!initial || inferirTipo(initial) !== 'por_volumen') return [{ desde: 0, pct: '' }];
+  // Condicional
+  const [condicional, setCondicional] = useState(initial ? esCondicional(initial) : false);
+  const [campo, setCampo] = useState<CampoCond>(initial ? inferirCampo(initial) : 'cantidad');
+  const [tramos, setTramos] = useState<Tramo[]>(() => {
+    if (!initial || !esCondicional(initial)) return [{ desde: 0, hasta: null, pct: '' }];
     return [...(initial.reglas ?? [])]
-      .sort((a: any, b: any) => b.prioridad - a.prioridad)
-      .map((r: any) => ({ desde: r.condiciones?.[0]?.valor ?? 0, pct: String(r.valor) }));
-  });
-
-  // Personalizado
-  const [rules, setRules] = useState<RuleData[]>(() => {
-    if (!initial || initial.modo !== 'avanzado') return [];
-    return (initial.reglas ?? []).map((r: any) => ({
-      valor: r.valor,
-      prioridad: r.prioridad,
-      condiciones: (r.condiciones ?? []).map((c: any) => ({
-        campo: c.campo,
-        operador: c.operador,
-        valor: c.valor,
-        valor2: c.valor2,
-      })),
-    }));
+      .sort((a, b) => a.prioridad - b.prioridad)
+      .map((r) => {
+        const conds = r.condiciones ?? [];
+        const gteC = conds.find((c) => c.operador === '>=' || c.operador === '>');
+        const lteC = conds.find((c) => c.operador === '<=' || c.operador === '<');
+        return { desde: gteC?.valor ?? 0, hasta: lteC?.valor ?? null, pct: String(r.valor) };
+      });
   });
 
   const [error, setError] = useState('');
 
-  // Cultivos (para tipo por_cultivo)
+  // Híbridos por cultivo (para Personalizado)
   const { data: cultivos = [] } = useQuery({
     queryKey: ['cultivos'],
     queryFn: () => productosApi.getCultivos(true),
-    enabled: tipo === 'por_cultivo',
+    enabled: alcance === 'personalizado',
+  });
+  const hibridosPorCultivo = useQuery({
+    queryKey: ['hibridos-todos'],
+    queryFn: async () => {
+      const all: { cultivo: string; hibridos: Hibrido[] }[] = [];
+      for (const c of cultivos) {
+        const h = await productosApi.getHibridos(c.id, true);
+        if (h.length) all.push({ cultivo: c.nombre, hibridos: h });
+      }
+      return all;
+    },
+    enabled: alcance === 'personalizado' && cultivos.length > 0,
   });
 
   // ── Guardar ──
   const saveMut = useMutation({
     mutationFn: () => {
-      const tipoAplicacion: TipoAplicacion =
-        tipo === 'por_cultivo' ? 'hibrido' : aplica === 'global' ? 'global' : 'hibrido';
+      const tipoAplicacion: TipoAplicacion = alcance === 'cultivo' ? 'cultivo' : 'hibrido';
 
-      if (tipo === 'fijo') {
-        const payload = {
-          nombre,
-          tipoAplicacion,
-          modo: 'basico' as const,
-          valorPorcentaje: Number(porcentajeFijo),
-          fechaVigencia,
-        };
-        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
-      }
-
-      if (tipo === 'por_cultivo') {
-        const reglas = cultivos
-          .filter((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0)
-          .map((c, i) => ({
-            valor: Number(pctPorCultivo[c.id]),
-            prioridad: i + 1,
-            condiciones: [{ campo: 'cultivo_id' as const, operador: '=' as const, valor: c.id }],
-          }));
-        const payload = {
-          nombre,
-          tipoAplicacion: 'hibrido' as const,
-          modo: 'avanzado' as const,
-          fechaVigencia,
-          reglas,
-        };
-        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
-      }
-
-      if (tipo === 'por_volumen') {
-        const tramosOrdenados = [...tramos]
-          .filter((t) => t.pct !== '' && Number(t.pct) > 0)
-          .sort((a, b) => b.desde - a.desde);
-        const reglas = tramosOrdenados.map((t, i) => ({
-          valor: Number(t.pct),
+      // Personalizado: una regla por híbrido seleccionado
+      if (alcance === 'personalizado') {
+        const reglas = Array.from(hibridosSelec).map((hid, i) => ({
+          valor: Number(porcentaje),
           prioridad: i + 1,
-          condiciones: [{ campo: 'cantidad' as const, operador: '>=' as const, valor: t.desde }],
+          condiciones: [{ campo: 'hibrido_id' as const, operador: '=' as const, valor: hid }],
         }));
         const payload = {
-          nombre,
-          tipoAplicacion,
-          modo: 'avanzado' as const,
-          fechaVigencia,
-          reglas,
+          nombre, tipoAplicacion: 'hibrido' as const,
+          modo: 'avanzado' as const, fechaVigencia, reglas,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
-      // personalizado
+      // Sin condicional: basico
+      if (!condicional) {
+        const payload = {
+          nombre, tipoAplicacion,
+          modo: 'basico' as const,
+          valorPorcentaje: Number(porcentaje),
+          fechaVigencia,
+        };
+        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
+      }
+
+      // Condicional: avanzado con tramos
+      const tramosValidos = [...tramos]
+        .filter((t) => t.pct !== '' && Number(t.pct) >= 0)
+        .sort((a, b) => b.desde - a.desde);
+
+      const reglas = tramosValidos.map((t, i) => ({
+        valor: Number(t.pct),
+        prioridad: i + 1,
+        condiciones: t.hasta == null
+          ? [{ campo: campo as const, operador: '>=' as const, valor: t.desde }]
+          : [
+              { campo: campo as const, operador: '>=' as const, valor: t.desde },
+              { campo: campo as const, operador: '<=' as const, valor: t.hasta },
+            ],
+      }));
+
       const payload = {
-        nombre,
-        tipoAplicacion,
+        nombre, tipoAplicacion,
         modo: 'avanzado' as const,
-        fechaVigencia,
-        reglas: rules.map((r) => ({
-          valor: r.valor,
-          prioridad: r.prioridad,
-          condiciones: r.condiciones.map((c) => ({
-            campo: c.campo,
-            operador: c.operador,
-            valor: c.valor,
-            valor2: c.valor2,
-          })),
-        })),
+        fechaVigencia, reglas,
       };
       return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
     },
@@ -268,206 +181,229 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
 
   // ── Validación ──
   const canSave = (() => {
-    if (!nombre.trim() || !fechaVigencia || !tipo) return false;
-    if (tipo === 'fijo') return porcentajeFijo !== '' && Number(porcentajeFijo) >= 0;
-    if (tipo === 'por_cultivo')
-      return cultivos.some((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0);
-    if (tipo === 'por_volumen')
-      return tramos.some((t) => t.pct !== '' && Number(t.pct) > 0);
-    return rules.length > 0;
+    if (!nombre.trim() || !fechaVigencia) return false;
+    if (alcance === 'personalizado') return hibridosSelec.size > 0 && porcentaje !== '';
+    if (!condicional) return porcentaje !== '' && Number(porcentaje) >= 0;
+    return tramos.some((t) => t.pct !== '' && Number(t.pct) >= 0);
   })();
 
   const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
   const inputCls = 'border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 
-  // ── Paso 1: selección de tipo ──
-  if (!tipo) {
-    return (
-      <Modal title={isEdit ? 'Editar descuento' : 'Nuevo descuento'} onClose={onClose}>
-        <p className="text-sm text-gray-500 mb-4">¿Qué tipo de descuento querés crear?</p>
-        <div className="grid grid-cols-2 gap-3">
-          {TIPOS_INFO.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTipo(t.id)}
-              className="text-left p-4 border-2 border-gray-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-colors group"
-            >
-              <div className="text-2xl mb-2">{t.icon}</div>
-              <div className="font-semibold text-gray-800 text-sm mb-1 group-hover:text-blue-700">
-                {t.titulo}
-              </div>
-              <div className="text-xs text-gray-500 leading-snug">{t.desc}</div>
-            </button>
-          ))}
-        </div>
-        <div className="flex justify-end mt-4 pt-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
-            Cancelar
-          </button>
-        </div>
-      </Modal>
-    );
-  }
-
-  const tipoInfo = TIPOS_INFO.find((t) => t.id === tipo)!;
-
-  // ── Paso 2: formulario según tipo ──
   return (
-    <Modal
-      title={
-        <div className="flex items-center gap-2">
-          {!isEdit && (
-            <button
-              onClick={() => setTipo(null)}
-              className="text-gray-400 hover:text-gray-700 text-sm mr-1"
-              title="Volver"
-            >
-              ←
-            </button>
-          )}
-          <span>{tipoInfo.icon} {tipoInfo.titulo}</span>
-          {isEdit && <span className="text-sm font-normal text-gray-400">— {initial!.nombre}</span>}
-        </div>
-      }
-      onClose={onClose}
-    >
-      <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+    <Modal title={isEdit ? `Editar: ${initial!.nombre}` : 'Nuevo descuento'} onClose={onClose}>
+      <div className="space-y-5 max-h-[72vh] overflow-y-auto pr-1">
         {error && <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2">{error}</p>}
 
-        {/* Campos comunes */}
-        <CamposComunes
-          nombre={nombre} setNombre={setNombre}
-          fechaVigencia={fechaVigencia} setFechaVigencia={setFechaVigencia}
-          aplica={aplica} setAplica={setAplica}
-          mostrarAplica={tipo !== 'por_cultivo'}
-        />
-
-        <hr className="border-gray-100" />
-
-        {/* ── Fijo ── */}
-        {tipo === 'fijo' && (
+        {/* Nombre + Fecha */}
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelCls}>Porcentaje de descuento</label>
+            <label className={labelCls}>Nombre *</label>
+            <input
+              autoFocus
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="ej: Descuento Soja 2025"
+              className={`w-full ${inputCls}`}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Vigencia hasta *</label>
+            <input
+              type="date"
+              value={fechaVigencia}
+              onChange={(e) => setFechaVigencia(e.target.value)}
+              className={`w-full ${inputCls}`}
+            />
+          </div>
+        </div>
+
+        {/* Porcentaje — se muestra siempre excepto en condicional */}
+        {(alcance !== 'personalizado' && !condicional) || alcance === 'personalizado' ? (
+          <div>
+            <label className={labelCls}>
+              {alcance === 'personalizado' ? 'Porcentaje para los híbridos seleccionados' : 'Porcentaje de descuento'}
+            </label>
             <div className="flex items-center gap-2">
               <input
                 type="number"
                 min={0}
                 max={100}
                 step={0.01}
-                value={porcentajeFijo}
-                onChange={(e) => setPorcentajeFijo(e.target.value)}
+                value={porcentaje}
+                onChange={(e) => setPorcentaje(e.target.value)}
                 placeholder="ej: 5.00"
                 className={`${inputCls} w-32 text-right`}
               />
               <span className="text-sm text-gray-500">%</span>
             </div>
-            <p className="text-xs text-gray-400 mt-2">
-              Al cotizar podés elegir en qué ítems o líneas aplicarlo.
-            </p>
           </div>
-        )}
+        ) : null}
 
-        {/* ── Por cultivo ── */}
-        {tipo === 'por_cultivo' && (
+        <hr className="border-gray-100" />
+
+        {/* Alcance */}
+        <div>
+          <label className={labelCls}>Alcance</label>
+          <div className="flex gap-3">
+            {(['cultivo', 'hibrido', 'personalizado'] as Alcance[]).map((a) => (
+              <label key={a} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  checked={alcance === a}
+                  onChange={() => { setAlcance(a); if (a === 'personalizado') setCondicional(false); }}
+                />
+                <span>{ALCANCE_LABEL[a]}</span>
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5">
+            {alcance === 'cultivo' && 'Aplica el mismo % a todos los ítems, agrupado por cultivo en la cotización.'}
+            {alcance === 'hibrido' && 'Aplica ítem por ítem. Podés ver el descuento en cada fila.'}
+            {alcance === 'personalizado' && 'Elegí los híbridos específicos a los que aplica.'}
+          </p>
+        </div>
+
+        {/* Híbridos (Personalizado) */}
+        {alcance === 'personalizado' && (
           <div>
-            <label className={labelCls}>Porcentaje por cultivo</label>
-            {cultivos.length === 0 ? (
+            <label className={labelCls}>Híbridos incluidos *</label>
+            {hibridosPorCultivo.isLoading || cultivos.length === 0 ? (
               <div className="flex justify-center py-4"><Spinner /></div>
             ) : (
-              <div className="space-y-2">
-                {cultivos.map((c) => (
-                  <div key={c.id} className="flex items-center gap-3">
-                    <span className="text-sm text-gray-700 w-32 shrink-0">{c.nombre}</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={0.01}
-                      value={pctPorCultivo[c.id] ?? ''}
-                      onChange={(e) =>
-                        setPctPorCultivo((prev) => ({ ...prev, [c.id]: e.target.value }))
-                      }
-                      placeholder="0"
-                      className={`${inputCls} w-24 text-right`}
-                    />
-                    <span className="text-sm text-gray-500">%</span>
+              <div className="border rounded-lg p-3 space-y-3 max-h-48 overflow-y-auto">
+                {(hibridosPorCultivo.data ?? []).map(({ cultivo, hibridos }) => (
+                  <div key={cultivo}>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">{cultivo}</div>
+                    <div className="space-y-1">
+                      {hibridos.map((h) => (
+                        <label key={h.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={hibridosSelec.has(h.id)}
+                            onChange={(e) => {
+                              setHibridosSelec((prev) => {
+                                const next = new Set(prev);
+                                e.target.checked ? next.add(h.id) : next.delete(h.id);
+                                return next;
+                              });
+                            }}
+                          />
+                          <span>{h.nombre}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
-            <p className="text-xs text-gray-400 mt-2">
-              Dejá en 0 o vacío los cultivos que no tienen descuento.
-              Aplica automáticamente según el cultivo del ítem.
-            </p>
+            {hibridosSelec.size > 0 && (
+              <p className="text-xs text-blue-600 mt-1">{hibridosSelec.size} híbrido(s) seleccionado(s)</p>
+            )}
           </div>
         )}
 
-        {/* ── Por volumen ── */}
-        {tipo === 'por_volumen' && (
-          <div>
-            <label className={labelCls}>Tramos de volumen</label>
-            <p className="text-xs text-gray-400 mb-3">
-              Se aplica el primer tramo que coincida (de mayor a menor umbral).
-            </p>
-            <div className="space-y-2">
-              {tramos.map((t, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 w-14 text-right shrink-0">desde</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={t.desde}
-                    onChange={(e) => {
-                      const next = [...tramos];
-                      next[i] = { ...next[i], desde: Number(e.target.value) };
-                      setTramos(next);
-                    }}
-                    className={`${inputCls} w-24 text-right`}
-                    placeholder="0"
-                  />
-                  <span className="text-xs text-gray-500">bolsas</span>
-                  <span className="text-gray-300">→</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.01}
-                    value={t.pct}
-                    onChange={(e) => {
-                      const next = [...tramos];
-                      next[i] = { ...next[i], pct: e.target.value };
-                      setTramos(next);
-                    }}
-                    className={`${inputCls} w-20 text-right`}
-                    placeholder="0"
-                  />
-                  <span className="text-xs text-gray-500">%</span>
-                  {tramos.length > 1 && (
-                    <button
-                      onClick={() => setTramos(tramos.filter((_, j) => j !== i))}
-                      className="text-red-400 hover:text-red-600 text-lg leading-none px-1"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              ))}
+        {/* Condicional (solo cultivo e hibrido) */}
+        {alcance !== 'personalizado' && (
+          <>
+            <hr className="border-gray-100" />
+            <div>
+              <label className="flex items-center gap-2 text-sm cursor-pointer font-medium text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={condicional}
+                  onChange={(e) => setCondicional(e.target.checked)}
+                />
+                ¿Es condicional? (varía según un valor de referencia)
+              </label>
             </div>
-            <button
-              onClick={() => setTramos([...tramos, { desde: 0, pct: '' }])}
-              className="mt-3 text-sm text-blue-600 hover:text-blue-800 hover:underline"
-            >
-              + Agregar tramo
-            </button>
-          </div>
-        )}
 
-        {/* ── Personalizado ── */}
-        {tipo === 'personalizado' && (
-          <div>
-            <label className={labelCls}>Reglas de descuento</label>
-            <RuleBuilder rules={rules} onChange={setRules} />
-          </div>
+            {condicional && (
+              <div className="space-y-4 pl-1">
+                <div>
+                  <label className={labelCls}>Valor de referencia</label>
+                  <select
+                    value={campo}
+                    onChange={(e) => setCampo(e.target.value as CampoCond)}
+                    className={`${inputCls} w-48`}
+                  >
+                    {(Object.entries(CAMPO_LABEL) as [CampoCond, string][]).map(([v, l]) => (
+                      <option key={v} value={v}>{l}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Se aplica el primer tramo que coincida (de mayor a menor umbral).
+                  </p>
+                </div>
+
+                <div>
+                  <label className={labelCls}>Tramos</label>
+                  <div className="space-y-2">
+                    {tramos.map((t, i) => (
+                      <div key={i} className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-gray-500 w-10 text-right shrink-0">desde</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={t.desde}
+                          onChange={(e) => {
+                            const next = [...tramos];
+                            next[i] = { ...next[i], desde: Number(e.target.value) };
+                            setTramos(next);
+                          }}
+                          className={`${inputCls} w-24 text-right`}
+                          placeholder="0"
+                        />
+                        <span className="text-xs text-gray-500">hasta</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={t.hasta ?? ''}
+                          onChange={(e) => {
+                            const next = [...tramos];
+                            next[i] = { ...next[i], hasta: e.target.value === '' ? null : Number(e.target.value) };
+                            setTramos(next);
+                          }}
+                          className={`${inputCls} w-24 text-right`}
+                          placeholder="sin límite"
+                        />
+                        <span className="text-gray-300">→</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.01}
+                          value={t.pct}
+                          onChange={(e) => {
+                            const next = [...tramos];
+                            next[i] = { ...next[i], pct: e.target.value };
+                            setTramos(next);
+                          }}
+                          className={`${inputCls} w-20 text-right`}
+                          placeholder="0"
+                        />
+                        <span className="text-xs text-gray-500">%</span>
+                        {tramos.length > 1 && (
+                          <button
+                            onClick={() => setTramos(tramos.filter((_, j) => j !== i))}
+                            className="text-red-400 hover:text-red-600 text-lg leading-none px-1"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setTramos([...tramos, { desde: 0, hasta: null, pct: '' }])}
+                    className="mt-3 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    + Agregar tramo
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -487,7 +423,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   );
 }
 
-// ─── Modal detalle/editar/eliminar ────────────────────────────────────────────
+// ─── Modal detalle / editar / eliminar ────────────────────────────────────────
 
 function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; onClose: () => void }) {
   const qc = useQueryClient();
@@ -546,18 +482,21 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
     );
   }
 
-  const tipo = inferirTipo(descuento);
-  const tipoInfo = TIPOS_INFO.find((t) => t.id === tipo)!;
+  const alcance = inferirAlcance(descuento);
+  const cond = esCondicional(descuento);
 
   return (
     <Modal title={descuento.nombre} onClose={onClose}>
       <div className="space-y-4">
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-xl">{tipoInfo.icon}</span>
-          <div>
-            <div className="font-medium text-gray-800">{tipoInfo.titulo}</div>
-            <div className="text-xs text-gray-400">{tipoInfo.desc}</div>
-          </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="inline-flex items-center gap-1 text-xs font-medium bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
+            {ALCANCE_LABEL[alcance]}
+          </span>
+          {cond && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full">
+              Condicional · {CAMPO_LABEL[inferirCampo(descuento)]}
+            </span>
+          )}
           <Badge label={descuento.activo ? 'activo' : 'inactivo'} />
         </div>
 
@@ -569,27 +508,33 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
             </span>
           </div>
           <div>
-            <span className="text-gray-400">Aplica:</span>{' '}
+            <span className="text-gray-400">Aplica a:</span>{' '}
             <span className="font-medium">
-              {descuento.tipoAplicacion === 'global' ? 'Cotización completa' : 'Por ítem'}
+              {descuento.tipoAplicacion === 'global'
+                ? 'Cotización completa'
+                : descuento.tipoAplicacion === 'cultivo'
+                ? 'Por cultivo'
+                : 'Por ítem'}
             </span>
           </div>
         </div>
 
-        {tipo === 'fijo' && (
+        {descuento.modo === 'basico' && (
           <div className="bg-blue-50 rounded-lg p-3 text-sm flex items-center gap-2">
             <span className="text-gray-600">Porcentaje fijo:</span>
             <span className="font-bold text-blue-700 text-lg">{descuento.valorPorcentaje}%</span>
           </div>
         )}
 
-        {tipo === 'por_cultivo' && (
+        {alcance === 'personalizado' && (
           <div className="text-sm">
-            <div className="font-medium text-gray-700 mb-2">Porcentaje por cultivo:</div>
+            <div className="font-medium text-gray-700 mb-2">
+              Híbridos incluidos ({descuento.reglas?.length ?? 0}):
+            </div>
             <div className="space-y-1">
-              {(descuento.reglas ?? []).map((r: any) => (
+              {(descuento.reglas ?? []).map((r) => (
                 <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
-                  <span className="text-gray-600">Cultivo #{r.condiciones?.[0]?.valor}</span>
+                  <span className="text-gray-600">Híbrido #{r.condiciones?.[0]?.valor}</span>
                   <span className="font-semibold text-blue-700">{r.valor}%</span>
                 </div>
               ))}
@@ -597,40 +542,28 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           </div>
         )}
 
-        {tipo === 'por_volumen' && (
-          <div className="text-sm">
-            <div className="font-medium text-gray-700 mb-2">Tramos por volumen:</div>
-            <div className="space-y-1">
-              {[...(descuento.reglas ?? [])]
-                .sort((a: any, b: any) => a.prioridad - b.prioridad)
-                .map((r: any) => (
-                  <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
-                    <span className="text-gray-600">
-                      Desde {r.condiciones?.[0]?.valor} bolsas
-                    </span>
-                    <span className="font-semibold text-blue-700">{r.valor}%</span>
-                  </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {tipo === 'personalizado' && (
+        {cond && (
           <div className="text-sm">
             <div className="font-medium text-gray-700 mb-2">
-              Reglas ({descuento.reglas?.length ?? 0}):
+              Tramos por {CAMPO_LABEL[inferirCampo(descuento)]}:
             </div>
-            {(descuento.reglas ?? []).map((r: any) => (
-              <div key={r.id} className="bg-gray-50 rounded-lg p-3 mb-2">
-                <div className="font-medium text-gray-800 mb-1">#{r.prioridad} — {r.valor}%</div>
-                {r.condiciones?.map((c: any) => (
-                  <div key={c.id} className="text-xs text-gray-500">
-                    {c.campo} {c.operador} {c.valor}
-                    {c.valor2 != null ? ` y ${c.valor2}` : ''}
-                  </div>
-                ))}
-              </div>
-            ))}
+            <div className="space-y-1">
+              {[...(descuento.reglas ?? [])]
+                .sort((a, b) => a.prioridad - b.prioridad)
+                .map((r) => {
+                  const gteC = r.condiciones?.find((c) => c.operador === '>=');
+                  const lteC = r.condiciones?.find((c) => c.operador === '<=');
+                  return (
+                    <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
+                      <span className="text-gray-600">
+                        {gteC ? `Desde ${gteC.valor}` : ''}
+                        {lteC ? ` hasta ${lteC.valor}` : ' en adelante'}
+                      </span>
+                      <span className="font-semibold text-blue-700">{r.valor}%</span>
+                    </div>
+                  );
+                })}
+            </div>
           </div>
         )}
 
@@ -696,17 +629,17 @@ export function DescuentosTab() {
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
             <tr>
               <th className="text-left px-4 py-3">Nombre</th>
-              <th className="text-left px-4 py-3">Tipo</th>
+              <th className="text-left px-4 py-3">Alcance</th>
               <th className="text-left px-4 py-3">Valor / Reglas</th>
-              <th className="text-left px-4 py-3">Aplica a</th>
               <th className="text-left px-4 py-3">Vigencia</th>
               <th className="text-left px-4 py-3">Estado</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {descuentos.map((d) => {
-              const t = inferirTipo(d);
-              const info = TIPOS_INFO.find((x) => x.id === t)!;
+              const alcance = inferirAlcance(d);
+              const cond = esCondicional(d);
+              const nHibridos = alcance === 'personalizado' ? (d.reglas?.length ?? 0) : null;
               return (
                 <tr
                   key={d.id}
@@ -715,17 +648,22 @@ export function DescuentosTab() {
                 >
                   <td className="px-4 py-3 font-medium text-gray-900">{d.nombre}</td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
-                      {info.icon} {info.titulo}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
+                        {ALCANCE_LABEL[alcance]}
+                        {nHibridos != null && ` (${nHibridos})`}
+                      </span>
+                      {cond && (
+                        <span className="inline-flex items-center text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                          {CAMPO_LABEL[inferirCampo(d)]}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-gray-700">
                     {d.modo === 'basico'
                       ? `${d.valorPorcentaje}%`
                       : `${d.reglas?.length ?? 0} regla(s)`}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">
-                    {d.tipoAplicacion === 'global' ? 'Cotización completa' : 'Por ítem'}
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {new Date(d.fechaVigencia).toLocaleDateString('es-AR')}

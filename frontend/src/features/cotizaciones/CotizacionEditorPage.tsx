@@ -8,7 +8,7 @@ import { Layout } from '../../components/Layout';
 import { Badge } from '../../components/Badge';
 import { Spinner } from '../../components/Spinner';
 import { VersionHistory } from './VersionHistory';
-import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../../api/types';
+import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento, TipoAplicacion } from '../../api/types';
 
 // ─── Resize Divider ───────────────────────────────────────────────────────────
 
@@ -278,6 +278,8 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
             hibridoId: item.hibridoId,
             bandaId: item.bandaId,
             cantidad: Number(item.bolsas),
+            precio: Number(item.precioBase),
+            subtotal: Number(item.subtotal),
           });
           const match = results.find((r) => r.descuentoId === desc.id);
           if (match) {
@@ -375,13 +377,14 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
   const [showNewItem, setShowNewItem] = useState(false);
 
   const uniqueDiscounts = useMemo(() => {
-    const map = new Map<number, { id: number; nombre: string }>();
+    const map = new Map<number, { id: number; nombre: string; tipoAplicacion: TipoAplicacion }>();
     for (const item of items) {
       for (const d of item.descuentos) {
         if (!map.has(d.descuentoId)) {
           map.set(d.descuentoId, {
             id: d.descuentoId,
             nombre: d.descuento?.nombre ?? `Desc. ${d.descuentoId}`,
+            tipoAplicacion: d.descuento?.tipoAplicacion ?? 'hibrido',
           });
         }
       }
@@ -389,8 +392,12 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
     return Array.from(map.values());
   }, [items]);
 
-  // extra cols = discount cols + total col (if any discounts)
-  const extraCols = uniqueDiscounts.length + (uniqueDiscounts.length > 0 ? 1 : 0);
+  // Descuentos por híbrido van como columnas; por cultivo van en footer
+  const discHibrido = uniqueDiscounts.filter((d) => d.tipoAplicacion !== 'cultivo');
+  const discCultivo = uniqueDiscounts.filter((d) => d.tipoAplicacion === 'cultivo');
+
+  // extra cols = hibrido discount cols + total col (if any)
+  const extraCols = discHibrido.length + (discHibrido.length > 0 ? 1 : 0);
   const totalCols = 6 + extraCols;
 
   return (
@@ -415,12 +422,12 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
               <th className="text-right px-4 py-2">Bolsas</th>
               <th className="text-right px-4 py-2 whitespace-nowrap">P. Base</th>
               <th className="text-right px-4 py-2">Subtotal</th>
-              {uniqueDiscounts.map((d) => (
+              {discHibrido.map((d) => (
                 <th key={d.id} className="text-right px-4 py-2 text-orange-500 font-medium normal-case tracking-normal whitespace-nowrap">
                   {d.nombre}
                 </th>
               ))}
-              {uniqueDiscounts.length > 0 && (
+              {discHibrido.length > 0 && (
                 <th className="text-right px-4 py-2 text-gray-700 whitespace-nowrap">Total</th>
               )}
               <th className="px-4 py-2 w-8"></th>
@@ -434,7 +441,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
                 cotizacionId={cotizacionId}
                 version={version}
                 isEditable={isEditable}
-                discountCols={uniqueDiscounts}
+                discountCols={discHibrido}
               />
             ))}
             {showNewItem && (
@@ -451,6 +458,23 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
                 <td colSpan={totalCols} className="px-4 py-5 text-center text-gray-400 text-xs">
                   Sin ítems. {isEditable && 'Hacé clic en "+ Agregar ítem" para comenzar.'}
                 </td>
+              </tr>
+            )}
+            {discCultivo.length > 0 && (
+              <tr className="border-t border-dashed border-gray-200 bg-amber-50/40">
+                <td colSpan={5} className="px-4 py-1.5 text-xs text-amber-700 font-medium">
+                  Descuento por cultivo
+                </td>
+                {discCultivo.map((d) => {
+                  const pct = items.flatMap((i) => i.descuentos).find((x) => x.descuentoId === d.id)?.valorPorcentaje;
+                  return (
+                    <td key={d.id} className="px-4 py-1.5 text-xs text-right text-orange-600 font-semibold whitespace-nowrap">
+                      {pct != null ? `−${pct}%` : '—'}
+                    </td>
+                  );
+                })}
+                {discHibrido.length > 0 && <td />}
+                <td />
               </tr>
             )}
           </tbody>

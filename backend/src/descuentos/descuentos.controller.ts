@@ -87,10 +87,12 @@ export class DescuentosController {
   evaluar(@Body() dto: EvaluarDescuentoDto) {
     return this.evaluador.evaluar(
       {
-        cantidad: dto.cantidad,
+        cantidad:  dto.cantidad,
         cultivoId: dto.cultivoId,
         hibridoId: dto.hibridoId,
-        bandaId: dto.bandaId,
+        bandaId:   dto.bandaId,
+        precio:    dto.precio,
+        subtotal:  dto.subtotal,
       },
       dto.tipoAplicacion,
     );

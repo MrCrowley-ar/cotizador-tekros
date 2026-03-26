@@ -58,7 +58,7 @@ export interface Precio {
 // ─── Descuentos ───────────────────────────────────────────────────────────────
 export type TipoAplicacion = 'global' | 'cultivo' | 'hibrido';
 export type ModoDescuento = 'basico' | 'avanzado';
-export type CampoCondicion = 'cantidad' | 'cultivo_id' | 'hibrido_id' | 'banda_id';
+export type CampoCondicion = 'cantidad' | 'cultivo_id' | 'hibrido_id' | 'banda_id' | 'precio' | 'subtotal';
 export type OperadorCondicion = '=' | '!=' | '>' | '<' | '>=' | '<=' | 'entre';
 
 export interface DescuentoCondicion {

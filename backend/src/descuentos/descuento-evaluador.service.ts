@@ -9,6 +9,8 @@ export interface ContextoDescuento {
   cultivoId?: number;
   hibridoId?: number;
   bandaId?: number;
+  precio?: number;    // precio base del ítem
+  subtotal?: number;  // precio * bolsas
 }
 
 export interface DescuentoAplicado {
@@ -114,6 +116,8 @@ export class DescuentoEvaluadorService {
       case CampoCondicion.CULTIVO_ID: return ctx.cultivoId;
       case CampoCondicion.HIBRIDO_ID: return ctx.hibridoId;
       case CampoCondicion.BANDA_ID:   return ctx.bandaId;
+      case CampoCondicion.PRECIO:     return ctx.precio;
+      case CampoCondicion.SUBTOTAL:   return ctx.subtotal;
       default:                        return undefined;
     }
   }

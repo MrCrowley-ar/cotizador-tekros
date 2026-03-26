@@ -27,4 +27,16 @@ export class EvaluarDescuentoDto {
   @IsPositive()
   @IsOptional()
   bandaId?: number;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @IsOptional()
+  precio?: number;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @IsOptional()
+  subtotal?: number;
 }
