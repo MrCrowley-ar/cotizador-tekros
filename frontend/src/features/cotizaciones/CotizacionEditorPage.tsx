@@ -8,7 +8,7 @@ import { Layout } from '../../components/Layout';
 import { Badge } from '../../components/Badge';
 import { Spinner } from '../../components/Spinner';
 import { VersionHistory } from './VersionHistory';
-import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento, TipoAplicacion } from '../../api/types';
+import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../../api/types';
 
 // ─── Resize Divider ───────────────────────────────────────────────────────────
 
@@ -43,9 +43,9 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
 
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, extraCols }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
-  extraCols: number;
+  discountCount: number;
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -104,9 +104,12 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, extr
           className={`${sel} w-24`}
         />
       </td>
+      {/* P. Base placeholder */}
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
+      {/* Discount columns placeholders */}
+      {Array.from({ length: discountCount }).map((_, i) => <td key={i} />)}
+      {/* Subtotal placeholder */}
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
-      {Array.from({ length: extraCols }).map((_, i) => <td key={i} />)}
       <td className="px-3 py-2">
         {error && <span className="text-xs text-red-600 block mb-1">{error}</span>}
         <div className="flex gap-2">
@@ -128,15 +131,14 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, extr
 
 // ─── Item Row ─────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
+function ItemRow({ item, cotizacionId, version, isEditable, allDescuentos }: {
   item: CotizacionItem;
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
-  discountCols: Array<{ id: number; nombre: string }>;
+  allDescuentos: Descuento[];
 }) {
   const qc = useQueryClient();
-
   const [deleteError, setDeleteError] = useState('');
 
   const deleteMut = useMutation({
@@ -147,42 +149,31 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
     },
     onError: (e: any) => setDeleteError(e.message),
   });
-  const deleteDiscMut = useMutation({
-    mutationFn: (discId: number) =>
-      cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, discId),
-    onSuccess: () => {
-      qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
-      qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
-    },
-    onError: (e: any) => setDeleteError(e.message),
-  });
 
   const fmt = (n: number) =>
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Subtotal = bruto × all applied discount multipliers
+  const bruto = Number(item.subtotal); // precioBase × bolsas
+  const subtotal = allDescuentos.reduce((acc, d) => {
+    const applied = item.descuentos.find((x) => x.descuentoId === d.id);
+    if (!applied) return acc;
+    return acc * (1 - Number(applied.valorPorcentaje) / 100);
+  }, bruto);
 
   return (
     <tr className="hover:bg-gray-50">
       <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{item.hibrido?.nombre ?? item.hibridoId}</td>
       <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{item.banda?.nombre ?? item.bandaId}</td>
       <td className="px-4 py-2 text-sm text-right text-gray-700">{fmt(Number(item.bolsas))}</td>
-      <td className="px-4 py-2 text-sm text-right text-gray-700 whitespace-nowrap">${fmt(Number(item.precioBase))}</td>
-      <td className="px-4 py-2 text-sm text-right font-medium text-gray-700 whitespace-nowrap">${fmt(Number(item.subtotal))}</td>
-      {discountCols.map((col) => {
-        const applied = item.descuentos.find((d) => d.descuentoId === col.id);
+      <td className="px-4 py-2 text-sm text-right text-gray-500 whitespace-nowrap">${fmt(Number(item.precioBase))}</td>
+      {allDescuentos.map((d) => {
+        const applied = item.descuentos.find((x) => x.descuentoId === d.id);
         return (
-          <td key={col.id} className="px-4 py-2 text-sm text-right whitespace-nowrap">
+          <td key={d.id} className="px-4 py-2 text-sm text-right whitespace-nowrap">
             {applied ? (
-              <span className="inline-flex items-center gap-1 text-orange-600 text-xs font-medium">
-                −{applied.valorPorcentaje}%
-                {isEditable && (
-                  <button
-                    onClick={() => deleteDiscMut.mutate(applied.descuentoId)}
-                    disabled={deleteDiscMut.isPending}
-                    className="hover:text-red-600 leading-none ml-0.5 disabled:opacity-50"
-                  >
-                    ×
-                  </button>
-                )}
+              <span className="text-orange-600 text-xs font-medium">
+                −{Number(applied.valorPorcentaje)}%
               </span>
             ) : (
               <span className="text-gray-300 text-xs">—</span>
@@ -190,13 +181,9 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
           </td>
         );
       })}
-      {discountCols.length > 0 && (() => {
-        let total = Number(item.subtotal);
-        for (const d of item.descuentos) total *= (1 - d.valorPorcentaje / 100);
-        return (
-          <td className="px-4 py-2 text-sm text-right font-semibold text-gray-900 whitespace-nowrap">${fmt(total)}</td>
-        );
-      })()}
+      <td className="px-4 py-2 text-sm text-right font-semibold text-gray-900 whitespace-nowrap">
+        ${fmt(subtotal)}
+      </td>
       <td className="px-4 py-2">
         {deleteError && <span className="text-xs text-red-600 block mb-1">{deleteError}</span>}
         {isEditable && (
@@ -213,17 +200,19 @@ function ItemRow({ item, cotizacionId, version, isEditable, discountCols }: {
   );
 }
 
-// ─── Cultivo Descuentos ───────────────────────────────────────────────────────
+// ─── Cultivo Section ──────────────────────────────────────────────────────────
 
-function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
+  cultivo: Cultivo;
+  items: CotizacionItem[];
   cotizacionId: number;
   version: CotizacionVersion;
-  items: CotizacionItem[];
   isEditable: boolean;
 }) {
   const qc = useQueryClient();
+  const [showNewItem, setShowNewItem] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
-  const [noAplicaId, setNoAplicaId] = useState<number | null>(null);
+  const [noAplicaIds, setNoAplicaIds] = useState<Set<number>>(new Set());
   const [descError, setDescError] = useState('');
 
   const { data: allDescuentos = [] } = useQuery({
@@ -231,34 +220,34 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
     queryFn: () => descuentosApi.getAll(true),
   });
 
-  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion !== 'global');
-  if (descuentos.length === 0) return null;
+  // Only item-level descuentos (not global)
+  const descuentos = useMemo(
+    () => allDescuentos.filter((d) => d.tipoAplicacion !== 'global'),
+    [allDescuentos],
+  );
 
   function isApplied(desc: Descuento) {
     return items.some((item) => item.descuentos.some((d) => d.descuentoId === desc.id));
   }
-  function getAppliedPct(desc: Descuento) {
-    for (const item of items) {
-      const found = item.descuentos.find((d) => d.descuentoId === desc.id);
-      if (found) return found.valorPorcentaje;
-    }
-    return null;
-  }
+
   function invalidate() {
     qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
     qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
   }
-  function showNoAplica(id: number) {
-    setNoAplicaId(id);
-    setTimeout(() => setNoAplicaId(null), 2000);
-  }
+
   function markPending(id: number, on: boolean) {
     setPendingIds((prev) => { const next = new Set(prev); on ? next.add(id) : next.delete(id); return next; });
+  }
+
+  function showNoAplica(id: number) {
+    setNoAplicaIds((prev) => new Set([...prev, id]));
+    setTimeout(() => setNoAplicaIds((prev) => { const next = new Set(prev); next.delete(id); return next; }), 2500);
   }
 
   async function applyDescuento(desc: Descuento) {
     if (items.length === 0) { showNoAplica(desc.id); return; }
     markPending(desc.id, true);
+    setDescError('');
     try {
       if (desc.modo === 'basico') {
         await Promise.all(
@@ -296,7 +285,9 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
         if (!applied) { showNoAplica(desc.id); return; }
       }
       invalidate();
-    } catch { /* silently fail */ } finally {
+    } catch (e: any) {
+      setDescError(e?.message ?? 'Error al aplicar descuento');
+    } finally {
       markPending(desc.id, false);
     }
   }
@@ -307,14 +298,14 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
     try {
       await Promise.all(
         items.flatMap((item) => {
-          const itemDesc = item.descuentos.find((d) => d.descuentoId === desc.id);
-          if (!itemDesc) return [];
-          return [cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, itemDesc.descuentoId)];
+          const found = item.descuentos.find((d) => d.descuentoId === desc.id);
+          if (!found) return [];
+          return [cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, found.descuentoId)];
         })
       );
       invalidate();
     } catch (e: any) {
-      setDescError(e.message ?? 'Error al quitar descuento');
+      setDescError(e?.message ?? 'Error al quitar descuento');
     } finally {
       markPending(desc.id, false);
     }
@@ -326,82 +317,8 @@ function CultivoDescuentos({ cotizacionId, version, items, isEditable }: {
     else await applyDescuento(desc);
   }
 
-  return (
-    <div className="px-4 py-3 border-t bg-gray-50/50">
-      <p className="text-xs font-medium text-gray-500 mb-2">Descuentos</p>
-      {descError && <p className="text-xs text-red-600 mb-2">{descError}</p>}
-      <div className="flex flex-wrap gap-2">
-        {descuentos.map((desc) => {
-          const applied = isApplied(desc);
-          const pct = getAppliedPct(desc);
-          const pending = pendingIds.has(desc.id);
-          const noAplica = noAplicaId === desc.id;
-          return (
-            <label
-              key={desc.id}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors select-none
-                ${applied ? 'bg-orange-50 border-orange-300 text-orange-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}
-                ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
-            >
-              {pending ? <Spinner className="w-3 h-3" /> : (
-                <input
-                  type="checkbox"
-                  checked={applied}
-                  disabled={!isEditable}
-                  onChange={() => toggle(desc)}
-                  className="rounded text-orange-500 w-3 h-3"
-                />
-              )}
-              <span>{desc.nombre}</span>
-              {noAplica ? (
-                <span className="text-gray-400 italic">No aplica</span>
-              ) : applied && pct != null ? (
-                <span className="font-semibold">−{pct}%</span>
-              ) : (
-                <span className="text-gray-400">{desc.valorPorcentaje ?? '?'}%</span>
-              )}
-            </label>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Cultivo Section ──────────────────────────────────────────────────────────
-
-function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
-  cultivo: Cultivo;
-  items: CotizacionItem[];
-  cotizacionId: number;
-  version: CotizacionVersion;
-  isEditable: boolean;
-}) {
-  const [showNewItem, setShowNewItem] = useState(false);
-
-  const uniqueDiscounts = useMemo(() => {
-    const map = new Map<number, { id: number; nombre: string; tipoAplicacion: TipoAplicacion }>();
-    for (const item of items) {
-      for (const d of item.descuentos) {
-        if (!map.has(d.descuentoId)) {
-          map.set(d.descuentoId, {
-            id: d.descuentoId,
-            nombre: d.descuento?.nombre ?? `Desc. ${d.descuentoId}`,
-            tipoAplicacion: d.descuento?.tipoAplicacion ?? 'hibrido',
-          });
-        }
-      }
-    }
-    return Array.from(map.values());
-  }, [items]);
-
-  // Descuentos por híbrido van como columnas; por cultivo van en footer
-  const discHibrido = uniqueDiscounts.filter((d) => d.tipoAplicacion !== 'cultivo');
-  const discCultivo = uniqueDiscounts.filter((d) => d.tipoAplicacion === 'cultivo');
-
-  // extra cols = hibrido discount cols + total col (if any)
-  const extraCols = discHibrido.length + (discHibrido.length > 0 ? 1 : 0);
-  const totalCols = 6 + extraCols;
+  // totalCols: híbrido + banda + bolsas + P.Base + [discs] + subtotal + × = 6 + N
+  const totalCols = 6 + descuentos.length;
 
   return (
     <div className="bg-white rounded-xl border overflow-hidden">
@@ -416,6 +333,11 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
           </button>
         )}
       </div>
+
+      {descError && (
+        <p className="px-4 py-2 text-xs text-red-600 bg-red-50 border-b">{descError}</p>
+      )}
+
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
@@ -424,15 +346,38 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
               <th className="text-left px-4 py-2 whitespace-nowrap">Banda</th>
               <th className="text-right px-4 py-2">Bolsas</th>
               <th className="text-right px-4 py-2 whitespace-nowrap">P. Base</th>
-              <th className="text-right px-4 py-2">Subtotal</th>
-              {discHibrido.map((d) => (
-                <th key={d.id} className="text-right px-4 py-2 text-orange-500 font-medium normal-case tracking-normal whitespace-nowrap">
-                  {d.nombre}
-                </th>
-              ))}
-              {discHibrido.length > 0 && (
-                <th className="text-right px-4 py-2 text-gray-700 whitespace-nowrap">Total</th>
-              )}
+              {descuentos.map((d) => {
+                const applied = isApplied(d);
+                const pending = pendingIds.has(d.id);
+                const noAplica = noAplicaIds.has(d.id);
+                return (
+                  <th
+                    key={d.id}
+                    className="px-4 py-2 whitespace-nowrap normal-case tracking-normal"
+                  >
+                    <label className={`inline-flex items-center gap-1.5 cursor-pointer select-none font-medium ${applied ? 'text-orange-600' : 'text-gray-500'}`}>
+                      {pending ? (
+                        <Spinner className="w-3 h-3 shrink-0" />
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={applied}
+                          disabled={!isEditable}
+                          onChange={() => toggle(d)}
+                          className="rounded text-orange-500 w-3 h-3 disabled:opacity-50 cursor-pointer"
+                        />
+                      )}
+                      <span>{d.nombre}</span>
+                      {noAplica && (
+                        <span className="text-gray-400 font-normal italic text-xs">No aplica</span>
+                      )}
+                    </label>
+                  </th>
+                );
+              })}
+              <th className="text-right px-4 py-2 whitespace-nowrap text-gray-700 font-semibold normal-case tracking-normal">
+                Subtotal
+              </th>
               <th className="px-4 py-2 w-8"></th>
             </tr>
           </thead>
@@ -444,7 +389,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
                 cotizacionId={cotizacionId}
                 version={version}
                 isEditable={isEditable}
-                discountCols={discHibrido}
+                allDescuentos={descuentos}
               />
             ))}
             {showNewItem && (
@@ -453,7 +398,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
                 versionId={version.id}
                 cultivoId={cultivo.id}
                 onDone={() => setShowNewItem(false)}
-                extraCols={extraCols}
+                discountCount={descuentos.length}
               />
             )}
             {!showNewItem && items.length === 0 && (
@@ -463,32 +408,9 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable }: {
                 </td>
               </tr>
             )}
-            {discCultivo.length > 0 && (
-              <tr className="border-t border-dashed border-gray-200 bg-amber-50/40">
-                <td colSpan={5} className="px-4 py-1.5 text-xs text-amber-700 font-medium">
-                  Descuento por cultivo
-                </td>
-                {discCultivo.map((d) => {
-                  const pct = items.flatMap((i) => i.descuentos).find((x) => x.descuentoId === d.id)?.valorPorcentaje;
-                  return (
-                    <td key={d.id} className="px-4 py-1.5 text-xs text-right text-orange-600 font-semibold whitespace-nowrap">
-                      {pct != null ? `−${pct}%` : '—'}
-                    </td>
-                  );
-                })}
-                {discHibrido.length > 0 && <td />}
-                <td />
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
-      <CultivoDescuentos
-        cotizacionId={cotizacionId}
-        version={version}
-        items={items}
-        isEditable={isEditable}
-      />
     </div>
   );
 }
