@@ -1,0 +1,32 @@
+# Environment
+.env
+.env.local
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Build outputs
+dist/
+backend/dist/
+frontend/dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database backups — keep the directory but not the actual dumps
+backups/*.sql
+backups/*.sql.gz
+
+# Seeds locales (no subir al repo)
+backend/src/database/seeds/
