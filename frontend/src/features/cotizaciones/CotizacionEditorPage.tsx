@@ -184,8 +184,8 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
   const fmt = (n: number) =>
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Subtotal = bruto × all applied discount multipliers
-  const bruto = Number(item.subtotal);
+  // Subtotal = precioBase (no se multiplica por bolsas) × descuentos aplicados
+  const bruto = Number(item.precioBase);
   const subtotal = activeDescuentos.reduce((acc, d) => {
     const applied = item.descuentos.find((x) => x.descuentoId === d.id);
     if (!applied) return acc;
@@ -370,7 +370,7 @@ function CultivoStatsPanel({ version, cultivos }: { version: CotizacionVersion; 
       String(item.cultivoId);
     const cur = byCultivo.get(item.cultivoId) ?? { nombre, bolsas: 0, monto: 0 };
     cur.bolsas += Number(item.bolsas);
-    cur.monto += Number(item.subtotal);
+    cur.monto += Number(item.precioBase);
     byCultivo.set(item.cultivoId, cur);
   }
 
@@ -708,7 +708,7 @@ export function CotizacionEditorPage() {
     for (const item of items) {
       const cur = map.get(item.cultivoId) ?? { bolsas: 0, monto: 0 };
       cur.bolsas += Number(item.bolsas);
-      cur.monto += Number(item.subtotal);
+      cur.monto += Number(item.precioBase);
       map.set(item.cultivoId, cur);
     }
     return map;

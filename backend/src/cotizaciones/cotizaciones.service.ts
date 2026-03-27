@@ -445,7 +445,7 @@ export class CotizacionesService {
     const desglose: object[] = [];
 
     for (const item of version.items) {
-      const subtotalItem = Number(item.subtotal);
+      const subtotalItem = Number(item.precioBase);
       let descuentoItemTotal = 0;
 
       for (const d of item.descuentos) {
