@@ -9,8 +9,9 @@ export interface ContextoDescuento {
   cultivoId?: number;
   hibridoId?: number;
   bandaId?: number;
-  precio?: number;    // precio base del ítem
-  subtotal?: number;  // precio * bolsas
+  precio?: number;        // precio base del ítem
+  subtotal?: number;      // precio * bolsas
+  ratioCultivo?: number;  // bolsas_cultivo / total_bolsas (para cross selling)
 }
 
 export interface DescuentoAplicado {
@@ -53,6 +54,9 @@ export class DescuentoEvaluadorService {
     descuento: Descuento,
     contexto: ContextoDescuento,
   ): DescuentoAplicado | null {
+    // Descuentos selector se aplican manualmente desde el cliente (no se evalúan aquí)
+    if (descuento.modo === ModoDescuento.SELECTOR) return null;
+
     if (descuento.modo === ModoDescuento.BASICO) {
       if (descuento.valorPorcentaje == null) return null;
       return {
@@ -116,9 +120,10 @@ export class DescuentoEvaluadorService {
       case CampoCondicion.CULTIVO_ID: return ctx.cultivoId;
       case CampoCondicion.HIBRIDO_ID: return ctx.hibridoId;
       case CampoCondicion.BANDA_ID:   return ctx.bandaId;
-      case CampoCondicion.PRECIO:     return ctx.precio;
-      case CampoCondicion.SUBTOTAL:   return ctx.subtotal;
-      default:                        return undefined;
+      case CampoCondicion.PRECIO:        return ctx.precio;
+      case CampoCondicion.SUBTOTAL:      return ctx.subtotal;
+      case CampoCondicion.RATIO_CULTIVO: return ctx.ratioCultivo;
+      default:                           return undefined;
     }
   }
 }

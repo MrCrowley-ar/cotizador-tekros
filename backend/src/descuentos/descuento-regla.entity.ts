@@ -17,6 +17,10 @@ export class DescuentoRegla {
   @Column({ name: 'descuento_id' })
   descuentoId: number;
 
+  // Nombre de la opción (solo usado en modo=selector, ej: "Contado", "30 días")
+  @Column({ nullable: true, length: 100 })
+  nombre: string | null;
+
   // Porcentaje a aplicar si todas las condiciones de esta regla se cumplen
   @Column({ type: 'decimal', precision: 5, scale: 2 })
   valor: number;

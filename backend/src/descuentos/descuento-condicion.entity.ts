@@ -14,6 +14,7 @@ export enum CampoCondicion {
   BANDA_ID = 'banda_id',
   PRECIO = 'precio',
   SUBTOTAL = 'subtotal',
+  RATIO_CULTIVO = 'ratio_cultivo',
 }
 
 export enum OperadorCondicion {

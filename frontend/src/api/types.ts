@@ -57,8 +57,8 @@ export interface Precio {
 
 // ─── Descuentos ───────────────────────────────────────────────────────────────
 export type TipoAplicacion = 'global' | 'cultivo' | 'hibrido';
-export type ModoDescuento = 'basico' | 'avanzado';
-export type CampoCondicion = 'cantidad' | 'cultivo_id' | 'hibrido_id' | 'banda_id' | 'precio' | 'subtotal';
+export type ModoDescuento = 'basico' | 'avanzado' | 'selector';
+export type CampoCondicion = 'cantidad' | 'cultivo_id' | 'hibrido_id' | 'banda_id' | 'precio' | 'subtotal' | 'ratio_cultivo';
 export type OperadorCondicion = '=' | '!=' | '>' | '<' | '>=' | '<=' | 'entre';
 
 export interface DescuentoCondicion {
@@ -70,6 +70,7 @@ export interface DescuentoCondicion {
 }
 export interface DescuentoRegla {
   id: number;
+  nombre: string | null;
   valor: number;
   prioridad: number;
   condiciones: DescuentoCondicion[];

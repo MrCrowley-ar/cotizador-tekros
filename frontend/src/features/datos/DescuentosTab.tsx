@@ -5,61 +5,62 @@ import { productosApi } from '../../api/productos';
 import { Modal } from '../../components/Modal';
 import { Spinner } from '../../components/Spinner';
 import { Badge } from '../../components/Badge';
-import type { Descuento, Hibrido, TipoAplicacion } from '../../api/types';
+import type { Descuento } from '../../api/types';
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
-type Alcance = 'cultivo' | 'hibrido' | 'personalizado';
-type CampoCond = 'cantidad' | 'precio' | 'subtotal';
+type ModoValor = 'fijo' | 'por_cultivo' | 'por_rango' | 'por_selector';
+type DriverRango = 'cantidad' | 'precio' | 'subtotal' | 'ratio_cultivo';
 
-// Conditional block: "SI campo >= desde → aplicar pct%"
 interface Tramo { id: string; desde: string; pct: string }
+interface OpcionSelector { id: string; nombre: string; pct: string }
 
-let _tramoCtr = 0;
-function newTramoId() { return `t${++_tramoCtr}`; }
+let _ctr = 0;
+function newId() { return `i${++_ctr}`; }
 
-// ─── Inferir alcance para display ────────────────────────────────────────────
+// ─── Helpers para display ─────────────────────────────────────────────────────
 
-function inferirAlcance(d: Descuento): Alcance {
-  if (d.tipoAplicacion === 'cultivo') return 'cultivo';
-  if (d.modo === 'basico') return 'hibrido';
-  const esPersonalizado = (d.reglas ?? []).every(
-    (r) => r.condiciones?.length === 1 && r.condiciones[0].campo === 'hibrido_id',
+function inferirModoValor(d: Descuento): ModoValor {
+  if (d.modo === 'selector') return 'por_selector';
+  if (d.modo === 'basico') return 'fijo';
+  const todasCultivoId = (d.reglas ?? []).every(
+    (r) => r.condiciones?.length === 1 && r.condiciones[0].campo === 'cultivo_id',
   );
-  return esPersonalizado ? 'personalizado' : 'hibrido';
-}
-
-function esCondicional(d: Descuento): boolean {
-  if (d.modo !== 'avanzado') return false;
-  if (inferirAlcance(d) === 'personalizado') return false;
-  return (d.reglas ?? []).some(
-    (r) => r.condiciones?.some((c) =>
-      c.campo === 'cantidad' || c.campo === 'precio' || c.campo === 'subtotal',
+  if (todasCultivoId) return 'por_cultivo';
+  const tieneRango = (d.reglas ?? []).some((r) =>
+    r.condiciones?.some((c) =>
+      c.campo === 'cantidad' || c.campo === 'precio' ||
+      c.campo === 'subtotal' || c.campo === 'ratio_cultivo',
     ),
   );
+  if (tieneRango) return 'por_rango';
+  return 'fijo';
 }
 
-function inferirCampo(d: Descuento): CampoCond {
+function inferirDriverRango(d: Descuento): DriverRango {
   for (const r of d.reglas ?? []) {
     for (const c of r.condiciones ?? []) {
       if (c.campo === 'precio') return 'precio';
       if (c.campo === 'subtotal') return 'subtotal';
+      if (c.campo === 'ratio_cultivo') return 'ratio_cultivo';
       if (c.campo === 'cantidad') return 'cantidad';
     }
   }
   return 'cantidad';
 }
 
-const ALCANCE_LABEL: Record<Alcance, string> = {
-  cultivo: 'Por cultivo',
-  hibrido: 'Por híbrido',
-  personalizado: 'Personalizado',
+const MODO_LABEL: Record<ModoValor, string> = {
+  fijo: 'Fijo',
+  por_cultivo: 'Por cultivo',
+  por_rango: 'Por rango',
+  por_selector: 'Por selector',
 };
 
-const CAMPO_LABEL: Record<CampoCond, string> = {
+const DRIVER_LABEL: Record<DriverRango, string> = {
   cantidad: 'Bolsas',
   precio: 'Precio base ($)',
   subtotal: 'Subtotal ($)',
+  ratio_cultivo: 'Ratio cultivo',
 };
 
 // ─── Modal de formulario ──────────────────────────────────────────────────────
@@ -68,22 +69,27 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   const qc = useQueryClient();
   const isEdit = !!initial;
 
-  // Campos
   const [nombre, setNombre] = useState(initial?.nombre ?? '');
   const [fechaVigencia, setFechaVigencia] = useState(
     initial?.fechaVigencia
       ? new Date(initial.fechaVigencia).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
   );
-  const [porcentaje, setPorcentaje] = useState(
+  const [error, setError] = useState('');
+
+  // ── Modo de valor ──
+  const [modoValor, setModoValor] = useState<ModoValor>(
+    initial ? inferirModoValor(initial) : 'fijo',
+  );
+
+  // Fijo
+  const [pctFijo, setPctFijo] = useState(
     initial?.valorPorcentaje != null ? String(initial.valorPorcentaje) : '',
   );
-  const [alcance, setAlcance] = useState<Alcance>(initial ? inferirAlcance(initial) : 'hibrido');
 
-  // Por cultivo: { cultivoId → porcentaje string }
+  // Por cultivo
   const [pctPorCultivo, setPctPorCultivo] = useState<Record<number, string>>(() => {
-    if (!initial || inferirAlcance(initial) !== 'cultivo') return {};
-    if (initial.modo !== 'avanzado' || esCondicional(initial)) return {};
+    if (!initial || inferirModoValor(initial) !== 'por_cultivo') return {};
     const map: Record<number, string> = {};
     (initial.reglas ?? []).forEach((r) => {
       const cond = r.condiciones?.find((c) => c.campo === 'cultivo_id');
@@ -92,89 +98,66 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     return map;
   });
 
-  // Personalizado: IDs de híbridos seleccionados
-  const [hibridosSelec, setHibridosSelec] = useState<Set<number>>(() => {
-    if (!initial || inferirAlcance(initial) !== 'personalizado') return new Set();
-    const ids = new Set<number>();
-    (initial.reglas ?? []).forEach((r) => {
-      r.condiciones?.forEach((c) => { if (c.campo === 'hibrido_id') ids.add(c.valor); });
-    });
-    return ids;
-  });
-
-  // Condicional
-  const [condicional, setCondicional] = useState(initial ? esCondicional(initial) : false);
-  const [campo, setCampo] = useState<CampoCond>(initial ? inferirCampo(initial) : 'cantidad');
-
-  // Build tramos + pctDefault from existing reglas
+  // Por rango
+  const [driver, setDriver] = useState<DriverRango>(
+    initial ? inferirDriverRango(initial) : 'cantidad',
+  );
   const [tramos, setTramos] = useState<Tramo[]>(() => {
-    if (!initial || !esCondicional(initial)) return [];
+    if (!initial || inferirModoValor(initial) !== 'por_rango') return [];
     return [...(initial.reglas ?? [])]
-      .sort((a, b) => b.prioridad - a.prioridad) // highest priority (threshold) first
+      .sort((a, b) => b.prioridad - a.prioridad)
       .map((r) => {
         const gteC = r.condiciones?.find((c) => c.operador === '>=' || c.operador === '>');
-        return { id: newTramoId(), desde: String(gteC?.valor ?? 0), pct: String(r.valor) };
+        return { id: newId(), desde: String(gteC?.valor ?? 0), pct: String(r.valor) };
       })
-      .filter((t) => t.desde !== '0'); // desde=0 becomes pctDefault
+      .filter((t) => t.desde !== '0');
   });
-
   const [pctDefault, setPctDefault] = useState(() => {
-    if (!initial || !esCondicional(initial)) return '';
-    const defaultRegla = (initial.reglas ?? []).find((r) => {
+    if (!initial || inferirModoValor(initial) !== 'por_rango') return '';
+    const def = (initial.reglas ?? []).find((r) => {
       const gteC = r.condiciones?.find((c) => c.operador === '>=' || c.operador === '>');
-      return !gteC || gteC.valor === 0;
+      return !gteC || Number(gteC.valor) === 0;
     });
-    return defaultRegla ? String(defaultRegla.valor) : '';
+    return def ? String(def.valor) : '';
   });
 
-  const [error, setError] = useState('');
+  // Por selector
+  const [opciones, setOpciones] = useState<OpcionSelector[]>(() => {
+    if (!initial || inferirModoValor(initial) !== 'por_selector') return [];
+    return [...(initial.reglas ?? [])]
+      .sort((a, b) => a.prioridad - b.prioridad)
+      .map((r) => ({ id: newId(), nombre: r.nombre ?? '', pct: String(r.valor) }));
+  });
 
-  // Cultivos (para "Por cultivo" y "Personalizado")
+  // Cultivos (para "Por cultivo")
   const { data: cultivos = [] } = useQuery({
     queryKey: ['cultivos'],
     queryFn: () => productosApi.getCultivos(true),
-    enabled: alcance === 'personalizado' || alcance === 'cultivo',
-  });
-  const hibridosPorCultivo = useQuery({
-    queryKey: ['hibridos-todos'],
-    queryFn: async () => {
-      const all: { cultivo: string; hibridos: Hibrido[] }[] = [];
-      for (const c of cultivos) {
-        const h = await productosApi.getHibridos(c.id, true);
-        if (h.length) all.push({ cultivo: c.nombre, hibridos: h });
-      }
-      return all;
-    },
-    enabled: alcance === 'personalizado' && cultivos.length > 0,
+    enabled: modoValor === 'por_cultivo',
   });
 
   // ── Guardar ──
   const saveMut = useMutation({
     mutationFn: () => {
-      const tipoAplicacion: TipoAplicacion = alcance === 'cultivo' ? 'cultivo' : 'hibrido';
+      type CondOp = '>=' | '=';
 
-      // Personalizado: una regla por híbrido seleccionado
-      if (alcance === 'personalizado') {
-        const reglas = Array.from(hibridosSelec).map((hid, i) => ({
-          valor: Number(porcentaje),
-          prioridad: i + 1,
-          condiciones: [{ campo: 'hibrido_id' as const, operador: '=' as const, valor: hid }],
-        }));
+      if (modoValor === 'fijo') {
         const payload = {
-          nombre, tipoAplicacion: 'hibrido' as const,
-          modo: 'avanzado' as const, fechaVigencia, reglas,
+          nombre, tipoAplicacion: 'global' as const,
+          modo: 'basico' as const,
+          valorPorcentaje: Number(pctFijo),
+          fechaVigencia,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
-      // Cultivo sin condicional: avanzado con reglas por cultivo (una regla por cultivo con %)
-      if (alcance === 'cultivo' && !condicional) {
+      if (modoValor === 'por_cultivo') {
         const reglas = cultivos
           .filter((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0)
           .map((c, i) => ({
             valor: Number(pctPorCultivo[c.id]),
             prioridad: i + 1,
-            condiciones: [{ campo: 'cultivo_id' as const, operador: '=' as const, valor: c.id }],
+            condiciones: [{ campo: 'cultivo_id' as const, operador: '=' as CondOp, valor: c.id }],
           }));
         const payload = {
           nombre, tipoAplicacion: 'cultivo' as const,
@@ -183,43 +166,40 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
-      // Sin condicional (híbrido): basico
-      if (!condicional) {
+      if (modoValor === 'por_rango') {
+        const tramosValidos = [...tramos]
+          .filter((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '')
+          .sort((a, b) => Number(b.desde) - Number(a.desde));
+        const reglas = [
+          ...tramosValidos.map((t, i) => ({
+            valor: Number(t.pct),
+            prioridad: tramosValidos.length + 1 - i,
+            condiciones: [{ campo: driver as string, operador: '>=' as CondOp, valor: Number(t.desde) }],
+          })),
+          ...(pctDefault !== ''
+            ? [{ valor: Number(pctDefault), prioridad: 1,
+                condiciones: [{ campo: driver as string, operador: '>=' as CondOp, valor: 0 }] }]
+            : []),
+        ];
         const payload = {
-          nombre, tipoAplicacion,
-          modo: 'basico' as const,
-          valorPorcentaje: Number(porcentaje),
-          fechaVigencia,
+          nombre, tipoAplicacion: 'hibrido' as const,
+          modo: 'avanzado' as const, fechaVigencia, reglas,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
-      // Condicional: avanzado con tramos visuales
-      const tramosValidos = [...tramos]
-        .filter((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '')
-        .sort((a, b) => Number(b.desde) - Number(a.desde)); // highest threshold = highest priority
-
-      type CondOp = '>=' | '<=';
-      const reglas = [
-        ...tramosValidos.map((t, i) => ({
-          valor: Number(t.pct),
-          prioridad: tramosValidos.length + 1 - i,
-          condiciones: [{ campo, operador: '>=' as CondOp, valor: Number(t.desde) }],
-        })),
-        // Default catch-all (lowest priority, matches everything via campo >= 0)
-        ...(pctDefault !== ''
-          ? [{
-              valor: Number(pctDefault),
-              prioridad: 1,
-              condiciones: [{ campo, operador: '>=' as CondOp, valor: 0 }],
-            }]
-          : []),
-      ];
-
+      // por_selector
+      const reglas = opciones
+        .filter((o) => o.nombre.trim() !== '' && o.pct !== '')
+        .map((o, i) => ({
+          nombre: o.nombre.trim(),
+          valor: Number(o.pct),
+          prioridad: i + 1,
+          condiciones: [] as any[],
+        }));
       const payload = {
-        nombre, tipoAplicacion,
-        modo: 'avanzado' as const,
-        fechaVigencia, reglas,
+        nombre, tipoAplicacion: 'global' as const,
+        modo: 'selector' as const, fechaVigencia, reglas,
       };
       return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
     },
@@ -230,19 +210,28 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   // ── Validación ──
   const canSave = (() => {
     if (!nombre.trim() || !fechaVigencia) return false;
-    if (alcance === 'personalizado') return hibridosSelec.size > 0 && porcentaje !== '';
-    if (alcance === 'cultivo' && !condicional)
+    if (modoValor === 'fijo') return pctFijo !== '' && Number(pctFijo) >= 0;
+    if (modoValor === 'por_cultivo')
       return cultivos.some((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0);
-    if (!condicional) return porcentaje !== '' && Number(porcentaje) >= 0;
-    return pctDefault !== '' || tramos.some((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '');
+    if (modoValor === 'por_rango')
+      return pctDefault !== '' || tramos.some((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '');
+    // por_selector
+    return opciones.some((o) => o.nombre.trim() !== '' && o.pct !== '');
   })();
 
   const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
   const inputCls = 'border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 
+  const modoCards: { value: ModoValor; label: string; desc: string }[] = [
+    { value: 'fijo', label: 'Fijo', desc: 'Un % igual para todos los ítems' },
+    { value: 'por_cultivo', label: 'Por cultivo', desc: '% distinto según el cultivo' },
+    { value: 'por_rango', label: 'Por rango', desc: '% según bolsas, precio u otra variable' },
+    { value: 'por_selector', label: 'Por selector', desc: 'El usuario elige la opción al cotizar' },
+  ];
+
   return (
     <Modal title={isEdit ? `Editar: ${initial!.nombre}` : 'Nuevo descuento'} onClose={onClose}>
-      <div className="space-y-5 max-h-[72vh] overflow-y-auto pr-1">
+      <div className="space-y-5 max-h-[76vh] overflow-y-auto pr-1">
         {error && <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2">{error}</p>}
 
         {/* Nombre + Fecha */}
@@ -253,7 +242,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
               autoFocus
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
-              placeholder="ej: Descuento Soja 2025"
+              placeholder="ej: Pre-campaña Soja 2025"
               className={`w-full ${inputCls}`}
             />
           </div>
@@ -268,34 +257,58 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           </div>
         </div>
 
-        {/* Porcentaje — para híbrido sin condicional y personalizado */}
-        {(alcance === 'hibrido' && !condicional) || alcance === 'personalizado' ? (
+        {/* Modo de valor */}
+        <div>
+          <label className={labelCls}>¿Cómo se determina el porcentaje?</label>
+          <div className="grid grid-cols-2 gap-2">
+            {modoCards.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => setModoValor(m.value)}
+                className={`text-left px-3 py-2.5 rounded-lg border transition-colors ${
+                  modoValor === m.value
+                    ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <div className={`text-sm font-medium ${modoValor === m.value ? 'text-blue-700' : 'text-gray-800'}`}>
+                  {m.label}
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">{m.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <hr className="border-gray-100" />
+
+        {/* ── Fijo ── */}
+        {modoValor === 'fijo' && (
           <div>
-            <label className={labelCls}>
-              {alcance === 'personalizado' ? 'Porcentaje para los híbridos seleccionados' : 'Porcentaje de descuento'}
-            </label>
+            <label className={labelCls}>Porcentaje de descuento *</label>
             <div className="flex items-center gap-2">
               <input
                 type="number"
                 min={0}
                 max={100}
                 step={0.01}
-                value={porcentaje}
-                onChange={(e) => setPorcentaje(e.target.value)}
+                value={pctFijo}
+                onChange={(e) => setPctFijo(e.target.value)}
                 placeholder="ej: 5.00"
                 className={`${inputCls} w-32 text-right`}
               />
               <span className="text-sm text-gray-500">%</span>
             </div>
           </div>
-        ) : null}
+        )}
 
-        {/* Por cultivo sin condicional: inputs individuales por cultivo */}
-        {alcance === 'cultivo' && !condicional && (
+        {/* ── Por cultivo ── */}
+        {modoValor === 'por_cultivo' && (
           <div>
-            <label className={labelCls}>Porcentaje por cultivo</label>
+            <label className={labelCls}>Porcentaje por cultivo *</label>
             <p className="text-xs text-gray-400 mb-2">
-              Dejá en 0 o vacío los cultivos sin descuento (se visualizan con "−").
+              Dejá en 0 o vacío los cultivos sin descuento (no se aplica).
             </p>
             {cultivos.length === 0 ? (
               <div className="flex justify-center py-4"><Spinner /></div>
@@ -324,165 +337,56 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           </div>
         )}
 
-        <hr className="border-gray-100" />
-
-        {/* Alcance */}
-        <div>
-          <label className={labelCls}>Alcance</label>
-          <div className="flex gap-3">
-            {(['cultivo', 'hibrido', 'personalizado'] as Alcance[]).map((a) => (
-              <label key={a} className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="radio"
-                  checked={alcance === a}
-                  onChange={() => { setAlcance(a); if (a === 'personalizado') setCondicional(false); }}
-                />
-                <span>{ALCANCE_LABEL[a]}</span>
-              </label>
-            ))}
-          </div>
-          <p className="text-xs text-gray-400 mt-1.5">
-            {alcance === 'cultivo' && 'Aplica el mismo % a todos los ítems, agrupado por cultivo en la cotización.'}
-            {alcance === 'hibrido' && 'Aplica ítem por ítem. Podés ver el descuento en cada fila.'}
-            {alcance === 'personalizado' && 'Elegí los híbridos específicos a los que aplica.'}
-          </p>
-        </div>
-
-        {/* Híbridos (Personalizado) */}
-        {alcance === 'personalizado' && (
-          <div>
-            <label className={labelCls}>Híbridos incluidos *</label>
-            {hibridosPorCultivo.isLoading || cultivos.length === 0 ? (
-              <div className="flex justify-center py-4"><Spinner /></div>
-            ) : (
-              <div className="border rounded-lg p-3 space-y-3 max-h-48 overflow-y-auto">
-                {(hibridosPorCultivo.data ?? []).map(({ cultivo, hibridos }) => (
-                  <div key={cultivo}>
-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">{cultivo}</div>
-                    <div className="space-y-1">
-                      {hibridos.map((h) => (
-                        <label key={h.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={hibridosSelec.has(h.id)}
-                            onChange={(e) => {
-                              setHibridosSelec((prev) => {
-                                const next = new Set(prev);
-                                e.target.checked ? next.add(h.id) : next.delete(h.id);
-                                return next;
-                              });
-                            }}
-                          />
-                          <span>{h.nombre}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+        {/* ── Por rango ── */}
+        {modoValor === 'por_rango' && (
+          <div className="space-y-3">
+            <div>
+              <label className={labelCls}>¿Qué variable define el rango?</label>
+              <div className="flex gap-2 flex-wrap">
+                {(Object.entries(DRIVER_LABEL) as [DriverRango, string][]).map(([v, l]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setDriver(v)}
+                    className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                      driver === v
+                        ? 'bg-blue-600 border-blue-600 text-white font-medium'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {l}
+                  </button>
                 ))}
               </div>
-            )}
-            {hibridosSelec.size > 0 && (
-              <p className="text-xs text-blue-600 mt-1">{hibridosSelec.size} híbrido(s) seleccionado(s)</p>
-            )}
-          </div>
-        )}
-
-        {/* Condicional (solo cultivo e hibrido) */}
-        {alcance !== 'personalizado' && (
-          <>
-            <hr className="border-gray-100" />
-            <div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer font-medium text-gray-700 select-none">
-                <input
-                  type="checkbox"
-                  checked={condicional}
-                  onChange={(e) => setCondicional(e.target.checked)}
-                  className="rounded"
-                />
-                ¿Varía según una condición?
-              </label>
-              {!condicional && (
-                <p className="text-xs text-gray-400 mt-1 ml-5">
-                  Activá esto para aplicar distintos porcentajes según bolsas, precio u otras variables.
+              {driver === 'ratio_cultivo' && (
+                <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1.5">
+                  El ratio se calcula como bolsas del cultivo ÷ total de bolsas de la cotización.
+                  Usá 0.33 como umbral para "1/3 del total".
                 </p>
               )}
             </div>
 
-            {condicional && (
-              <div className="space-y-3">
-                {/* Reference field selector */}
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-medium text-gray-600 shrink-0">Comparar por</span>
-                  <div className="flex gap-2">
-                    {(Object.entries(CAMPO_LABEL) as [CampoCond, string][]).map(([v, l]) => (
-                      <button
-                        key={v}
-                        onClick={() => setCampo(v)}
-                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-                          campo === v
-                            ? 'bg-blue-600 border-blue-600 text-white font-medium'
-                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                        }`}
-                      >
-                        {l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Visual condition blocks */}
-                <div className="space-y-2">
-                  {/* Conditional tramos — sorted highest threshold first for display */}
-                  {[...tramos]
-                    .sort((a, b) => Number(b.desde) - Number(a.desde))
-                    .map((t) => (
-                      <div key={t.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5 group">
-                        <span className="text-xs font-semibold text-blue-700 shrink-0 w-4">SI</span>
-                        <span className="text-xs text-gray-500 shrink-0">{CAMPO_LABEL[campo]}</span>
-                        <span className="text-xs font-mono text-blue-500 shrink-0">≥</span>
-                        <input
-                          type="number"
-                          min={1}
-                          step={1}
-                          value={t.desde}
-                          onChange={(e) =>
-                            setTramos((prev) =>
-                              prev.map((x) => x.id === t.id ? { ...x, desde: e.target.value } : x)
-                            )
-                          }
-                          className="w-20 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="umbral"
-                        />
-                        <span className="text-xs text-gray-400 mx-0.5">→</span>
-                        <span className="text-xs text-gray-500 shrink-0">aplicar</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step={0.01}
-                          value={t.pct}
-                          onChange={(e) =>
-                            setTramos((prev) =>
-                              prev.map((x) => x.id === t.id ? { ...x, pct: e.target.value } : x)
-                            )
-                          }
-                          className="w-16 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="0"
-                        />
-                        <span className="text-xs text-gray-500">%</span>
-                        <button
-                          onClick={() => setTramos((prev) => prev.filter((x) => x.id !== t.id))}
-                          className="ml-auto text-gray-300 hover:text-red-500 text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Quitar condición"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-
-                  {/* Default catch-all block — always shown */}
-                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
-                    <span className="text-xs font-semibold text-amber-700 shrink-0">EN LOS DEMÁS CASOS</span>
+            <div className="space-y-2">
+              {[...tramos]
+                .sort((a, b) => Number(b.desde) - Number(a.desde))
+                .map((t) => (
+                  <div key={t.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5 group">
+                    <span className="text-xs font-semibold text-blue-700 shrink-0 w-4">SI</span>
+                    <span className="text-xs text-gray-500 shrink-0">{DRIVER_LABEL[driver]}</span>
+                    <span className="text-xs font-mono text-blue-500 shrink-0">≥</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={driver === 'ratio_cultivo' ? 0.01 : 1}
+                      value={t.desde}
+                      onChange={(e) =>
+                        setTramos((prev) =>
+                          prev.map((x) => x.id === t.id ? { ...x, desde: e.target.value } : x)
+                        )
+                      }
+                      className="w-20 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="umbral"
+                    />
                     <span className="text-xs text-gray-400 mx-0.5">→</span>
                     <span className="text-xs text-gray-500 shrink-0">aplicar</span>
                     <input
@@ -490,32 +394,116 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
                       min={0}
                       max={100}
                       step={0.01}
-                      value={pctDefault}
-                      onChange={(e) => setPctDefault(e.target.value)}
-                      className="w-16 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                      value={t.pct}
+                      onChange={(e) =>
+                        setTramos((prev) =>
+                          prev.map((x) => x.id === t.id ? { ...x, pct: e.target.value } : x)
+                        )
+                      }
+                      className="w-16 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="0"
                     />
                     <span className="text-xs text-gray-500">%</span>
+                    <button
+                      type="button"
+                      onClick={() => setTramos((prev) => prev.filter((x) => x.id !== t.id))}
+                      className="ml-auto text-gray-300 hover:text-red-500 text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      ×
+                    </button>
                   </div>
-                </div>
+                ))}
 
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+                <span className="text-xs font-semibold text-amber-700 shrink-0">EN LOS DEMÁS CASOS</span>
+                <span className="text-xs text-gray-400 mx-0.5">→</span>
+                <span className="text-xs text-gray-500 shrink-0">aplicar</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={pctDefault}
+                  onChange={(e) => setPctDefault(e.target.value)}
+                  className="w-16 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  placeholder="0"
+                />
+                <span className="text-xs text-gray-500">%</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setTramos((prev) => [...prev, { id: newId(), desde: '', pct: '' }])}
+              className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              + Agregar condición
+            </button>
+          </div>
+        )}
+
+        {/* ── Por selector ── */}
+        {modoValor === 'por_selector' && (
+          <div className="space-y-2">
+            <label className={labelCls}>Opciones disponibles *</label>
+            <p className="text-xs text-gray-400 mb-1">
+              Al aplicar el descuento en la cotización, el usuario elige la opción activa.
+            </p>
+            {opciones.map((o, idx) => (
+              <div key={o.id} className="flex items-center gap-2 group">
+                <span className="text-xs text-gray-400 w-5 text-right shrink-0">{idx + 1}.</span>
+                <input
+                  type="text"
+                  value={o.nombre}
+                  onChange={(e) =>
+                    setOpciones((prev) =>
+                      prev.map((x) => x.id === o.id ? { ...x, nombre: e.target.value } : x)
+                    )
+                  }
+                  placeholder="ej: Contado"
+                  className={`${inputCls} flex-1`}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={o.pct}
+                  onChange={(e) =>
+                    setOpciones((prev) =>
+                      prev.map((x) => x.id === o.id ? { ...x, pct: e.target.value } : x)
+                    )
+                  }
+                  placeholder="0"
+                  className={`${inputCls} w-20 text-right`}
+                />
+                <span className="text-xs text-gray-500 shrink-0">%</span>
                 <button
-                  onClick={() => setTramos((prev) => [...prev, { id: newTramoId(), desde: '', pct: '' }])}
-                  className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                  type="button"
+                  onClick={() => setOpciones((prev) => prev.filter((x) => x.id !== o.id))}
+                  className="text-gray-300 hover:text-red-500 text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity"
                 >
-                  + Agregar condición
+                  ×
                 </button>
               </div>
-            )}
-          </>
+            ))}
+            <button
+              type="button"
+              onClick={() => setOpciones((prev) => [...prev, { id: newId(), nombre: '', pct: '' }])}
+              className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              + Agregar opción
+            </button>
+          </div>
         )}
       </div>
 
       <div className="flex justify-end gap-2 mt-4 pt-4 border-t">
-        <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+        <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
           Cancelar
         </button>
         <button
+          type="button"
           disabled={!canSave || saveMut.isPending}
           onClick={() => saveMut.mutate()}
           className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
@@ -586,19 +574,18 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
     );
   }
 
-  const alcance = inferirAlcance(descuento);
-  const cond = esCondicional(descuento);
+  const modoV = inferirModoValor(descuento);
 
   return (
     <Modal title={descuento.nombre} onClose={onClose}>
       <div className="space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="inline-flex items-center gap-1 text-xs font-medium bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
-            {ALCANCE_LABEL[alcance]}
+            {MODO_LABEL[modoV]}
           </span>
-          {cond && (
+          {modoV === 'por_rango' && (
             <span className="inline-flex items-center gap-1 text-xs font-medium bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full">
-              Condicional · {CAMPO_LABEL[inferirCampo(descuento)]}
+              {DRIVER_LABEL[inferirDriverRango(descuento)]}
             </span>
           )}
           <Badge label={descuento.activo ? 'activo' : 'inactivo'} />
@@ -623,14 +610,14 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           </div>
         </div>
 
-        {descuento.modo === 'basico' && (
+        {modoV === 'fijo' && (
           <div className="bg-blue-50 rounded-lg p-3 text-sm flex items-center gap-2">
             <span className="text-gray-600">Porcentaje fijo:</span>
             <span className="font-bold text-blue-700 text-lg">{descuento.valorPorcentaje}%</span>
           </div>
         )}
 
-        {alcance === 'cultivo' && !cond && descuento.modo === 'avanzado' && (
+        {modoV === 'por_cultivo' && (
           <div className="text-sm">
             <div className="font-medium text-gray-700 mb-2">Porcentaje por cultivo:</div>
             <div className="space-y-1">
@@ -648,43 +635,41 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           </div>
         )}
 
-        {alcance === 'personalizado' && (
+        {modoV === 'por_rango' && (
           <div className="text-sm">
             <div className="font-medium text-gray-700 mb-2">
-              Híbridos incluidos ({descuento.reglas?.length ?? 0}):
-            </div>
-            <div className="space-y-1">
-              {(descuento.reglas ?? []).map((r) => (
-                <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
-                  <span className="text-gray-600">Híbrido #{r.condiciones?.[0]?.valor}</span>
-                  <span className="font-semibold text-blue-700">{r.valor}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {cond && (
-          <div className="text-sm">
-            <div className="font-medium text-gray-700 mb-2">
-              Tramos por {CAMPO_LABEL[inferirCampo(descuento)]}:
+              Tramos por {DRIVER_LABEL[inferirDriverRango(descuento)]}:
             </div>
             <div className="space-y-1">
               {[...(descuento.reglas ?? [])]
                 .sort((a, b) => a.prioridad - b.prioridad)
                 .map((r) => {
                   const gteC = r.condiciones?.find((c) => c.operador === '>=');
-                  const lteC = r.condiciones?.find((c) => c.operador === '<=');
                   return (
                     <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
                       <span className="text-gray-600">
-                        {gteC ? `Desde ${gteC.valor}` : ''}
-                        {lteC ? ` hasta ${lteC.valor}` : ' en adelante'}
+                        {gteC ? (Number(gteC.valor) === 0 ? 'En los demás casos' : `Desde ${gteC.valor}`) : 'Siempre'}
                       </span>
                       <span className="font-semibold text-blue-700">{r.valor}%</span>
                     </div>
                   );
                 })}
+            </div>
+          </div>
+        )}
+
+        {modoV === 'por_selector' && (
+          <div className="text-sm">
+            <div className="font-medium text-gray-700 mb-2">Opciones:</div>
+            <div className="space-y-1">
+              {[...(descuento.reglas ?? [])]
+                .sort((a, b) => a.prioridad - b.prioridad)
+                .map((r) => (
+                  <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
+                    <span className="text-gray-600">{r.nombre ?? `Opción ${r.prioridad}`}</span>
+                    <span className="font-semibold text-blue-700">{r.valor}%</span>
+                  </div>
+                ))}
             </div>
           </div>
         )}
@@ -759,9 +744,7 @@ export function DescuentosTab() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {descuentos.map((d) => {
-              const alcance = inferirAlcance(d);
-              const cond = esCondicional(d);
-              const nHibridos = alcance === 'personalizado' ? (d.reglas?.length ?? 0) : null;
+              const modoV = inferirModoValor(d);
               return (
                 <tr
                   key={d.id}
@@ -772,12 +755,11 @@ export function DescuentosTab() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="inline-flex items-center text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
-                        {ALCANCE_LABEL[alcance]}
-                        {nHibridos != null && ` (${nHibridos})`}
+                        {MODO_LABEL[modoV]}
                       </span>
-                      {cond && (
+                      {modoV === 'por_rango' && (
                         <span className="inline-flex items-center text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                          {CAMPO_LABEL[inferirCampo(d)]}
+                          {DRIVER_LABEL[inferirDriverRango(d)]}
                         </span>
                       )}
                     </div>
@@ -785,6 +767,8 @@ export function DescuentosTab() {
                   <td className="px-4 py-3 text-gray-700">
                     {d.modo === 'basico'
                       ? `${d.valorPorcentaje}%`
+                      : d.modo === 'selector'
+                      ? `${d.reglas?.length ?? 0} opción(es)`
                       : `${d.reglas?.length ?? 0} regla(s)`}
                   </td>
                   <td className="px-4 py-3 text-gray-500">

@@ -4,10 +4,11 @@ import type { Descuento, DescuentoAplicado, TipoAplicacion } from './types';
 export interface CreateDescuentoPayload {
   nombre: string;
   tipoAplicacion?: TipoAplicacion;
-  modo?: 'basico' | 'avanzado';
+  modo?: 'basico' | 'avanzado' | 'selector';
   valorPorcentaje?: number;
   fechaVigencia: string;
   reglas?: Array<{
+    nombre?: string;
     valor: number;
     prioridad?: number;
     condiciones: Array<{
@@ -37,5 +38,6 @@ export const descuentosApi = {
     bandaId?: number;
     precio?: number;
     subtotal?: number;
+    ratioCultivo?: number;
   }) => api.post<DescuentoAplicado[]>('/descuentos/evaluar', body),
 };

@@ -39,4 +39,11 @@ export class EvaluarDescuentoDto {
   @Min(0)
   @IsOptional()
   subtotal?: number;
+
+  @Transform(({ value }) => (value == null ? undefined : value))
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(0)
+  @IsOptional()
+  ratioCultivo?: number;
 }

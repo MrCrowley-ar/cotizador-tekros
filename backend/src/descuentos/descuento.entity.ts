@@ -14,6 +14,7 @@ export enum TipoAplicacion {
 export enum ModoDescuento {
   BASICO = 'basico',
   AVANZADO = 'avanzado',
+  SELECTOR = 'selector',
 }
 
 // El nombre puede repetirse en distintas fechas (historial de cambios).
