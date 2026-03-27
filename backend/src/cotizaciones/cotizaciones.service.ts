@@ -184,7 +184,7 @@ export class CotizacionesService {
           cultivoId: item.cultivoId,
           hibridoId: item.hibridoId,
           bandaId: item.bandaId,
-          cantidad: item.cantidad,
+          bolsas: item.bolsas,
           precioBase: item.precioBase,
           subtotal: item.subtotal,
         });
@@ -237,7 +237,7 @@ export class CotizacionesService {
     // Congela precio actual
     const precioActual = await this.preciosService.getPrecioActual(dto.hibridoId, dto.bandaId);
     const precioBase = Number(precioActual.precio);
-    const subtotal = precioBase * dto.bolsas;
+    const subtotal = precioBase;
 
     const item = await this.itemRepo.save(
       this.itemRepo.create({
@@ -445,7 +445,7 @@ export class CotizacionesService {
     const desglose: object[] = [];
 
     for (const item of version.items) {
-      const subtotalItem = Number(item.precioBase) * Number(item.cantidad);
+      const subtotalItem = Number(item.subtotal);
       let descuentoItemTotal = 0;
 
       for (const d of item.descuentos) {
@@ -460,7 +460,7 @@ export class CotizacionesService {
         itemId: item.id,
         hibridoId: item.hibridoId,
         bandaId: item.bandaId,
-        cantidad: item.cantidad,
+        bolsas: item.bolsas,
         precioBase: item.precioBase,
         subtotal: subtotalItem,
         descuentos: descuentoItemTotal,

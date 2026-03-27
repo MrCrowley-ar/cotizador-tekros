@@ -356,6 +356,57 @@ function CultivoSelector({ cultivos, activeCultivoIds, withItemIds, onToggle }: 
   );
 }
 
+// ─── Cultivo Stats Panel ──────────────────────────────────────────────────────
+
+function CultivoStatsPanel({ version, cultivos }: { version: CotizacionVersion; cultivos: Cultivo[] }) {
+  const items = version.items ?? [];
+  if (items.length === 0) return null;
+
+  const byCultivo = new Map<number, { nombre: string; bolsas: number; monto: number }>();
+  for (const item of items) {
+    const nombre =
+      item.cultivo?.nombre ??
+      cultivos.find((c) => c.id === item.cultivoId)?.nombre ??
+      String(item.cultivoId);
+    const cur = byCultivo.get(item.cultivoId) ?? { nombre, bolsas: 0, monto: 0 };
+    cur.bolsas += Number(item.bolsas);
+    cur.monto += Number(item.subtotal);
+    byCultivo.set(item.cultivoId, cur);
+  }
+
+  const fmt = (n: number) =>
+    n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <div className="bg-white rounded-xl border p-4 text-sm">
+      {Array.from(byCultivo.entries()).map(([cultivoId, stats], idx) => {
+        const precioPonderado = stats.bolsas > 0 ? stats.monto / stats.bolsas : 0;
+        return (
+          <div key={cultivoId} className={idx > 0 ? 'mt-3 pt-3 border-t' : ''}>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+              {stats.nombre}
+            </p>
+            <div className="space-y-1">
+              <div className="flex justify-between text-gray-600">
+                <span>Volumen</span>
+                <span>{stats.bolsas.toLocaleString('es-AR')} bolsas</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Monto</span>
+                <span>${fmt(stats.monto)}</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>P. ponderado</span>
+                <span>${fmt(precioPonderado)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Totals Panel ─────────────────────────────────────────────────────────────
 
 function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versionId: number }) {
@@ -649,6 +700,29 @@ export function CotizacionEditorPage() {
     [allDescuentos, activeDiscountIds],
   );
 
+  // Stats por cultivo: volumen (bolsas), monto (suma subtotales), precio ponderado
+  // Se guardan como variables disponibles para el evaluador de descuentos
+  const cultivoStats = useMemo(() => {
+    const items = version?.items ?? [];
+    const map = new Map<number, { bolsas: number; monto: number }>();
+    for (const item of items) {
+      const cur = map.get(item.cultivoId) ?? { bolsas: 0, monto: 0 };
+      cur.bolsas += Number(item.bolsas);
+      cur.monto += Number(item.subtotal);
+      map.set(item.cultivoId, cur);
+    }
+    return map;
+  }, [version]);
+
+  const totalBolsas = useMemo(
+    () => [...cultivoStats.values()].reduce((sum, s) => sum + s.bolsas, 0),
+    [cultivoStats],
+  );
+
+  // ratio de bolsas de un cultivo sobre el total (para descuento cross selling)
+  const getRatioCultivo = (cultivoId: number) =>
+    totalBolsas > 0 ? (cultivoStats.get(cultivoId)?.bolsas ?? 0) / totalBolsas : 0;
+
   function markDiscPending(id: number, on: boolean) {
     setPendingDiscountIds((prev) => { const n = new Set(prev); on ? n.add(id) : n.delete(id); return n; });
   }
@@ -702,8 +776,9 @@ export function CotizacionEditorPage() {
               hibridoId: item.hibridoId,
               bandaId: item.bandaId,
               cantidad: Number(item.bolsas),
-              ...(rulesCampos.has('precio')   && { precio:   Number(item.precioBase) }),
-              ...(rulesCampos.has('subtotal') && { subtotal: Number(item.subtotal) }),
+              ...(rulesCampos.has('precio')        && { precio:        Number(item.precioBase) }),
+              ...(rulesCampos.has('subtotal')      && { subtotal:      Number(item.subtotal) }),
+              ...(rulesCampos.has('ratio_cultivo') && { ratioCultivo:  getRatioCultivo(item.cultivoId) }),
             });
             const match = results.find((r) => r.descuentoId === desc.id);
             if (match) {
@@ -867,6 +942,9 @@ export function CotizacionEditorPage() {
 
           {/* Right panel — independent scroll */}
           <div style={{ width: rightWidth }} className="shrink-0 overflow-y-auto space-y-4">
+            {version && (
+              <CultivoStatsPanel version={version} cultivos={cultivos} />
+            )}
             {selectedVersionId && (
               <TotalsPanel cotizacionId={cotizacionId} versionId={selectedVersionId} />
             )}
