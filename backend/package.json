@@ -12,7 +12,11 @@
     "migration:generate": "typeorm-ts-node-commonjs -d src/typeorm.config.ts migration:generate src/database/migrations/$npm_config_name",
     "migration:run": "typeorm-ts-node-commonjs -d src/typeorm.config.ts migration:run",
     "migration:revert": "typeorm-ts-node-commonjs -d src/typeorm.config.ts migration:revert",
-    "migration:show": "typeorm-ts-node-commonjs -d src/typeorm.config.ts migration:show"
+    "migration:show": "typeorm-ts-node-commonjs -d src/typeorm.config.ts migration:show",
+    "seed:clientes": "ts-node -r tsconfig-paths/register src/database/seeds/clientes.seed.ts",
+    "seed:precios-hibridos": "ts-node -r tsconfig-paths/register src/database/seeds/precios-hibridos.seed.ts"
+
+
   },
   "dependencies": {
     "@nestjs/common": "^10.4.1",
