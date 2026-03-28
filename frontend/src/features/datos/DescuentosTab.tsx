@@ -256,18 +256,19 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
 
       if (tipoCondicion === 'por_rango') {
         const tramosValidos = [...tramos]
-          .filter((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '')
-          .sort((a, b) => Number(b.desde) - Number(a.desde));
+          .filter((t) => t.pct !== '')
+          .sort((a, b) => Number(a.desde) - Number(b.desde));
         const reglas = [
-          ...tramosValidos.map((t, i) => {
+          // Prioridades descendentes: el tramo más alto (mayor desde) tiene prioridad 1
+          ...tramosValidos.reverse().map((t, i) => {
             const tieneHasta = t.hasta && t.hasta !== '';
             const cond = tieneHasta
               ? { campo: driver as string, operador: 'entre' as const, valor: Number(t.desde), valor2: Number(t.hasta) }
               : { campo: driver as string, operador: '>=' as CondOp, valor: Number(t.desde) };
-            return { valor: Number(t.pct), prioridad: tramosValidos.length + 1 - i, condiciones: [cond] };
+            return { valor: Number(t.pct), prioridad: i + 1, condiciones: [cond] };
           }),
           ...(pctDefault !== ''
-            ? [{ valor: Number(pctDefault), prioridad: 1,
+            ? [{ valor: Number(pctDefault), prioridad: tramosValidos.length + 1,
                 condiciones: [{ campo: driver as string, operador: '>=' as CondOp, valor: 0 }] }]
             : []),
         ];
@@ -324,7 +325,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
       return cultivos.some((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0);
     if (tipoCondicion === 'fijo') return pctFijo !== '' && Number(pctFijo) >= 0;
     if (tipoCondicion === 'por_rango')
-      return pctDefault !== '' || tramos.some((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '');
+      return pctDefault !== '' || tramos.some((t) => t.pct !== '');
     if (tipoCondicion === 'personalizado') return customRules.length > 0;
     // por_selector
     return opciones.some((o) => o.nombre.trim() !== '' && o.pct !== '');
@@ -516,17 +517,21 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
               )}
             </div>
 
-            <div className="space-y-2">
+            {/* Cabecera de la tabla de tramos */}
+            <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-2 items-center px-3 pb-0.5">
+              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Desde</span>
+              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Hasta</span>
+              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Descuento</span>
+              <span />
+            </div>
+
+            <div className="space-y-1.5">
               {[...tramos]
-                .sort((a, b) => Number(b.desde) - Number(a.desde))
+                .sort((a, b) => Number(a.desde) - Number(b.desde))
                 .map((t) => {
                   const step = driver === 'ratio_cultivo' || driver === 'precio_ponderado' ? 0.01 : 1;
-                  const hasHasta = t.hasta && t.hasta !== '';
                   return (
-                    <div key={t.id} className="flex flex-wrap items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5 group">
-                      <span className="text-xs font-semibold text-blue-700 shrink-0 w-4">SI</span>
-                      <span className="text-xs text-gray-500 shrink-0">{ALL_DRIVER_LABELS[driver]}</span>
-                      <span className="text-xs font-mono text-blue-500 shrink-0">{hasHasta ? 'entre' : '≥'}</span>
+                    <div key={t.id} className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-2 items-center group">
                       <input
                         type="number"
                         min={0}
@@ -535,62 +540,39 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
                         onChange={(e) =>
                           setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, desde: e.target.value } : x))
                         }
-                        className="w-20 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="desde"
+                        className="border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="0"
                       />
-                      {/* Opcional: campo "hasta" para rango ENTRE */}
-                      {hasHasta ? (
-                        <>
-                          <span className="text-xs text-gray-500 shrink-0">y</span>
-                          <input
-                            type="number"
-                            min={0}
-                            step={step}
-                            value={t.hasta ?? ''}
-                            onChange={(e) =>
-                              setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, hasta: e.target.value } : x))
-                            }
-                            className="w-20 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="hasta"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, hasta: '' } : x))}
-                            className="text-xs text-gray-400 hover:text-gray-600"
-                            title="Quitar límite superior"
-                          >
-                            ✕ hasta
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, hasta: '' } : x))}
-                          className="text-xs text-gray-300 hover:text-blue-500 border border-dashed rounded px-1.5"
-                          title="Agregar límite superior (hasta)"
-                        >
-                          + hasta
-                        </button>
-                      )}
-                      <span className="text-xs text-gray-400 mx-0.5">→</span>
-                      <span className="text-xs text-gray-500 shrink-0">aplicar</span>
                       <input
                         type="number"
                         min={0}
-                        max={100}
-                        step={0.01}
-                        value={t.pct}
+                        step={step}
+                        value={t.hasta ?? ''}
                         onChange={(e) =>
-                          setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, pct: e.target.value } : x))
+                          setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, hasta: e.target.value } : x))
                         }
-                        className="w-16 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="0"
+                        className="border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-500 placeholder-gray-300"
+                        placeholder="sin límite"
                       />
-                      <span className="text-xs text-gray-500">%</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.01}
+                          value={t.pct}
+                          onChange={(e) =>
+                            setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, pct: e.target.value } : x))
+                          }
+                          className="w-16 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="0"
+                        />
+                        <span className="text-xs text-gray-500">%</span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setTramos((prev) => prev.filter((x) => x.id !== t.id))}
-                        className="ml-auto text-gray-300 hover:text-red-500 text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="text-gray-300 hover:text-red-500 text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity justify-self-center"
                       >
                         ×
                       </button>
@@ -598,30 +580,32 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
                   );
                 })}
 
-              <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
-                <span className="text-xs font-semibold text-amber-700 shrink-0">EN LOS DEMÁS CASOS</span>
-                <span className="text-xs text-gray-400 mx-0.5">→</span>
-                <span className="text-xs text-gray-500 shrink-0">aplicar</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.01}
-                  value={pctDefault}
-                  onChange={(e) => setPctDefault(e.target.value)}
-                  className="w-16 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
-                  placeholder="0"
-                />
-                <span className="text-xs text-gray-500">%</span>
+              {/* Fila "En los demás casos" */}
+              <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-2 items-center mt-1 pt-2 border-t border-gray-100">
+                <div className="col-span-2 text-xs text-amber-700 font-medium">En los demás casos</div>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.01}
+                    value={pctDefault}
+                    onChange={(e) => setPctDefault(e.target.value)}
+                    className="w-16 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-amber-400 bg-amber-50"
+                    placeholder="0"
+                  />
+                  <span className="text-xs text-gray-500">%</span>
+                </div>
+                <span />
               </div>
             </div>
 
             <button
               type="button"
-              onClick={() => setTramos((prev) => [...prev, { id: newId(), desde: '', pct: '' }])}
+              onClick={() => setTramos((prev) => [...prev, { id: newId(), desde: '', hasta: '', pct: '' }])}
               className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
             >
-              + Agregar condición
+              + Agregar tramo
             </button>
           </div>
         )}
