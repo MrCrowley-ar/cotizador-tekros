@@ -83,8 +83,10 @@ export class DescuentosService {
                 reglaId: regla.id,
                 campo: c.campo,
                 operador: c.operador,
-                valor: c.valor,
+                valor: c.valor ?? 0,
                 valor2: c.valor2 ?? null,
+                valorCampo: c.valorCampo ?? null,
+                valorMultiplier: c.valorMultiplier ?? null,
               }),
             ),
           );
@@ -171,8 +173,10 @@ export class DescuentosService {
                 reglaId: regla.id,
                 campo: c.campo,
                 operador: c.operador,
-                valor: c.valor,
+                valor: c.valor ?? 0,
                 valor2: c.valor2 ?? null,
+                valorCampo: c.valorCampo ?? null,
+                valorMultiplier: c.valorMultiplier ?? null,
               }),
             ),
           );

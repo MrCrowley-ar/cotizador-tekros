@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ConditionRow } from './ConditionRow';
+import { ConditionRow, CAMPOS, FRACCIONES } from './ConditionRow';
 import type { ConditionData } from './ConditionRow';
 
 export interface RuleData {
@@ -13,15 +13,29 @@ interface Props {
   onChange: (rules: RuleData[]) => void;
 }
 
+const CAMPO_LABEL: Record<string, string> = Object.fromEntries(
+  CAMPOS.map((c) => [c.value, c.label]),
+);
+
 function describeCondition(c: ConditionData): string {
-  const campo = c.campo.replace('_id', '').replace('_', ' ');
-  if (c.operador === 'entre') {
-    return `${campo} entre ${c.valor} y ${c.valor2 ?? '?'}`;
-  }
+  const campoLabel = CAMPO_LABEL[c.campo] ?? c.campo;
   const opLabel: Record<string, string> = {
-    '=': '=', '!=': '≠', '>': '>', '<': '<', '>=': '≥', '<=': '≤',
+    '=': '=', '!=': '≠', '>': '>', '<': '<', '>=': '≥', '<=': '≤', 'entre': 'entre',
   };
-  return `${campo} ${opLabel[c.operador] ?? c.operador} ${c.valor}`;
+  const op = opLabel[c.operador] ?? c.operador;
+
+  if (c.valorCampo) {
+    const fracLabel = FRACCIONES.find(
+      (f) => Math.abs(f.value - (c.valorMultiplier ?? 1)) < 0.0001,
+    )?.label ?? `×${c.valorMultiplier}`;
+    const campo2Label = CAMPO_LABEL[c.valorCampo] ?? c.valorCampo;
+    return `${campoLabel} ${op} ${fracLabel} ${campo2Label}`;
+  }
+
+  if (c.operador === 'entre') {
+    return `${campoLabel} entre ${c.valor} y ${c.valor2 ?? '?'}`;
+  }
+  return `${campoLabel} ${op} ${c.valor}`;
 }
 
 function describeRule(rule: RuleData): string {

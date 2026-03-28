@@ -103,7 +103,16 @@ export class DescuentoEvaluadorService {
     const valorContexto = this.getValorContexto(c.campo, ctx);
     if (valorContexto === undefined) return false;
 
-    const v = Number(c.valor);
+    // Condición relativa: ctx[campo] op (valorMultiplier × ctx[valorCampo])
+    let v: number;
+    if (c.valorCampo) {
+      const base = this.getValorContexto(c.valorCampo, ctx);
+      if (base === undefined) return false;
+      v = (c.valorMultiplier !== null ? Number(c.valorMultiplier) : 1) * base;
+    } else {
+      v = Number(c.valor);
+    }
+
     const v2 = c.valor2 !== null ? Number(c.valor2) : null;
 
     switch (c.operador) {

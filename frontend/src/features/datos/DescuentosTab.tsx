@@ -5,14 +5,17 @@ import { productosApi } from '../../api/productos';
 import { Modal } from '../../components/Modal';
 import { Spinner } from '../../components/Spinner';
 import { Badge } from '../../components/Badge';
+import { RuleBuilder } from './RuleBuilder';
+import type { RuleData } from './RuleBuilder';
 import type { Descuento } from '../../api/types';
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
-type TipoCondicion = 'fijo' | 'por_rango' | 'por_selector';
+type TipoCondicion = 'fijo' | 'por_rango' | 'por_selector' | 'personalizado';
 type DriverRango = 'cantidad' | 'precio' | 'subtotal' | 'ratio_cultivo' | 'volumen' | 'monto' | 'precio_ponderado';
 
-interface Tramo { id: string; desde: string; pct: string }
+// hasta es opcional: si se define, el tramo usa operador ENTRE (desde-hasta)
+interface Tramo { id: string; desde: string; hasta?: string; pct: string }
 interface OpcionSelector { id: string; nombre: string; pct: string }
 
 let _ctr = 0;
@@ -27,12 +30,32 @@ function inferirAlcance(d: Descuento): import('../../api/types').TipoAplicacion 
 function inferirTipoCondicion(d: Descuento): TipoCondicion {
   if (d.modo === 'selector') return 'por_selector';
   if (d.modo === 'basico') return 'fijo';
-  // avanzado: si todas las reglas usan cultivo_id → fijo (grilla por cultivo)
-  const todasCultivoId = (d.reglas ?? []).every(
+
+  const reglas = d.reglas ?? [];
+
+  // fijo + cultivo: todas las reglas tienen una sola condición cultivo_id =
+  const todasCultivoId = reglas.every(
     (r) => r.condiciones?.length === 1 && r.condiciones[0].campo === 'cultivo_id',
   );
   if (todasCultivoId) return 'fijo';
-  return 'por_rango';
+
+  // por_rango: todas las reglas tienen exactamente 1 condición, mismo campo,
+  //            operador >= o entre, sin valorCampo (no relativo)
+  if (reglas.length > 0) {
+    const primerCampo = reglas[0]?.condiciones?.[0]?.campo;
+    const todoRango = reglas.every((r) => {
+      const conds = r.condiciones ?? [];
+      if (conds.length !== 1) return false;
+      const c = conds[0];
+      if (c.campo !== primerCampo) return false;
+      if (c.operador !== '>=' && c.operador !== 'entre') return false;
+      if (c.valorCampo) return false; // relativo → personalizado
+      return true;
+    });
+    if (todoRango) return 'por_rango';
+  }
+
+  return 'personalizado';
 }
 
 function inferirDriverRango(d: Descuento): DriverRango {
@@ -54,6 +77,7 @@ const TIPO_LABEL: Record<TipoCondicion, string> = {
   fijo: 'Fijo',
   por_rango: 'Por rango',
   por_selector: 'Por selector',
+  personalizado: 'Personalizado',
 };
 
 const ALCANCE_LABEL: Record<import('../../api/types').TipoAplicacion, string> = {
@@ -146,7 +170,11 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     return [...(initial.reglas ?? [])]
       .sort((a, b) => b.prioridad - a.prioridad)
       .map((r) => {
-        const gteC = r.condiciones?.find((c) => c.operador === '>=' || c.operador === '>');
+        const c = r.condiciones?.[0];
+        if (c?.operador === 'entre') {
+          return { id: newId(), desde: String(c.valor ?? 0), hasta: String(c.valor2 ?? ''), pct: String(r.valor) };
+        }
+        const gteC = r.condiciones?.find((c2) => c2.operador === '>=' || c2.operador === '>');
         return { id: newId(), desde: String(gteC?.valor ?? 0), pct: String(r.valor) };
       })
       .filter((t) => t.desde !== '0');
@@ -158,6 +186,25 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
       return !gteC || Number(gteC.valor) === 0;
     });
     return def ? String(def.valor) : '';
+  });
+
+  // Personalizado: rules libres usando RuleBuilder
+  const [customRules, setCustomRules] = useState<RuleData[]>(() => {
+    if (!initial || inferirTipoCondicion(initial) !== 'personalizado') return [];
+    return [...(initial.reglas ?? [])]
+      .sort((a, b) => a.prioridad - b.prioridad)
+      .map((r) => ({
+        valor: Number(r.valor),
+        prioridad: r.prioridad,
+        condiciones: (r.condiciones ?? []).map((c) => ({
+          campo: c.campo,
+          operador: c.operador,
+          valor: Number(c.valor),
+          valor2: c.valor2 != null ? Number(c.valor2) : undefined,
+          valorCampo: c.valorCampo ?? undefined,
+          valorMultiplier: c.valorMultiplier ?? undefined,
+        })),
+      }));
   });
 
   // Por selector
@@ -212,16 +259,38 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           .filter((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '')
           .sort((a, b) => Number(b.desde) - Number(a.desde));
         const reglas = [
-          ...tramosValidos.map((t, i) => ({
-            valor: Number(t.pct),
-            prioridad: tramosValidos.length + 1 - i,
-            condiciones: [{ campo: driver as string, operador: '>=' as CondOp, valor: Number(t.desde) }],
-          })),
+          ...tramosValidos.map((t, i) => {
+            const tieneHasta = t.hasta && t.hasta !== '';
+            const cond = tieneHasta
+              ? { campo: driver as string, operador: 'entre' as const, valor: Number(t.desde), valor2: Number(t.hasta) }
+              : { campo: driver as string, operador: '>=' as CondOp, valor: Number(t.desde) };
+            return { valor: Number(t.pct), prioridad: tramosValidos.length + 1 - i, condiciones: [cond] };
+          }),
           ...(pctDefault !== ''
             ? [{ valor: Number(pctDefault), prioridad: 1,
                 condiciones: [{ campo: driver as string, operador: '>=' as CondOp, valor: 0 }] }]
             : []),
         ];
+        const payload = {
+          nombre, tipoAplicacion: alcance,
+          modo: 'avanzado' as const, fechaVigencia, reglas,
+        };
+        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
+      }
+
+      if (tipoCondicion === 'personalizado') {
+        const reglas = customRules.map((r) => ({
+          valor: r.valor,
+          prioridad: r.prioridad,
+          condiciones: r.condiciones.map((c) => ({
+            campo: c.campo,
+            operador: c.operador,
+            valor: c.valorCampo ? 0 : c.valor,
+            valor2: c.valor2,
+            valorCampo: c.valorCampo,
+            valorMultiplier: c.valorMultiplier,
+          })),
+        }));
         const payload = {
           nombre, tipoAplicacion: alcance,
           modo: 'avanzado' as const, fechaVigencia, reglas,
@@ -256,6 +325,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     if (tipoCondicion === 'fijo') return pctFijo !== '' && Number(pctFijo) >= 0;
     if (tipoCondicion === 'por_rango')
       return pctDefault !== '' || tramos.some((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '');
+    if (tipoCondicion === 'personalizado') return customRules.length > 0;
     // por_selector
     return opciones.some((o) => o.nombre.trim() !== '' && o.pct !== '');
   })();
@@ -270,9 +340,10 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   ];
 
   const tipoCards: { value: TipoCondicion; label: string; desc: string }[] = [
-    { value: 'fijo',         label: 'Fijo',        desc: alcance === 'cultivo' ? '% distinto por cultivo' : 'Un % igual para todos' },
-    { value: 'por_rango',    label: 'Por rango',   desc: '% según una variable de la cotización' },
-    { value: 'por_selector', label: 'Por selector', desc: 'El usuario elige la opción al cotizar' },
+    { value: 'fijo',         label: 'Fijo',          desc: alcance === 'cultivo' ? '% distinto por cultivo' : 'Un % igual para todos' },
+    { value: 'por_rango',    label: 'Por rango',     desc: '% según una variable (desde / desde–hasta)' },
+    { value: 'por_selector', label: 'Por selector',  desc: 'El usuario elige la opción al cotizar' },
+    { value: 'personalizado', label: 'Personalizado', desc: 'Condiciones libres: variable op valor/fracción' },
   ];
 
   return (
@@ -448,50 +519,84 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
             <div className="space-y-2">
               {[...tramos]
                 .sort((a, b) => Number(b.desde) - Number(a.desde))
-                .map((t) => (
-                  <div key={t.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5 group">
-                    <span className="text-xs font-semibold text-blue-700 shrink-0 w-4">SI</span>
-                    <span className="text-xs text-gray-500 shrink-0">{ALL_DRIVER_LABELS[driver]}</span>
-                    <span className="text-xs font-mono text-blue-500 shrink-0">≥</span>
-                    <input
-                      type="number"
-                      min={0}
-                      step={driver === 'ratio_cultivo' || driver === 'precio_ponderado' ? 0.01 : 1}
-                      value={t.desde}
-                      onChange={(e) =>
-                        setTramos((prev) =>
-                          prev.map((x) => x.id === t.id ? { ...x, desde: e.target.value } : x)
-                        )
-                      }
-                      className="w-20 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="umbral"
-                    />
-                    <span className="text-xs text-gray-400 mx-0.5">→</span>
-                    <span className="text-xs text-gray-500 shrink-0">aplicar</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={0.01}
-                      value={t.pct}
-                      onChange={(e) =>
-                        setTramos((prev) =>
-                          prev.map((x) => x.id === t.id ? { ...x, pct: e.target.value } : x)
-                        )
-                      }
-                      className="w-16 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="0"
-                    />
-                    <span className="text-xs text-gray-500">%</span>
-                    <button
-                      type="button"
-                      onClick={() => setTramos((prev) => prev.filter((x) => x.id !== t.id))}
-                      className="ml-auto text-gray-300 hover:text-red-500 text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+                .map((t) => {
+                  const step = driver === 'ratio_cultivo' || driver === 'precio_ponderado' ? 0.01 : 1;
+                  const hasHasta = t.hasta && t.hasta !== '';
+                  return (
+                    <div key={t.id} className="flex flex-wrap items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5 group">
+                      <span className="text-xs font-semibold text-blue-700 shrink-0 w-4">SI</span>
+                      <span className="text-xs text-gray-500 shrink-0">{ALL_DRIVER_LABELS[driver]}</span>
+                      <span className="text-xs font-mono text-blue-500 shrink-0">{hasHasta ? 'entre' : '≥'}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={step}
+                        value={t.desde}
+                        onChange={(e) =>
+                          setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, desde: e.target.value } : x))
+                        }
+                        className="w-20 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="desde"
+                      />
+                      {/* Opcional: campo "hasta" para rango ENTRE */}
+                      {hasHasta ? (
+                        <>
+                          <span className="text-xs text-gray-500 shrink-0">y</span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={step}
+                            value={t.hasta ?? ''}
+                            onChange={(e) =>
+                              setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, hasta: e.target.value } : x))
+                            }
+                            className="w-20 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="hasta"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, hasta: '' } : x))}
+                            className="text-xs text-gray-400 hover:text-gray-600"
+                            title="Quitar límite superior"
+                          >
+                            ✕ hasta
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, hasta: '' } : x))}
+                          className="text-xs text-gray-300 hover:text-blue-500 border border-dashed rounded px-1.5"
+                          title="Agregar límite superior (hasta)"
+                        >
+                          + hasta
+                        </button>
+                      )}
+                      <span className="text-xs text-gray-400 mx-0.5">→</span>
+                      <span className="text-xs text-gray-500 shrink-0">aplicar</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        value={t.pct}
+                        onChange={(e) =>
+                          setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, pct: e.target.value } : x))
+                        }
+                        className="w-16 border rounded-md px-2 py-1 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="0"
+                      />
+                      <span className="text-xs text-gray-500">%</span>
+                      <button
+                        type="button"
+                        onClick={() => setTramos((prev) => prev.filter((x) => x.id !== t.id))}
+                        className="ml-auto text-gray-300 hover:text-red-500 text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
 
               <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
                 <span className="text-xs font-semibold text-amber-700 shrink-0">EN LOS DEMÁS CASOS</span>
@@ -518,6 +623,17 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
             >
               + Agregar condición
             </button>
+          </div>
+        )}
+
+        {/* ── Personalizado ── */}
+        {tipoCondicion === 'personalizado' && (
+          <div className="space-y-3">
+            <div className="bg-purple-50 border border-purple-100 rounded-lg px-3 py-2 text-xs text-purple-700">
+              Armá reglas con condiciones libres. La <strong>primera regla</strong> cuyas condiciones se cumplan gana.
+              Usá el botón <strong>÷</strong> en cada condición para comparar con una fracción de otra variable.
+            </div>
+            <RuleBuilder rules={customRules} onChange={setCustomRules} />
           </div>
         )}
 
@@ -717,16 +833,35 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
               {[...(descuento.reglas ?? [])]
                 .sort((a, b) => a.prioridad - b.prioridad)
                 .map((r) => {
-                  const gteC = r.condiciones?.find((c) => c.operador === '>=');
+                  const c = r.condiciones?.[0];
+                  let desc = 'Siempre';
+                  if (c?.operador === 'entre') desc = `Entre ${c.valor} y ${c.valor2}`;
+                  else if (c?.operador === '>=') desc = Number(c.valor) === 0 ? 'En los demás casos' : `Desde ${c.valor}`;
                   return (
                     <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
-                      <span className="text-gray-600">
-                        {gteC ? (Number(gteC.valor) === 0 ? 'En los demás casos' : `Desde ${gteC.valor}`) : 'Siempre'}
-                      </span>
+                      <span className="text-gray-600">{desc}</span>
                       <span className="font-semibold text-blue-700">{r.valor}%</span>
                     </div>
                   );
                 })}
+            </div>
+          </div>
+        )}
+
+        {tipoV === 'personalizado' && (
+          <div className="text-sm">
+            <div className="font-medium text-gray-700 mb-2">Reglas personalizadas:</div>
+            <div className="space-y-1">
+              {[...(descuento.reglas ?? [])]
+                .sort((a, b) => a.prioridad - b.prioridad)
+                .map((r) => (
+                  <div key={r.id} className="bg-gray-50 rounded px-3 py-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500 text-xs">#{r.prioridad} · {r.condiciones?.length ?? 0} condición(es)</span>
+                      <span className="font-semibold text-blue-700">{r.valor}%</span>
+                    </div>
+                  </div>
+                ))}
             </div>
           </div>
         )}

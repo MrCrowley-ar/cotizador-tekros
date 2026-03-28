@@ -67,6 +67,9 @@ export interface DescuentoCondicion {
   operador: OperadorCondicion;
   valor: number;
   valor2: number | null;
+  // Condición relativa: cuando valorCampo está definido, el lado derecho es (valorMultiplier × ctx[valorCampo])
+  valorCampo: CampoCondicion | null;
+  valorMultiplier: number | null;
 }
 export interface DescuentoRegla {
   id: number;
