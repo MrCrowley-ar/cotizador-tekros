@@ -9,8 +9,8 @@ import type { Descuento } from '../../api/types';
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
-type ModoValor = 'fijo' | 'por_cultivo' | 'por_rango' | 'por_selector';
-type DriverRango = 'cantidad' | 'precio' | 'subtotal' | 'ratio_cultivo';
+type TipoCondicion = 'fijo' | 'por_rango' | 'por_selector';
+type DriverRango = 'cantidad' | 'precio' | 'subtotal' | 'ratio_cultivo' | 'volumen' | 'monto' | 'precio_ponderado';
 
 interface Tramo { id: string; desde: string; pct: string }
 interface OpcionSelector { id: string; nombre: string; pct: string }
@@ -20,21 +20,19 @@ function newId() { return `i${++_ctr}`; }
 
 // ─── Helpers para display ─────────────────────────────────────────────────────
 
-function inferirModoValor(d: Descuento): ModoValor {
+function inferirAlcance(d: Descuento): import('../../api/types').TipoAplicacion {
+  return d.tipoAplicacion;
+}
+
+function inferirTipoCondicion(d: Descuento): TipoCondicion {
   if (d.modo === 'selector') return 'por_selector';
   if (d.modo === 'basico') return 'fijo';
+  // avanzado: si todas las reglas usan cultivo_id → fijo (grilla por cultivo)
   const todasCultivoId = (d.reglas ?? []).every(
     (r) => r.condiciones?.length === 1 && r.condiciones[0].campo === 'cultivo_id',
   );
-  if (todasCultivoId) return 'por_cultivo';
-  const tieneRango = (d.reglas ?? []).some((r) =>
-    r.condiciones?.some((c) =>
-      c.campo === 'cantidad' || c.campo === 'precio' ||
-      c.campo === 'subtotal' || c.campo === 'ratio_cultivo',
-    ),
-  );
-  if (tieneRango) return 'por_rango';
-  return 'fijo';
+  if (todasCultivoId) return 'fijo';
+  return 'por_rango';
 }
 
 function inferirDriverRango(d: Descuento): DriverRango {
@@ -42,6 +40,9 @@ function inferirDriverRango(d: Descuento): DriverRango {
     for (const c of r.condiciones ?? []) {
       if (c.campo === 'precio') return 'precio';
       if (c.campo === 'subtotal') return 'subtotal';
+      if (c.campo === 'volumen') return 'volumen';
+      if (c.campo === 'monto') return 'monto';
+      if (c.campo === 'precio_ponderado') return 'precio_ponderado';
       if (c.campo === 'ratio_cultivo') return 'ratio_cultivo';
       if (c.campo === 'cantidad') return 'cantidad';
     }
@@ -49,19 +50,53 @@ function inferirDriverRango(d: Descuento): DriverRango {
   return 'cantidad';
 }
 
-const MODO_LABEL: Record<ModoValor, string> = {
+const TIPO_LABEL: Record<TipoCondicion, string> = {
   fijo: 'Fijo',
-  por_cultivo: 'Por cultivo',
   por_rango: 'Por rango',
   por_selector: 'Por selector',
 };
 
-const DRIVER_LABEL: Record<DriverRango, string> = {
+const ALCANCE_LABEL: Record<import('../../api/types').TipoAplicacion, string> = {
+  global: 'Global',
+  cultivo: 'Por cultivo',
+  hibrido: 'Por híbrido',
+};
+
+const ALL_DRIVER_LABELS: Record<DriverRango, string> = {
   cantidad: 'Bolsas',
-  precio: 'Precio base ($)',
+  precio: 'P.BASE ($)',
   subtotal: 'Subtotal ($)',
   ratio_cultivo: 'Ratio cultivo',
+  volumen: 'Volumen (bolsas)',
+  monto: 'Monto ($)',
+  precio_ponderado: 'P. ponderado',
 };
+
+function getDriversForAlcance(alcance: import('../../api/types').TipoAplicacion): { value: DriverRango; label: string }[] {
+  if (alcance === 'hibrido') {
+    return [
+      { value: 'cantidad', label: 'Bolsas' },
+      { value: 'precio', label: 'P.BASE ($)' },
+      { value: 'subtotal', label: 'Subtotal ($)' },
+    ];
+  }
+  if (alcance === 'cultivo') {
+    return [
+      { value: 'volumen', label: 'Volumen (bolsas)' },
+      { value: 'monto', label: 'Monto ($)' },
+      { value: 'precio_ponderado', label: 'P. ponderado' },
+    ];
+  }
+  // global
+  return [
+    { value: 'volumen', label: 'Volumen total (bolsas)' },
+    { value: 'monto', label: 'Monto total ($)' },
+  ];
+}
+
+function defaultDriverForAlcance(alcance: import('../../api/types').TipoAplicacion): DriverRango {
+  return alcance === 'hibrido' ? 'cantidad' : 'volumen';
+}
 
 // ─── Modal de formulario ──────────────────────────────────────────────────────
 
@@ -77,9 +112,12 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   );
   const [error, setError] = useState('');
 
-  // ── Modo de valor ──
-  const [modoValor, setModoValor] = useState<ModoValor>(
-    initial ? inferirModoValor(initial) : 'fijo',
+  // ── Alcance y tipo de condición (independientes) ──
+  const [alcance, setAlcance] = useState<import('../../api/types').TipoAplicacion>(
+    initial ? inferirAlcance(initial) : 'global',
+  );
+  const [tipoCondicion, setTipoCondicion] = useState<TipoCondicion>(
+    initial ? inferirTipoCondicion(initial) : 'fijo',
   );
 
   // Fijo
@@ -87,9 +125,9 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     initial?.valorPorcentaje != null ? String(initial.valorPorcentaje) : '',
   );
 
-  // Por cultivo
+  // Fijo + cultivo → grilla de % por cultivo
   const [pctPorCultivo, setPctPorCultivo] = useState<Record<number, string>>(() => {
-    if (!initial || inferirModoValor(initial) !== 'por_cultivo') return {};
+    if (!initial || inferirTipoCondicion(initial) !== 'fijo' || initial.tipoAplicacion !== 'cultivo') return {};
     const map: Record<number, string> = {};
     (initial.reglas ?? []).forEach((r) => {
       const cond = r.condiciones?.find((c) => c.campo === 'cultivo_id');
@@ -99,11 +137,12 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   });
 
   // Por rango
-  const [driver, setDriver] = useState<DriverRango>(
-    initial ? inferirDriverRango(initial) : 'cantidad',
-  );
+  const [driver, setDriver] = useState<DriverRango>(() => {
+    if (initial) return inferirDriverRango(initial);
+    return defaultDriverForAlcance(initial ? inferirAlcance(initial) : 'global');
+  });
   const [tramos, setTramos] = useState<Tramo[]>(() => {
-    if (!initial || inferirModoValor(initial) !== 'por_rango') return [];
+    if (!initial || inferirTipoCondicion(initial) !== 'por_rango') return [];
     return [...(initial.reglas ?? [])]
       .sort((a, b) => b.prioridad - a.prioridad)
       .map((r) => {
@@ -113,7 +152,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
       .filter((t) => t.desde !== '0');
   });
   const [pctDefault, setPctDefault] = useState(() => {
-    if (!initial || inferirModoValor(initial) !== 'por_rango') return '';
+    if (!initial || inferirTipoCondicion(initial) !== 'por_rango') return '';
     const def = (initial.reglas ?? []).find((r) => {
       const gteC = r.condiciones?.find((c) => c.operador === '>=' || c.operador === '>');
       return !gteC || Number(gteC.valor) === 0;
@@ -123,17 +162,17 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
 
   // Por selector
   const [opciones, setOpciones] = useState<OpcionSelector[]>(() => {
-    if (!initial || inferirModoValor(initial) !== 'por_selector') return [];
+    if (!initial || inferirTipoCondicion(initial) !== 'por_selector') return [];
     return [...(initial.reglas ?? [])]
       .sort((a, b) => a.prioridad - b.prioridad)
       .map((r) => ({ id: newId(), nombre: r.nombre ?? '', pct: String(r.valor) }));
   });
 
-  // Cultivos (para "Por cultivo")
+  // Cultivos (para fijo + cultivo)
   const { data: cultivos = [] } = useQuery({
     queryKey: ['cultivos'],
     queryFn: () => productosApi.getCultivos(true),
-    enabled: modoValor === 'por_cultivo',
+    enabled: tipoCondicion === 'fijo' && alcance === 'cultivo',
   });
 
   // ── Guardar ──
@@ -141,17 +180,8 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     mutationFn: () => {
       type CondOp = '>=' | '=';
 
-      if (modoValor === 'fijo') {
-        const payload = {
-          nombre, tipoAplicacion: 'global' as const,
-          modo: 'basico' as const,
-          valorPorcentaje: Number(pctFijo),
-          fechaVigencia,
-        };
-        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
-      }
-
-      if (modoValor === 'por_cultivo') {
+      // fijo + cultivo → grilla por cultivo (avanzado con reglas cultivo_id)
+      if (tipoCondicion === 'fijo' && alcance === 'cultivo') {
         const reglas = cultivos
           .filter((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0)
           .map((c, i) => ({
@@ -166,7 +196,18 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
-      if (modoValor === 'por_rango') {
+      // fijo + global | hibrido → basico
+      if (tipoCondicion === 'fijo') {
+        const payload = {
+          nombre, tipoAplicacion: alcance,
+          modo: 'basico' as const,
+          valorPorcentaje: Number(pctFijo),
+          fechaVigencia,
+        };
+        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
+      }
+
+      if (tipoCondicion === 'por_rango') {
         const tramosValidos = [...tramos]
           .filter((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '')
           .sort((a, b) => Number(b.desde) - Number(a.desde));
@@ -182,7 +223,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
             : []),
         ];
         const payload = {
-          nombre, tipoAplicacion: 'hibrido' as const,
+          nombre, tipoAplicacion: alcance,
           modo: 'avanzado' as const, fechaVigencia, reglas,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
@@ -198,7 +239,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           condiciones: [] as any[],
         }));
       const payload = {
-        nombre, tipoAplicacion: 'global' as const,
+        nombre, tipoAplicacion: alcance,
         modo: 'selector' as const, fechaVigencia, reglas,
       };
       return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
@@ -210,10 +251,10 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   // ── Validación ──
   const canSave = (() => {
     if (!nombre.trim() || !fechaVigencia) return false;
-    if (modoValor === 'fijo') return pctFijo !== '' && Number(pctFijo) >= 0;
-    if (modoValor === 'por_cultivo')
+    if (tipoCondicion === 'fijo' && alcance === 'cultivo')
       return cultivos.some((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0);
-    if (modoValor === 'por_rango')
+    if (tipoCondicion === 'fijo') return pctFijo !== '' && Number(pctFijo) >= 0;
+    if (tipoCondicion === 'por_rango')
       return pctDefault !== '' || tramos.some((t) => t.desde !== '' && Number(t.desde) > 0 && t.pct !== '');
     // por_selector
     return opciones.some((o) => o.nombre.trim() !== '' && o.pct !== '');
@@ -222,10 +263,15 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
   const inputCls = 'border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 
-  const modoCards: { value: ModoValor; label: string; desc: string }[] = [
-    { value: 'fijo', label: 'Fijo', desc: 'Un % igual para todos los ítems' },
-    { value: 'por_cultivo', label: 'Por cultivo', desc: '% distinto según el cultivo' },
-    { value: 'por_rango', label: 'Por rango', desc: '% según bolsas, precio u otra variable' },
+  const alcanceCards: { value: import('../../api/types').TipoAplicacion; label: string; desc: string }[] = [
+    { value: 'global',  label: 'Global',       desc: 'Aplica sobre el total de la cotización' },
+    { value: 'cultivo', label: 'Por cultivo',   desc: 'Aplica sobre el subtotal de cada cultivo' },
+    { value: 'hibrido', label: 'Por híbrido',   desc: 'Aplica sobre cada ítem/híbrido' },
+  ];
+
+  const tipoCards: { value: TipoCondicion; label: string; desc: string }[] = [
+    { value: 'fijo',         label: 'Fijo',        desc: alcance === 'cultivo' ? '% distinto por cultivo' : 'Un % igual para todos' },
+    { value: 'por_rango',    label: 'Por rango',   desc: '% según una variable de la cotización' },
     { value: 'por_selector', label: 'Por selector', desc: 'El usuario elige la opción al cotizar' },
   ];
 
@@ -257,25 +303,53 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           </div>
         </div>
 
-        {/* Modo de valor */}
+        {/* ── Alcance ── */}
         <div>
-          <label className={labelCls}>¿Cómo se determina el porcentaje?</label>
-          <div className="grid grid-cols-2 gap-2">
-            {modoCards.map((m) => (
+          <label className={labelCls}>Alcance del descuento</label>
+          <div className="grid grid-cols-3 gap-2">
+            {alcanceCards.map((a) => (
               <button
-                key={m.value}
+                key={a.value}
                 type="button"
-                onClick={() => setModoValor(m.value)}
+                onClick={() => {
+                  setAlcance(a.value);
+                  // resetear driver al default del nuevo alcance
+                  setDriver(defaultDriverForAlcance(a.value));
+                }}
                 className={`text-left px-3 py-2.5 rounded-lg border transition-colors ${
-                  modoValor === m.value
+                  alcance === a.value
                     ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
                     : 'border-gray-200 hover:border-gray-300 bg-white'
                 }`}
               >
-                <div className={`text-sm font-medium ${modoValor === m.value ? 'text-blue-700' : 'text-gray-800'}`}>
-                  {m.label}
+                <div className={`text-sm font-medium ${alcance === a.value ? 'text-blue-700' : 'text-gray-800'}`}>
+                  {a.label}
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">{m.desc}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{a.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Tipo de condición ── */}
+        <div>
+          <label className={labelCls}>Tipo de condición</label>
+          <div className="grid grid-cols-3 gap-2">
+            {tipoCards.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setTipoCondicion(t.value)}
+                className={`text-left px-3 py-2.5 rounded-lg border transition-colors ${
+                  tipoCondicion === t.value
+                    ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
+                    : 'border-gray-200 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <div className={`text-sm font-medium ${tipoCondicion === t.value ? 'text-blue-700' : 'text-gray-800'}`}>
+                  {t.label}
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">{t.desc}</div>
               </button>
             ))}
           </div>
@@ -284,7 +358,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         <hr className="border-gray-100" />
 
         {/* ── Fijo ── */}
-        {modoValor === 'fijo' && (
+        {tipoCondicion === 'fijo' && alcance !== 'cultivo' && (
           <div>
             <label className={labelCls}>Porcentaje de descuento *</label>
             <div className="flex items-center gap-2">
@@ -303,8 +377,8 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           </div>
         )}
 
-        {/* ── Por cultivo ── */}
-        {modoValor === 'por_cultivo' && (
+        {/* ── Fijo + cultivo → grilla por cultivo ── */}
+        {tipoCondicion === 'fijo' && alcance === 'cultivo' && (
           <div>
             <label className={labelCls}>Porcentaje por cultivo *</label>
             <p className="text-xs text-gray-400 mb-2">
@@ -338,12 +412,12 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         )}
 
         {/* ── Por rango ── */}
-        {modoValor === 'por_rango' && (
+        {tipoCondicion === 'por_rango' && (
           <div className="space-y-3">
             <div>
               <label className={labelCls}>¿Qué variable define el rango?</label>
               <div className="flex gap-2 flex-wrap">
-                {(Object.entries(DRIVER_LABEL) as [DriverRango, string][]).map(([v, l]) => (
+                {getDriversForAlcance(alcance).map(({ value: v, label: l }) => (
                   <button
                     key={v}
                     type="button"
@@ -364,6 +438,11 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
                   Usá 0.33 como umbral para "1/3 del total".
                 </p>
               )}
+              {driver === 'precio_ponderado' && (
+                <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1.5">
+                  P. ponderado = Monto del cultivo ÷ Volumen del cultivo (precio promedio ponderado por bolsas).
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -372,12 +451,12 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
                 .map((t) => (
                   <div key={t.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5 group">
                     <span className="text-xs font-semibold text-blue-700 shrink-0 w-4">SI</span>
-                    <span className="text-xs text-gray-500 shrink-0">{DRIVER_LABEL[driver]}</span>
+                    <span className="text-xs text-gray-500 shrink-0">{ALL_DRIVER_LABELS[driver]}</span>
                     <span className="text-xs font-mono text-blue-500 shrink-0">≥</span>
                     <input
                       type="number"
                       min={0}
-                      step={driver === 'ratio_cultivo' ? 0.01 : 1}
+                      step={driver === 'ratio_cultivo' || driver === 'precio_ponderado' ? 0.01 : 1}
                       value={t.desde}
                       onChange={(e) =>
                         setTramos((prev) =>
@@ -443,7 +522,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         )}
 
         {/* ── Por selector ── */}
-        {modoValor === 'por_selector' && (
+        {tipoCondicion === 'por_selector' && (
           <div className="space-y-2">
             <label className={labelCls}>Opciones disponibles *</label>
             <p className="text-xs text-gray-400 mb-1">
@@ -574,18 +653,21 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
     );
   }
 
-  const modoV = inferirModoValor(descuento);
+  const tipoV = inferirTipoCondicion(descuento);
 
   return (
     <Modal title={descuento.nombre} onClose={onClose}>
       <div className="space-y-4">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="inline-flex items-center gap-1 text-xs font-medium bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
-            {MODO_LABEL[modoV]}
+            {ALCANCE_LABEL[descuento.tipoAplicacion]}
           </span>
-          {modoV === 'por_rango' && (
+          <span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full">
+            {TIPO_LABEL[tipoV]}
+          </span>
+          {tipoV === 'por_rango' && (
             <span className="inline-flex items-center gap-1 text-xs font-medium bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full">
-              {DRIVER_LABEL[inferirDriverRango(descuento)]}
+              {ALL_DRIVER_LABELS[inferirDriverRango(descuento)]}
             </span>
           )}
           <Badge label={descuento.activo ? 'activo' : 'inactivo'} />
@@ -598,26 +680,17 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
               {new Date(descuento.fechaVigencia).toLocaleDateString('es-AR')}
             </span>
           </div>
-          <div>
-            <span className="text-gray-400">Aplica a:</span>{' '}
-            <span className="font-medium">
-              {descuento.tipoAplicacion === 'global'
-                ? 'Cotización completa'
-                : descuento.tipoAplicacion === 'cultivo'
-                ? 'Por cultivo'
-                : 'Por ítem'}
-            </span>
-          </div>
         </div>
 
-        {modoV === 'fijo' && (
+        {tipoV === 'fijo' && descuento.modo === 'basico' && (
           <div className="bg-blue-50 rounded-lg p-3 text-sm flex items-center gap-2">
             <span className="text-gray-600">Porcentaje fijo:</span>
             <span className="font-bold text-blue-700 text-lg">{descuento.valorPorcentaje}%</span>
           </div>
         )}
 
-        {modoV === 'por_cultivo' && (
+        {/* fijo + cultivo → grilla por cultivo */}
+        {tipoV === 'fijo' && descuento.modo === 'avanzado' && (
           <div className="text-sm">
             <div className="font-medium text-gray-700 mb-2">Porcentaje por cultivo:</div>
             <div className="space-y-1">
@@ -635,10 +708,10 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           </div>
         )}
 
-        {modoV === 'por_rango' && (
+        {tipoV === 'por_rango' && (
           <div className="text-sm">
             <div className="font-medium text-gray-700 mb-2">
-              Tramos por {DRIVER_LABEL[inferirDriverRango(descuento)]}:
+              Tramos por {ALL_DRIVER_LABELS[inferirDriverRango(descuento)]}:
             </div>
             <div className="space-y-1">
               {[...(descuento.reglas ?? [])]
@@ -658,7 +731,7 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           </div>
         )}
 
-        {modoV === 'por_selector' && (
+        {tipoV === 'por_selector' && (
           <div className="text-sm">
             <div className="font-medium text-gray-700 mb-2">Opciones:</div>
             <div className="space-y-1">
@@ -744,7 +817,7 @@ export function DescuentosTab() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {descuentos.map((d) => {
-              const modoV = inferirModoValor(d);
+              const tipoV = inferirTipoCondicion(d);
               return (
                 <tr
                   key={d.id}
@@ -755,11 +828,14 @@ export function DescuentosTab() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="inline-flex items-center text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
-                        {MODO_LABEL[modoV]}
+                        {ALCANCE_LABEL[d.tipoAplicacion]}
                       </span>
-                      {modoV === 'por_rango' && (
+                      <span className="inline-flex items-center text-xs font-medium text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                        {TIPO_LABEL[tipoV]}
+                      </span>
+                      {tipoV === 'por_rango' && (
                         <span className="inline-flex items-center text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                          {DRIVER_LABEL[inferirDriverRango(d)]}
+                          {ALL_DRIVER_LABELS[inferirDriverRango(d)]}
                         </span>
                       )}
                     </div>

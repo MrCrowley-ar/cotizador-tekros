@@ -15,6 +15,10 @@ export enum CampoCondicion {
   PRECIO = 'precio',
   SUBTOTAL = 'subtotal',
   RATIO_CULTIVO = 'ratio_cultivo',
+  // Agregados de cotización (nivel cultivo o global según alcance del descuento)
+  VOLUMEN = 'volumen',
+  MONTO = 'monto',
+  PRECIO_PONDERADO = 'precio_ponderado',
 }
 
 export enum OperadorCondicion {

@@ -15,12 +15,18 @@ interface Props {
 }
 
 const CAMPOS: { value: CampoCondicion; label: string }[] = [
-  { value: 'cantidad',   label: 'Bolsas' },
-  { value: 'precio',     label: 'Precio base' },
-  { value: 'subtotal',   label: 'Subtotal' },
-  { value: 'cultivo_id', label: 'Cultivo' },
-  { value: 'hibrido_id', label: 'Híbrido' },
-  { value: 'banda_id',   label: 'Banda' },
+  // Variables por ítem/híbrido
+  { value: 'cantidad',        label: 'Bolsas' },
+  { value: 'precio',          label: 'P.BASE' },
+  { value: 'subtotal',        label: 'Subtotal' },
+  // Variables agregadas (nivel cultivo o global según alcance del descuento)
+  { value: 'volumen',         label: 'Volumen (bolsas)' },
+  { value: 'monto',           label: 'Monto ($)' },
+  { value: 'precio_ponderado', label: 'P. ponderado' },
+  // Identificadores
+  { value: 'cultivo_id',      label: 'Cultivo' },
+  { value: 'hibrido_id',      label: 'Híbrido' },
+  { value: 'banda_id',        label: 'Banda' },
 ];
 
 const OPERADORES: { value: OperadorCondicion; label: string }[] = [

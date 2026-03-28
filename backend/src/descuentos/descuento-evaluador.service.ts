@@ -9,9 +9,13 @@ export interface ContextoDescuento {
   cultivoId?: number;
   hibridoId?: number;
   bandaId?: number;
-  precio?: number;        // precio base del ítem
-  subtotal?: number;      // precio * bolsas
-  ratioCultivo?: number;  // bolsas_cultivo / total_bolsas (para cross selling)
+  precio?: number;          // precio base del ítem
+  subtotal?: number;        // precio * bolsas
+  ratioCultivo?: number;    // bolsas_cultivo / total_bolsas (para cross selling)
+  // Agregados de cotización (nivel cultivo si tipoAplicacion=cultivo, o global si tipoAplicacion=global)
+  volumen?: number;         // bolsas totales del cultivo (o de toda la cotización)
+  monto?: number;           // suma de precioBase del cultivo (o de toda la cotización)
+  precioPonderado?: number; // monto / volumen del cultivo
 }
 
 export interface DescuentoAplicado {
@@ -116,14 +120,17 @@ export class DescuentoEvaluadorService {
 
   private getValorContexto(campo: CampoCondicion, ctx: ContextoDescuento): number | undefined {
     switch (campo) {
-      case CampoCondicion.CANTIDAD:   return ctx.cantidad;
-      case CampoCondicion.CULTIVO_ID: return ctx.cultivoId;
-      case CampoCondicion.HIBRIDO_ID: return ctx.hibridoId;
-      case CampoCondicion.BANDA_ID:   return ctx.bandaId;
-      case CampoCondicion.PRECIO:        return ctx.precio;
-      case CampoCondicion.SUBTOTAL:      return ctx.subtotal;
-      case CampoCondicion.RATIO_CULTIVO: return ctx.ratioCultivo;
-      default:                           return undefined;
+      case CampoCondicion.CANTIDAD:         return ctx.cantidad;
+      case CampoCondicion.CULTIVO_ID:       return ctx.cultivoId;
+      case CampoCondicion.HIBRIDO_ID:       return ctx.hibridoId;
+      case CampoCondicion.BANDA_ID:         return ctx.bandaId;
+      case CampoCondicion.PRECIO:           return ctx.precio;
+      case CampoCondicion.SUBTOTAL:         return ctx.subtotal;
+      case CampoCondicion.RATIO_CULTIVO:    return ctx.ratioCultivo;
+      case CampoCondicion.VOLUMEN:          return ctx.volumen;
+      case CampoCondicion.MONTO:            return ctx.monto;
+      case CampoCondicion.PRECIO_PONDERADO: return ctx.precioPonderado;
+      default:                              return undefined;
     }
   }
 }
