@@ -19,6 +19,10 @@ export enum CampoCondicion {
   VOLUMEN = 'volumen',
   MONTO = 'monto',
   PRECIO_PONDERADO = 'precio_ponderado',
+  // Totales globales de la cotización
+  SUBTOTAL_ITEMS = 'subtotal_items',
+  DESC_ITEMS = 'desc_items',
+  TOTAL = 'total',
 }
 
 export enum OperadorCondicion {

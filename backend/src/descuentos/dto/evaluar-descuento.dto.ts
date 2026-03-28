@@ -68,4 +68,26 @@ export class EvaluarDescuentoDto {
   @Min(0)
   @IsOptional()
   precioPonderado?: number;
+
+  // Totales globales de la cotización
+  @Transform(({ value }) => (value == null ? undefined : value))
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @IsOptional()
+  subtotalItems?: number;
+
+  @Transform(({ value }) => (value == null ? undefined : value))
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @IsOptional()
+  descuentosItems?: number;
+
+  @Transform(({ value }) => (value == null ? undefined : value))
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @IsOptional()
+  totalCotizacion?: number;
 }

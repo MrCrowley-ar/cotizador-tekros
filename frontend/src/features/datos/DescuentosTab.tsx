@@ -12,7 +12,7 @@ import type { Descuento } from '../../api/types';
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
 type TipoCondicion = 'fijo' | 'por_rango' | 'por_selector' | 'personalizado';
-type DriverRango = 'cantidad' | 'precio' | 'subtotal' | 'ratio_cultivo' | 'volumen' | 'monto' | 'precio_ponderado';
+type DriverRango = 'cantidad' | 'precio' | 'subtotal' | 'ratio_cultivo' | 'volumen' | 'monto' | 'precio_ponderado' | 'subtotal_items' | 'desc_items' | 'total';
 
 // hasta es opcional: si se define, el tramo usa operador ENTRE (desde-hasta)
 interface Tramo { id: string; desde: string; hasta?: string; pct: string }
@@ -67,6 +67,9 @@ function inferirDriverRango(d: Descuento): DriverRango {
       if (c.campo === 'monto') return 'monto';
       if (c.campo === 'precio_ponderado') return 'precio_ponderado';
       if (c.campo === 'ratio_cultivo') return 'ratio_cultivo';
+      if (c.campo === 'subtotal_items') return 'subtotal_items';
+      if (c.campo === 'desc_items') return 'desc_items';
+      if (c.campo === 'total') return 'total';
       if (c.campo === 'cantidad') return 'cantidad';
     }
   }
@@ -94,6 +97,9 @@ const ALL_DRIVER_LABELS: Record<DriverRango, string> = {
   volumen: 'Volumen (bolsas)',
   monto: 'Monto ($)',
   precio_ponderado: 'P. ponderado',
+  subtotal_items: 'Subtotal ítems',
+  desc_items: 'Desc. ítems',
+  total: 'Total',
 };
 
 function getDriversForAlcance(alcance: import('../../api/types').TipoAplicacion): { value: DriverRango; label: string }[] {
@@ -113,8 +119,9 @@ function getDriversForAlcance(alcance: import('../../api/types').TipoAplicacion)
   }
   // global
   return [
-    { value: 'volumen', label: 'Volumen total (bolsas)' },
-    { value: 'monto', label: 'Monto total ($)' },
+    { value: 'subtotal_items', label: 'Subtotal ítems' },
+    { value: 'desc_items', label: 'Desc. ítems' },
+    { value: 'total', label: 'Total' },
   ];
 }
 

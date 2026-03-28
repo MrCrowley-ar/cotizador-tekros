@@ -23,10 +23,14 @@ export const CAMPOS: { value: CampoCondicion; label: string }[] = [
   { value: 'cantidad',         label: 'Bolsas' },
   { value: 'precio',           label: 'P.BASE' },
   { value: 'subtotal',         label: 'Subtotal' },
-  // Agregados por cultivo o globales
+  // Agregados por cultivo
   { value: 'volumen',          label: 'Volumen (bolsas)' },
   { value: 'monto',            label: 'Monto ($)' },
   { value: 'precio_ponderado', label: 'P. ponderado' },
+  // Totales globales de la cotización
+  { value: 'subtotal_items',   label: 'Subtotal ítems' },
+  { value: 'desc_items',       label: 'Desc. ítems' },
+  { value: 'total',            label: 'Total' },
   // Identificadores
   { value: 'cultivo_id',       label: 'Cultivo' },
   { value: 'hibrido_id',       label: 'Híbrido' },

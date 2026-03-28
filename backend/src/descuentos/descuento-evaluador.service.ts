@@ -16,6 +16,10 @@ export interface ContextoDescuento {
   volumen?: number;         // bolsas totales del cultivo (o de toda la cotización)
   monto?: number;           // suma de precioBase del cultivo (o de toda la cotización)
   precioPonderado?: number; // monto / volumen del cultivo
+  // Totales globales de la cotización
+  subtotalItems?: number;      // suma de subtotales de ítems (antes de descuentos ítem)
+  descuentosItems?: number;    // total de descuentos aplicados a ítems
+  totalCotizacion?: number;    // total final de la cotización
 }
 
 export interface DescuentoAplicado {
@@ -139,6 +143,9 @@ export class DescuentoEvaluadorService {
       case CampoCondicion.VOLUMEN:          return ctx.volumen;
       case CampoCondicion.MONTO:            return ctx.monto;
       case CampoCondicion.PRECIO_PONDERADO: return ctx.precioPonderado;
+      case CampoCondicion.SUBTOTAL_ITEMS:   return ctx.subtotalItems;
+      case CampoCondicion.DESC_ITEMS:       return ctx.descuentosItems;
+      case CampoCondicion.TOTAL:            return ctx.totalCotizacion;
       default:                              return undefined;
     }
   }

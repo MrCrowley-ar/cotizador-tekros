@@ -46,8 +46,12 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
 
   // Calcula los agregados de la cotización: volumen/monto a nivel cultivo y global
   function getAgregados() {
-    const totalBolsas = version.items.reduce((sum, i) => sum + Number(i.bolsas), 0);
-    const totalMonto  = version.items.reduce((sum, i) => sum + Number(i.precioBase), 0);
+    const subtotalItems = version.items.reduce((sum, i) => sum + Number(i.subtotal), 0);
+    const descuentosItems = version.items.reduce((sum, i) => {
+      const totalPct = (i.descuentos ?? []).reduce((dp, d) => dp + Number(d.valorPorcentaje), 0);
+      return sum + Number(i.subtotal) * totalPct / 100;
+    }, 0);
+    const totalCotizacion = Number(version.total);
 
     if (item) {
       const bolsasCultivo = version.items
@@ -61,13 +65,17 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
         volumen: bolsasCultivo,
         monto: montoCultivo,
         ...(precioPonderado != null ? { precioPonderado } : {}),
+        subtotalItems,
+        descuentosItems,
+        totalCotizacion,
       };
     }
 
     // alcance global
     return {
-      volumen: totalBolsas,
-      monto: totalMonto,
+      subtotalItems,
+      descuentosItems,
+      totalCotizacion,
     };
   }
 
