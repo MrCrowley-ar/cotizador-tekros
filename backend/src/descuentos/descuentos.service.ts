@@ -24,6 +24,7 @@ export class DescuentosService {
   findAll(soloActivos = false): Promise<Descuento[]> {
     return this.repo.find({
       where: soloActivos ? { activo: true } : {},
+      relations: ['reglas', 'reglas.condiciones'],
       order: { nombre: 'ASC', fechaVigencia: 'DESC' },
     });
   }
