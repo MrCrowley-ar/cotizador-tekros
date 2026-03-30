@@ -6,6 +6,7 @@ import { Modal } from '../../components/Modal';
 import { Spinner } from '../../components/Spinner';
 import { Badge } from '../../components/Badge';
 import { RuleBuilder } from './RuleBuilder';
+import { CAMPOS, FRACCIONES } from './ConditionRow';
 import type { RuleData } from './RuleBuilder';
 import type { Descuento } from '../../api/types';
 
@@ -39,8 +40,7 @@ function inferirTipoCondicion(d: Descuento): TipoCondicion {
   );
   if (todasCultivoId) return 'fijo';
 
-  // por_rango: todas las reglas tienen exactamente 1 condición, mismo campo,
-  //            operador >= o entre, sin valorCampo (no relativo)
+  // por_rango (1 condición): mismo campo, operador >= o entre, sin valorCampo
   if (reglas.length > 0) {
     const primerCampo = reglas[0]?.condiciones?.[0]?.campo;
     const todoRango = reglas.every((r) => {
@@ -49,10 +49,27 @@ function inferirTipoCondicion(d: Descuento): TipoCondicion {
       const c = conds[0];
       if (c.campo !== primerCampo) return false;
       if (c.operador !== '>=' && c.operador !== 'entre') return false;
-      if (c.valorCampo) return false; // relativo → personalizado
+      if (c.valorCampo) return false;
       return true;
     });
     if (todoRango) return 'por_rango';
+  }
+
+  // por_rango + cultivo (2 condiciones: cultivo_id= + rango), mismo driver en todas
+  if (reglas.length > 0 && d.tipoAplicacion === 'cultivo') {
+    const primerDriver = reglas[0]?.condiciones?.find((c) => c.campo !== 'cultivo_id')?.campo;
+    const todoRangoCultivo = primerDriver != null && reglas.every((r) => {
+      const conds = r.condiciones ?? [];
+      if (conds.length !== 2) return false;
+      const hasCultivoId = conds.some((c) => c.campo === 'cultivo_id' && c.operador === '=');
+      const rangoC = conds.find((c) => c.campo !== 'cultivo_id');
+      if (!hasCultivoId || !rangoC) return false;
+      if (rangoC.campo !== primerDriver) return false;
+      if (rangoC.operador !== '>=' && rangoC.operador !== 'entre') return false;
+      if (rangoC.valorCampo) return false;
+      return true;
+    });
+    if (todoRangoCultivo) return 'por_rango';
   }
 
   return 'personalizado';
@@ -101,6 +118,22 @@ const ALL_DRIVER_LABELS: Record<DriverRango, string> = {
   desc_items: 'Desc. ítems',
   total: 'Total',
 };
+
+// ─── Helpers para mostrar condiciones en detalle ──────────────────────────────
+
+const CAMPO_LABEL_MAP: Record<string, string> = Object.fromEntries(CAMPOS.map((c) => [c.value, c.label]));
+const OP_LABEL: Record<string, string> = { '=': '=', '!=': '≠', '>': '>', '<': '<', '>=': '≥', '<=': '≤', entre: 'entre' };
+
+function describeApiCond(c: { campo: string; operador: string; valor: number; valor2?: number | null; valorCampo?: string | null; valorMultiplier?: number | null }): string {
+  const campoL = CAMPO_LABEL_MAP[c.campo] ?? c.campo;
+  const op     = OP_LABEL[c.operador] ?? c.operador;
+  if (c.valorCampo) {
+    const frac = FRACCIONES.find((f) => Math.abs(f.value - (c.valorMultiplier ?? 1)) < 0.0001)?.label ?? `×${c.valorMultiplier}`;
+    return `${campoL} ${op} ${frac} ${CAMPO_LABEL_MAP[c.valorCampo] ?? c.valorCampo}`;
+  }
+  if (c.operador === 'entre') return `${campoL} entre ${c.valor} y ${c.valor2 ?? '?'}`;
+  return `${campoL} ${op} ${c.valor}`;
+}
 
 function getDriversForAlcance(_alcance: import('../../api/types').TipoAplicacion): { value: DriverRango; label: string }[] {
   return [
@@ -864,6 +897,51 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
 
   const tipoV = inferirTipoCondicion(descuento);
 
+  const { data: cultivos = [] } = useQuery({
+    queryKey: ['cultivos'],
+    queryFn: () => productosApi.getCultivos(true),
+    enabled: descuento.tipoAplicacion === 'cultivo',
+  });
+  const cultivoNombre = (id: number) => cultivos.find((c) => c.id === id)?.nombre ?? `Cultivo #${id}`;
+
+  // Helpers de vista
+  const reglasSorted = [...(descuento.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
+  const isPerCultivo = reglasSorted.some((r) => r.condiciones?.some((c) => c.campo === 'cultivo_id'));
+
+  function groupByCultivo<T extends { condiciones?: { campo: string; valor: number }[] }>(rules: T[]) {
+    const map = new Map<number, T[]>();
+    for (const r of rules) {
+      const cId = Number(r.condiciones?.find((c) => c.campo === 'cultivo_id')?.valor ?? 0);
+      if (!map.has(cId)) map.set(cId, []);
+      map.get(cId)!.push(r);
+    }
+    return map;
+  }
+
+  function RangoRow({ r }: { r: (typeof reglasSorted)[0] }) {
+    const c = r.condiciones?.find((cd) => cd.campo !== 'cultivo_id') ?? r.condiciones?.[0];
+    let desc = 'En los demás casos';
+    if (c?.operador === 'entre') desc = `${c.valor} – ${c.valor2}`;
+    else if (c?.operador === '>=' && Number(c.valor) !== 0) desc = `≥ ${c.valor}`;
+    return (
+      <div className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
+        <span className="text-gray-600">{desc}</span>
+        <span className="font-semibold text-blue-700">{r.valor}%</span>
+      </div>
+    );
+  }
+
+  function PersonaRow({ r, skipCultivoId = false }: { r: (typeof reglasSorted)[0]; skipCultivoId?: boolean }) {
+    const conds = (r.condiciones ?? []).filter((c) => !skipCultivoId || c.campo !== 'cultivo_id');
+    const txt = conds.length ? `Si ${conds.map(describeApiCond).join(' Y ')}` : 'Siempre';
+    return (
+      <div className="flex items-start justify-between gap-3 bg-gray-50 rounded px-3 py-1.5">
+        <span className="text-gray-600 text-xs leading-relaxed">{txt}</span>
+        <span className="font-semibold text-blue-700 shrink-0">{r.valor}%</span>
+      </div>
+    );
+  }
+
   return (
     <Modal title={descuento.nombre} onClose={onClose}>
       <div className="space-y-4">
@@ -882,15 +960,12 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           <Badge label={descuento.activo ? 'activo' : 'inactivo'} />
         </div>
 
-        <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
-          <div>
-            <span className="text-gray-400">Vigencia:</span>{' '}
-            <span className="font-medium">
-              {new Date(descuento.fechaVigencia).toLocaleDateString('es-AR')}
-            </span>
-          </div>
+        <div className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
+          <span className="text-gray-400">Vigencia:</span>{' '}
+          <span className="font-medium">{new Date(descuento.fechaVigencia).toLocaleDateString('es-AR')}</span>
         </div>
 
+        {/* Fijo básico */}
         {tipoV === 'fijo' && descuento.modo === 'basico' && (
           <div className="bg-blue-50 rounded-lg p-3 text-sm flex items-center gap-2">
             <span className="text-gray-600">Porcentaje fijo:</span>
@@ -898,16 +973,16 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           </div>
         )}
 
-        {/* fijo + cultivo → grilla por cultivo */}
+        {/* Fijo + cultivo */}
         {tipoV === 'fijo' && descuento.modo === 'avanzado' && (
           <div className="text-sm">
             <div className="font-medium text-gray-700 mb-2">Porcentaje por cultivo:</div>
             <div className="space-y-1">
-              {(descuento.reglas ?? []).map((r) => (
+              {reglasSorted.map((r) => (
                 <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
                   <span className="text-gray-600">
                     {r.condiciones?.[0]?.campo === 'cultivo_id'
-                      ? `Cultivo #${r.condiciones[0].valor}`
+                      ? cultivoNombre(Number(r.condiciones[0].valor))
                       : `Regla #${r.prioridad}`}
                   </span>
                   <span className="font-semibold text-blue-700">{r.valor}%</span>
@@ -917,60 +992,61 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           </div>
         )}
 
+        {/* Por rango */}
         {tipoV === 'por_rango' && (
-          <div className="text-sm">
-            <div className="font-medium text-gray-700 mb-2">
+          <div className="text-sm space-y-2">
+            <div className="font-medium text-gray-700">
               Tramos por {ALL_DRIVER_LABELS[inferirDriverRango(descuento)]}:
             </div>
-            <div className="space-y-1">
-              {[...(descuento.reglas ?? [])]
-                .sort((a, b) => a.prioridad - b.prioridad)
-                .map((r) => {
-                  const c = r.condiciones?.[0];
-                  let desc = 'Siempre';
-                  if (c?.operador === 'entre') desc = `Entre ${c.valor} y ${c.valor2}`;
-                  else if (c?.operador === '>=') desc = Number(c.valor) === 0 ? 'En los demás casos' : `Desde ${c.valor}`;
-                  return (
-                    <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
-                      <span className="text-gray-600">{desc}</span>
-                      <span className="font-semibold text-blue-700">{r.valor}%</span>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        )}
-
-        {tipoV === 'personalizado' && (
-          <div className="text-sm">
-            <div className="font-medium text-gray-700 mb-2">Reglas personalizadas:</div>
-            <div className="space-y-1">
-              {[...(descuento.reglas ?? [])]
-                .sort((a, b) => a.prioridad - b.prioridad)
-                .map((r) => (
-                  <div key={r.id} className="bg-gray-50 rounded px-3 py-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500 text-xs">#{r.prioridad} · {r.condiciones?.length ?? 0} condición(es)</span>
-                      <span className="font-semibold text-blue-700">{r.valor}%</span>
-                    </div>
+            {!isPerCultivo ? (
+              <div className="space-y-1">
+                {reglasSorted.map((r) => <RangoRow key={r.id} r={r} />)}
+              </div>
+            ) : (
+              [...groupByCultivo(reglasSorted).entries()].map(([cId, rules]) => (
+                <div key={cId}>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{cultivoNombre(cId)}</div>
+                  <div className="space-y-1">
+                    {rules.map((r) => <RangoRow key={r.id} r={r} />)}
                   </div>
-                ))}
-            </div>
+                </div>
+              ))
+            )}
           </div>
         )}
 
+        {/* Personalizado */}
+        {tipoV === 'personalizado' && (
+          <div className="text-sm space-y-2">
+            <div className="font-medium text-gray-700">Reglas:</div>
+            {!isPerCultivo ? (
+              <div className="space-y-1">
+                {reglasSorted.map((r) => <PersonaRow key={r.id} r={r} />)}
+              </div>
+            ) : (
+              [...groupByCultivo(reglasSorted).entries()].map(([cId, rules]) => (
+                <div key={cId}>
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{cultivoNombre(cId)}</div>
+                  <div className="space-y-1">
+                    {rules.map((r) => <PersonaRow key={r.id} r={r} skipCultivoId />)}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Por selector */}
         {tipoV === 'por_selector' && (
           <div className="text-sm">
             <div className="font-medium text-gray-700 mb-2">Opciones:</div>
             <div className="space-y-1">
-              {[...(descuento.reglas ?? [])]
-                .sort((a, b) => a.prioridad - b.prioridad)
-                .map((r) => (
-                  <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
-                    <span className="text-gray-600">{r.nombre ?? `Opción ${r.prioridad}`}</span>
-                    <span className="font-semibold text-blue-700">{r.valor}%</span>
-                  </div>
-                ))}
+              {reglasSorted.map((r) => (
+                <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
+                  <span className="text-gray-600">{r.nombre ?? `Opción ${r.prioridad}`}</span>
+                  <span className="font-semibold text-blue-700">{r.valor}%</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
