@@ -159,8 +159,8 @@ export class CotizacionesService {
   // Clona la última versión: copia items y sus descuentos, y los descuentos globales
   async crearNuevaVersion(cotizacionId: number, usuarioId: number): Promise<CotizacionVersion> {
     const cotizacion = await this.findOne(cotizacionId);
-    if (cotizacion.estado !== EstadoCotizacion.BORRADOR) {
-      throw new BadRequestException('Solo se pueden crear nuevas versiones de cotizaciones en borrador');
+    if (cotizacion.estado !== EstadoCotizacion.GENERADO) {
+      throw new BadRequestException('Solo se pueden crear nuevas versiones de cotizaciones en estado generado');
     }
 
     const nuevaVersion = await this.dataSource.transaction(async (em) => {
