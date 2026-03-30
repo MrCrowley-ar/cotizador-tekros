@@ -102,31 +102,24 @@ const ALL_DRIVER_LABELS: Record<DriverRango, string> = {
   total: 'Total',
 };
 
-function getDriversForAlcance(alcance: import('../../api/types').TipoAplicacion): { value: DriverRango; label: string }[] {
-  if (alcance === 'hibrido') {
-    return [
-      { value: 'cantidad', label: 'Bolsas' },
-      { value: 'precio', label: 'P.BASE ($)' },
-      { value: 'subtotal', label: 'Subtotal ($)' },
-    ];
-  }
-  if (alcance === 'cultivo') {
-    return [
-      { value: 'volumen', label: 'Volumen (bolsas)' },
-      { value: 'monto', label: 'Monto ($)' },
-      { value: 'precio_ponderado', label: 'P. ponderado' },
-    ];
-  }
-  // global
+function getDriversForAlcance(_alcance: import('../../api/types').TipoAplicacion): { value: DriverRango; label: string }[] {
   return [
-    { value: 'subtotal_items', label: 'Subtotal ítems' },
-    { value: 'desc_items', label: 'Desc. ítems' },
-    { value: 'total', label: 'Total' },
+    { value: 'cantidad',        label: 'Bolsas' },
+    { value: 'precio',          label: 'P.BASE ($)' },
+    { value: 'subtotal',        label: 'Subtotal ($)' },
+    { value: 'volumen',         label: 'Volumen (bolsas)' },
+    { value: 'monto',           label: 'Monto ($)' },
+    { value: 'precio_ponderado',label: 'P. ponderado' },
+    { value: 'subtotal_items',  label: 'Subtotal ítems' },
+    { value: 'desc_items',      label: 'Desc. ítems' },
+    { value: 'total',           label: 'Total' },
   ];
 }
 
 function defaultDriverForAlcance(alcance: import('../../api/types').TipoAplicacion): DriverRango {
-  return alcance === 'hibrido' ? 'cantidad' : 'volumen';
+  if (alcance === 'hibrido') return 'cantidad';
+  if (alcance === 'cultivo') return 'volumen';
+  return 'subtotal_items';
 }
 
 // ─── Modal de formulario ──────────────────────────────────────────────────────
