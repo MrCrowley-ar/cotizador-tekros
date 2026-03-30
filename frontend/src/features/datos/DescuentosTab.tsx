@@ -411,7 +411,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
 
   return (
     <Modal title={isEdit ? `Editar: ${initial!.nombre}` : 'Nuevo descuento'} onClose={onClose}>
-      <div className="space-y-5 max-h-[76vh] overflow-y-auto pr-1">
+      <div className="space-y-5">
         {error && <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2">{error}</p>}
 
         {/* Nombre + Fecha */}
