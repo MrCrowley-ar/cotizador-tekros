@@ -199,7 +199,8 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     return defaultDriverForAlcance(initial ? inferirAlcance(initial) : 'global');
   });
   const [tramos, setTramos] = useState<Tramo[]>(() => {
-    if (!initial || inferirTipoCondicion(initial) !== 'por_rango') return [];
+    // Per-cultivo por_rango uses tramosPorCultivo, not tramos
+    if (!initial || inferirTipoCondicion(initial) !== 'por_rango' || initial.tipoAplicacion === 'cultivo') return [];
     return [...(initial.reglas ?? [])]
       .sort((a, b) => b.prioridad - a.prioridad)
       .map((r) => {
@@ -213,7 +214,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
       .filter((t) => t.desde !== '0');
   });
   const [pctDefault, setPctDefault] = useState(() => {
-    if (!initial || inferirTipoCondicion(initial) !== 'por_rango') return '';
+    if (!initial || inferirTipoCondicion(initial) !== 'por_rango' || initial.tipoAplicacion === 'cultivo') return '';
     const def = (initial.reglas ?? []).find((r) => {
       const gteC = r.condiciones?.find((c) => c.operador === '>=' || c.operador === '>');
       return !gteC || Number(gteC.valor) === 0;
@@ -223,7 +224,8 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
 
   // Personalizado: rules libres usando RuleBuilder
   const [customRules, setCustomRules] = useState<RuleData[]>(() => {
-    if (!initial || inferirTipoCondicion(initial) !== 'personalizado') return [];
+    // Per-cultivo personalizado uses customRulesPorCultivo, not customRules
+    if (!initial || inferirTipoCondicion(initial) !== 'personalizado' || initial.tipoAplicacion === 'cultivo') return [];
     return [...(initial.reglas ?? [])]
       .sort((a, b) => a.prioridad - b.prioridad)
       .map((r) => ({
@@ -250,9 +252,63 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
 
   // Per-cultivo state (para por_rango + cultivo y personalizado + cultivo)
   const [cultivoActivoId, setCultivoActivoId] = useState<number | null>(null);
-  const [tramosPorCultivo, setTramosPorCultivo] = useState<Record<number, Tramo[]>>({});
-  const [pctDefaultPorCultivo, setPctDefaultPorCultivo] = useState<Record<number, string>>({});
-  const [customRulesPorCultivo, setCustomRulesPorCultivo] = useState<Record<number, RuleData[]>>({});
+  const [tramosPorCultivo, setTramosPorCultivo] = useState<Record<number, Tramo[]>>(() => {
+    if (!initial || inferirTipoCondicion(initial) !== 'por_rango' || initial.tipoAplicacion !== 'cultivo') return {};
+    const map: Record<number, Tramo[]> = {};
+    for (const r of initial.reglas ?? []) {
+      const cultCond = r.condiciones?.find((c) => c.campo === 'cultivo_id');
+      const rangoCond = r.condiciones?.find((c) => c.campo !== 'cultivo_id');
+      if (!cultCond || !rangoCond) continue;
+      const cid = Number(cultCond.valor);
+      if (!map[cid]) map[cid] = [];
+      // Skip default tramos (valor=0, operador=>=)
+      if (Number(rangoCond.valor) === 0 && (rangoCond.operador === '>=' || rangoCond.operador === '>')) continue;
+      if (rangoCond.operador === 'entre') {
+        map[cid].push({ id: newId(), desde: String(rangoCond.valor), hasta: String(rangoCond.valor2 ?? ''), pct: String(r.valor) });
+      } else {
+        map[cid].push({ id: newId(), desde: String(rangoCond.valor), pct: String(r.valor) });
+      }
+    }
+    for (const cid in map) map[cid].sort((a, b) => Number(a.desde) - Number(b.desde));
+    return map;
+  });
+  const [pctDefaultPorCultivo, setPctDefaultPorCultivo] = useState<Record<number, string>>(() => {
+    if (!initial || inferirTipoCondicion(initial) !== 'por_rango' || initial.tipoAplicacion !== 'cultivo') return {};
+    const map: Record<number, string> = {};
+    for (const r of initial.reglas ?? []) {
+      const cultCond = r.condiciones?.find((c) => c.campo === 'cultivo_id');
+      const rangoCond = r.condiciones?.find((c) => c.campo !== 'cultivo_id');
+      if (!cultCond || !rangoCond) continue;
+      if (Number(rangoCond.valor) === 0 && (rangoCond.operador === '>=' || rangoCond.operador === '>')) {
+        map[Number(cultCond.valor)] = String(r.valor);
+      }
+    }
+    return map;
+  });
+  const [customRulesPorCultivo, setCustomRulesPorCultivo] = useState<Record<number, RuleData[]>>(() => {
+    if (!initial || inferirTipoCondicion(initial) !== 'personalizado' || initial.tipoAplicacion !== 'cultivo') return {};
+    const map: Record<number, RuleData[]> = {};
+    for (const r of [...(initial.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad)) {
+      const cultCond = r.condiciones?.find((c) => c.campo === 'cultivo_id');
+      if (!cultCond) continue;
+      const cid = Number(cultCond.valor);
+      if (!map[cid]) map[cid] = [];
+      const restConds = (r.condiciones ?? []).filter((c) => c.campo !== 'cultivo_id');
+      map[cid].push({
+        valor: Number(r.valor),
+        prioridad: r.prioridad,
+        condiciones: restConds.map((c) => ({
+          campo: c.campo,
+          operador: c.operador,
+          valor: Number(c.valor),
+          valor2: c.valor2 != null ? Number(c.valor2) : undefined,
+          valorCampo: c.valorCampo ?? undefined,
+          valorMultiplier: c.valorMultiplier ?? undefined,
+        })),
+      });
+    }
+    return map;
+  });
 
   // Cultivos (para cualquier combinación con alcance cultivo)
   const { data: cultivos = [] } = useQuery({
