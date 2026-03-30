@@ -145,6 +145,7 @@ export class DescuentosService {
     const descuento = await this.findOne(id);
     const datosPrevios = {
       nombre: descuento.nombre,
+      modo: descuento.modo,
       tipoAplicacion: descuento.tipoAplicacion,
       valorPorcentaje: descuento.valorPorcentaje,
       fechaVigencia: descuento.fechaVigencia,
@@ -154,11 +155,22 @@ export class DescuentosService {
     if (dto.tipoAplicacion !== undefined) descuento.tipoAplicacion = dto.tipoAplicacion;
     if (dto.fechaVigencia !== undefined) descuento.fechaVigencia = dto.fechaVigencia as any;
     if (dto.valorPorcentaje !== undefined) descuento.valorPorcentaje = dto.valorPorcentaje;
+    if (dto.modo !== undefined) {
+      descuento.modo = dto.modo;
+      if (dto.modo !== ModoDescuento.BASICO) descuento.valorPorcentaje = null;
+    }
 
     await this.repo.save(descuento);
 
+    const modoEfectivo = dto.modo ?? descuento.modo;
+
+    // Si cambia a basico, limpiar reglas huérfanas
+    if (modoEfectivo === ModoDescuento.BASICO) {
+      await this.reglaRepo.delete({ descuentoId: id });
+    }
+
     // Modo avanzado o selector: si se proveen reglas, reemplazarlas
-    if ((descuento.modo === ModoDescuento.AVANZADO || descuento.modo === ModoDescuento.SELECTOR) && dto.reglas) {
+    if ((modoEfectivo === ModoDescuento.AVANZADO || modoEfectivo === ModoDescuento.SELECTOR) && dto.reglas) {
       await this.reglaRepo.delete({ descuentoId: id });
       for (const reglaDto of dto.reglas) {
         const regla = await this.reglaRepo.save(
