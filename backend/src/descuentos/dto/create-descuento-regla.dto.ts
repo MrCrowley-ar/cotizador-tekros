@@ -18,7 +18,8 @@ export class CreateDescuentoReglaDto {
   prioridad?: number;
 
   @IsArray()
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => CreateDescuentoCondicionDto)
-  condiciones: CreateDescuentoCondicionDto[];
+  condiciones?: CreateDescuentoCondicionDto[];
 }

@@ -38,8 +38,8 @@ export class CreateDescuentoDto {
   @IsDateString()
   fechaVigencia: string;
 
-  // Requerido solo si modo = AVANZADO
-  @ValidateIf((o) => o.modo === ModoDescuento.AVANZADO)
+  // Requerido en modo AVANZADO y SELECTOR
+  @ValidateIf((o) => o.modo === ModoDescuento.AVANZADO || o.modo === ModoDescuento.SELECTOR)
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateDescuentoReglaDto)

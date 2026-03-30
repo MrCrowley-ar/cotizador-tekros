@@ -67,11 +67,12 @@ export class DescuentosService {
       }),
     );
 
-    if (modo === ModoDescuento.AVANZADO && dto.reglas) {
+    if ((modo === ModoDescuento.AVANZADO || modo === ModoDescuento.SELECTOR) && dto.reglas) {
       for (const reglaDto of dto.reglas) {
         const regla = await this.reglaRepo.save(
           this.reglaRepo.create({
             descuentoId: descuento.id,
+            nombre: reglaDto.nombre ?? null,
             valor: reglaDto.valor,
             prioridad: reglaDto.prioridad ?? 0,
           }),
@@ -156,13 +157,14 @@ export class DescuentosService {
 
     await this.repo.save(descuento);
 
-    // Modo avanzado: si se proveen reglas, reemplazarlas
-    if (descuento.modo === ModoDescuento.AVANZADO && dto.reglas) {
+    // Modo avanzado o selector: si se proveen reglas, reemplazarlas
+    if ((descuento.modo === ModoDescuento.AVANZADO || descuento.modo === ModoDescuento.SELECTOR) && dto.reglas) {
       await this.reglaRepo.delete({ descuentoId: id });
       for (const reglaDto of dto.reglas) {
         const regla = await this.reglaRepo.save(
           this.reglaRepo.create({
             descuentoId: id,
+            nombre: reglaDto.nombre ?? null,
             valor: reglaDto.valor,
             prioridad: reglaDto.prioridad ?? 0,
           }),
