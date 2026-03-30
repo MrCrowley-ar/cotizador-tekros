@@ -19,6 +19,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
         autoLoadEntities: true,
         migrations: [join(__dirname, '..', 'database', 'migrations', '*.{ts,js}')],
         migrationsRun: true,
+        migrationsTransactionMode: 'each',
         logging: config.get<string>('NODE_ENV') !== 'production',
       }),
     }),
