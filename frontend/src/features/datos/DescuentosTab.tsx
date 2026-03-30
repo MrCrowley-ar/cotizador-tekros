@@ -908,6 +908,13 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['descuentos'] }); onClose(); },
   });
 
+  // Must be declared before any conditional returns to satisfy React hooks rules
+  const { data: cultivos = [] } = useQuery({
+    queryKey: ['cultivos'],
+    queryFn: () => productosApi.getCultivos(true),
+    enabled: descuento.tipoAplicacion === 'cultivo',
+  });
+
   const handleDeleteClick = async () => {
     const count = await descuentosApi.getUso(descuento.id).then((r) => r.count);
     setUsoCount(count);
@@ -952,12 +959,6 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
   }
 
   const tipoV = inferirTipoCondicion(descuento);
-
-  const { data: cultivos = [] } = useQuery({
-    queryKey: ['cultivos'],
-    queryFn: () => productosApi.getCultivos(true),
-    enabled: descuento.tipoAplicacion === 'cultivo',
-  });
   const cultivoNombre = (id: number) => cultivos.find((c) => c.id === id)?.nombre ?? `Cultivo #${id}`;
 
   // Helpers de vista
