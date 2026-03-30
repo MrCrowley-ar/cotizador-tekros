@@ -33,7 +33,7 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
       : version.descuentos.map((d) => d.descuentoId),
   );
 
-  // Calculate ratio_cultivo for the current item (bolsas_cultivo / total_bolsas)
+  // Calcula el ratio_cultivo para el ítem actual (bolsas_cultivo / total_bolsas)
   function getRatioCultivo(): number | undefined {
     if (!item) return undefined;
     const totalBolsas = version.items.reduce((sum, i) => sum + Number(i.bolsas), 0);
@@ -42,6 +42,41 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
       .filter((i) => i.cultivoId === item.cultivoId)
       .reduce((sum, i) => sum + Number(i.bolsas), 0);
     return bolsasCultivo / totalBolsas;
+  }
+
+  // Calcula los agregados de la cotización: volumen/monto a nivel cultivo y global
+  function getAgregados() {
+    const subtotalItems = version.items.reduce((sum, i) => sum + Number(i.subtotal), 0);
+    const descuentosItems = version.items.reduce((sum, i) => {
+      const totalPct = (i.descuentos ?? []).reduce((dp, d) => dp + Number(d.valorPorcentaje), 0);
+      return sum + Number(i.subtotal) * totalPct / 100;
+    }, 0);
+    const totalCotizacion = Number(version.total);
+
+    if (item) {
+      const bolsasCultivo = version.items
+        .filter((i) => i.cultivoId === item.cultivoId)
+        .reduce((sum, i) => sum + Number(i.bolsas), 0);
+      const montoCultivo = version.items
+        .filter((i) => i.cultivoId === item.cultivoId)
+        .reduce((sum, i) => sum + Number(i.precioBase), 0);
+      const precioPonderado = bolsasCultivo > 0 ? montoCultivo / bolsasCultivo : undefined;
+      return {
+        volumen: bolsasCultivo,
+        monto: montoCultivo,
+        ...(precioPonderado != null ? { precioPonderado } : {}),
+        subtotalItems,
+        descuentosItems,
+        totalCotizacion,
+      };
+    }
+
+    // alcance global
+    return {
+      subtotalItems,
+      descuentosItems,
+      totalCotizacion,
+    };
   }
 
   async function apply(descuentoId: number, valorPorcentaje: number | null, modo: string) {
@@ -62,6 +97,7 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
         porcentaje = Number(regla.valor);
       } else if (modo === 'avanzado') {
         const ratioCultivo = getRatioCultivo();
+        const agregados = getAgregados();
         const ctx = item
           ? {
               ...(item.bolsas != null ? { cantidad: Number(item.bolsas) } : {}),
@@ -72,8 +108,9 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
               precio: Number(item.precioBase),
               subtotal: Number(item.subtotal),
               ...(ratioCultivo != null ? { ratioCultivo } : {}),
+              ...agregados,
             }
-          : { tipoAplicacion: 'global' as const };
+          : { tipoAplicacion: 'global' as const, ...agregados };
 
         const resultados = await descuentosApi.evaluar({ ...ctx });
         const match = resultados.find((r) => r.descuentoId === descuentoId);

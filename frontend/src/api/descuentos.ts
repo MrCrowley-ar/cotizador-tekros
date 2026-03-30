@@ -31,13 +31,19 @@ export const descuentosApi = {
     api.patch<Descuento>(`/descuentos/${id}`, body),
   delete: (id: number) => api.delete(`/descuentos/${id}`),
   evaluar: (body: {
-    cantidad?: number;
     tipoAplicacion: TipoAplicacion;
+    cantidad?: number;
     cultivoId?: number;
     hibridoId?: number;
     bandaId?: number;
     precio?: number;
     subtotal?: number;
     ratioCultivo?: number;
+    volumen?: number;
+    monto?: number;
+    precioPonderado?: number;
+    subtotalItems?: number;
+    descuentosItems?: number;
+    totalCotizacion?: number;
   }) => api.post<DescuentoAplicado[]>('/descuentos/evaluar', body),
 };

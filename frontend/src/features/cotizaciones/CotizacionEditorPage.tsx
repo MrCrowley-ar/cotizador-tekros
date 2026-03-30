@@ -453,23 +453,77 @@ function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versio
 
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
-function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle }: {
+function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version }: {
   isEditable: boolean;
   activeIds: Set<number>;
   pendingIds: Set<number>;
   allDescuentos: Descuento[];
   onToggle: (desc: Descuento) => void;
+  onApplySelector: (desc: Descuento, pct: number | null) => void;
+  version: CotizacionVersion | undefined;
 }) {
   const nonGlobal = allDescuentos.filter((d) => d.tipoAplicacion !== 'global');
   if (nonGlobal.length === 0) return null;
 
+  // Find currently applied pct for selector discounts
+  function getAppliedSelectorPct(descId: number): number | null {
+    if (!version) return null;
+    for (const item of version.items ?? []) {
+      const found = item.descuentos.find((d) => d.descuentoId === descId);
+      if (found) return Number(found.valorPorcentaje);
+    }
+    return null;
+  }
+
   return (
     <div className="bg-white rounded-xl border p-4">
       <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos</h3>
-      <div className="space-y-1">
+      <div className="space-y-2">
         {nonGlobal.map((desc) => {
           const applied = activeIds.has(desc.id);
           const pending = pendingIds.has(desc.id);
+          const isSelector = desc.modo === 'selector';
+          const reglasSorted = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
+          const appliedPct = isSelector ? getAppliedSelectorPct(desc.id) : null;
+          const currentReglaId = isSelector && appliedPct != null
+            ? (reglasSorted.find((r) => Number(r.valor) === appliedPct)?.id ?? '')
+            : '';
+
+          if (isSelector) {
+            return (
+              <div key={desc.id} className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}>
+                <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
+                <div className="flex items-center gap-2">
+                  {pending ? (
+                    <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
+                  ) : (
+                    <select
+                      disabled={!isEditable}
+                      value={currentReglaId}
+                      onChange={(e) => {
+                        const reglaId = Number(e.target.value);
+                        if (!reglaId) {
+                          onApplySelector(desc, null);
+                        } else {
+                          const regla = reglasSorted.find((r) => r.id === reglaId);
+                          if (regla) onApplySelector(desc, Number(regla.valor));
+                        }
+                      }}
+                      className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
+                    >
+                      <option value="">— Ninguno —</option>
+                      {reglasSorted.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
           return (
             <label
               key={desc.id}
@@ -542,23 +596,25 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
     setPendingIds((prev) => { const next = new Set(prev); on ? next.add(id) : next.delete(id); return next; });
   }
 
-  async function applyDescuento(desc: Descuento) {
+  async function applyDescuento(desc: Descuento, selectorPct?: number) {
     markPending(desc.id, true);
     try {
+      let porcentaje: number | undefined;
       if (desc.modo === 'basico') {
-        await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
-          descuentoId: desc.id,
-          porcentaje: Number(desc.valorPorcentaje),
-        });
+        porcentaje = Number(desc.valorPorcentaje);
+      } else if (desc.modo === 'selector') {
+        if (selectorPct === undefined) return;
+        porcentaje = selectorPct;
       } else {
         const results = await descuentosApi.evaluar({ tipoAplicacion: 'global' });
         const match = results.find((r) => r.descuentoId === desc.id);
         if (!match) { showNoAplica(desc.id); return; }
-        await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
-          descuentoId: desc.id,
-          porcentaje: match.porcentaje,
-        });
+        porcentaje = match.porcentaje;
       }
+      await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
+        descuentoId: desc.id,
+        porcentaje,
+      });
       invalidate();
     } catch { /* silently fail */ } finally {
       markPending(desc.id, false);
@@ -587,12 +643,56 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
   return (
     <div className="bg-white rounded-xl border p-4">
       <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos globales</h3>
-      <div className="space-y-1">
+      <div className="space-y-2">
         {descuentos.map((desc) => {
           const applied = isApplied(desc);
           const pct = getAppliedPct(desc);
           const pending = pendingIds.has(desc.id);
           const noAplica = noAplicaId === desc.id;
+          const isSelector = desc.modo === 'selector';
+          const reglasSorted = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
+          const currentReglaId = isSelector && pct != null
+            ? (reglasSorted.find((r) => Number(r.valor) === Number(pct))?.id ?? '')
+            : '';
+
+          if (isSelector) {
+            return (
+              <div key={desc.id} className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}>
+                <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
+                <div className="flex items-center gap-2">
+                  {pending ? (
+                    <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
+                  ) : (
+                    <select
+                      disabled={!isEditable}
+                      value={currentReglaId}
+                      onChange={async (e) => {
+                        const reglaId = Number(e.target.value);
+                        if (!reglaId) {
+                          await removeDescuento(desc);
+                        } else {
+                          const regla = reglasSorted.find((r) => r.id === reglaId);
+                          if (regla) await applyDescuento(desc, Number(regla.valor));
+                        }
+                      }}
+                      className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
+                    >
+                      <option value="">— Ninguno —</option>
+                      {reglasSorted.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {applied && pct != null && (
+                    <span className="text-xs font-semibold text-orange-600 shrink-0">−{pct}%</span>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
           return (
             <label
               key={desc.id}
@@ -631,7 +731,19 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
 
 // ─── Editor Page ──────────────────────────────────────────────────────────────
 
-const ESTADOS = ['borrador', 'enviada', 'aprobada', 'rechazada', 'cerrada'] as const;
+const ESTADOS = ['generado', 'enviado', 'aceptado', 'perdido'] as const;
+const ESTADO_LABEL: Record<string, string> = {
+  generado: 'Generado',
+  enviado:  'Enviado',
+  aceptado: 'Aceptado',
+  perdido:  'Perdido',
+  // legacy
+  borrador:  'Generado',
+  enviada:   'Enviado',
+  aprobada:  'Aceptado',
+  rechazada: 'Perdido',
+  cerrada:   'Perdido',
+};
 
 export function CotizacionEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -643,6 +755,7 @@ export function CotizacionEditorPage() {
   const [selectedCultivos, setSelectedCultivos] = useState<Set<number>>(new Set());
   const [showHistory, setShowHistory] = useState(false);
   const [rightWidth, setRightWidth] = useState(288);
+  const [confirmEstado, setConfirmEstado] = useState<string | null>(null);
 
   // Discount state lifted to page level
   const [activeDiscountIds, setActiveDiscountIds] = useState<Set<number>>(new Set());
@@ -765,20 +878,35 @@ export function CotizacionEditorPage() {
               })
             )
           );
+        } else if (desc.modo === 'selector') {
+          // selector discounts must be applied via the dropdown — skip auto-eval
         } else {
-          const rulesCampos = new Set(
-            (desc.reglas ?? []).flatMap((r) => r.condiciones?.map((c) => c.campo) ?? [])
-          );
+          // Pre-compute global totals once (outside the per-item loop)
+          const subtotalItems = allItems.reduce((s, i) => s + Number(i.subtotal), 0);
+          const descuentosItemsVal = allItems.reduce((s, i) => {
+            const pct = (i.descuentos ?? []).reduce((dp, d) => dp + Number(d.valorPorcentaje), 0);
+            return s + Number(i.subtotal) * pct / 100;
+          }, 0);
+          const totalCotizacion = Number(version.total ?? 0);
+
           for (const item of allItems) {
+            const stats = cultivoStats.get(item.cultivoId) ?? { bolsas: 0, monto: 0 };
+            const precioPonderado = stats.bolsas > 0 ? stats.monto / stats.bolsas : undefined;
             const results = await descuentosApi.evaluar({
               tipoAplicacion: desc.tipoAplicacion as 'global',
               cultivoId: item.cultivoId,
               hibridoId: item.hibridoId,
               bandaId: item.bandaId,
               cantidad: Number(item.bolsas),
-              ...(rulesCampos.has('precio')        && { precio:        Number(item.precioBase) }),
-              ...(rulesCampos.has('subtotal')      && { subtotal:      Number(item.subtotal) }),
-              ...(rulesCampos.has('ratio_cultivo') && { ratioCultivo:  getRatioCultivo(item.cultivoId) }),
+              precio: Number(item.precioBase),
+              subtotal: Number(item.subtotal),
+              ratioCultivo: getRatioCultivo(item.cultivoId),
+              volumen: stats.bolsas,
+              monto: stats.monto,
+              ...(precioPonderado != null ? { precioPonderado } : {}),
+              subtotalItems,
+              descuentosItems: descuentosItemsVal,
+              totalCotizacion,
             });
             const match = results.find((r) => r.descuentoId === desc.id);
             if (match) {
@@ -799,6 +927,39 @@ export function CotizacionEditorPage() {
         return n;
       });
     } finally {
+      markDiscPending(desc.id, false);
+    }
+  }
+
+  async function applySelector(desc: Descuento, porcentaje: number | null) {
+    if (!isEditable || !version) return;
+    markDiscPending(desc.id, true);
+    const allItems = version.items ?? [];
+    try {
+      // Remove existing application first
+      await Promise.all(
+        allItems.flatMap((item) => {
+          const found = item.descuentos.find((d) => d.descuentoId === desc.id);
+          return found
+            ? [cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, found.descuentoId)]
+            : [];
+        })
+      );
+      if (porcentaje !== null) {
+        await Promise.all(
+          allItems.map((item) =>
+            cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
+              descuentoId: desc.id,
+              porcentaje,
+            })
+          )
+        );
+        setActiveDiscountIds((prev) => { const n = new Set(prev); n.add(desc.id); return n; });
+      } else {
+        setActiveDiscountIds((prev) => { const n = new Set(prev); n.delete(desc.id); return n; });
+      }
+      invalidateVersion();
+    } catch { /* silent */ } finally {
       markDiscPending(desc.id, false);
     }
   }
@@ -828,7 +989,8 @@ export function CotizacionEditorPage() {
   }
 
   const isLatestVersion = versiones[0]?.id === selectedVersionId;
-  const isEditable = cotizacion.estado === 'borrador' && isLatestVersion;
+  const isLocked = cotizacion.estado === 'enviado' || cotizacion.estado === 'enviada';
+  const isEditable = !isLocked && isLatestVersion;
 
   const existingCultivoIds = new Set(version?.items?.map((i) => i.cultivoId) ?? []);
   const activeCultivoIds = new Set([...existingCultivoIds, ...selectedCultivos]);
@@ -864,7 +1026,7 @@ export function CotizacionEditorPage() {
             >
               📋 Versiones
             </button>
-            {isEditable && (
+            {isLatestVersion && (
               <button
                 onClick={() => newVersionMut.mutate()}
                 disabled={newVersionMut.isPending}
@@ -873,17 +1035,19 @@ export function CotizacionEditorPage() {
                 {newVersionMut.isPending ? <Spinner /> : '+ Nueva versión'}
               </button>
             )}
-            {cotizacion.estado === 'borrador' && (
-              <select
-                value={cotizacion.estado}
-                onChange={(e) => estadoMut.mutate(e.target.value)}
-                className="text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {ESTADOS.map((e) => (
-                  <option key={e} value={e}>{e.charAt(0).toUpperCase() + e.slice(1)}</option>
-                ))}
-              </select>
-            )}
+            <select
+              value={cotizacion.estado}
+              onChange={(e) => setConfirmEstado(e.target.value)}
+              disabled={estadoMut.isPending}
+              className="text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              {ESTADOS.map((e) => (
+                <option key={e} value={e}>{ESTADO_LABEL[e]}</option>
+              ))}
+              {!ESTADOS.includes(cotizacion.estado as any) && (
+                <option value={cotizacion.estado}>{ESTADO_LABEL[cotizacion.estado] ?? cotizacion.estado}</option>
+              )}
+            </select>
           </div>
         </div>
 
@@ -954,6 +1118,8 @@ export function CotizacionEditorPage() {
               pendingIds={pendingDiscountIds}
               allDescuentos={allDescuentos}
               onToggle={toggleDiscount}
+              onApplySelector={applySelector}
+              version={version}
             />
             {version && (
               <DescuentosGlobalesPanel
@@ -975,6 +1141,50 @@ export function CotizacionEditorPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Confirmación de cambio de estado ── */}
+      {confirmEstado && (() => {
+        const desde = ESTADO_LABEL[cotizacion.estado] ?? cotizacion.estado;
+        const hacia = ESTADO_LABEL[confirmEstado] ?? confirmEstado;
+        const bloqueaEdicion = confirmEstado === 'enviado';
+        const desbloqueaEdicion = isLocked && confirmEstado !== 'enviado';
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-xl shadow-xl w-[400px] p-6 space-y-4">
+              <h3 className="text-base font-semibold text-gray-900">Cambiar estado</h3>
+              <p className="text-sm text-gray-600">
+                ¿Cambiar de <span className="font-medium">{desde}</span> a{' '}
+                <span className="font-medium">{hacia}</span>?
+              </p>
+              {bloqueaEdicion && (
+                <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                  La cotización quedará <strong>bloqueada para edición</strong> hasta que cambies el estado nuevamente.
+                </p>
+              )}
+              {desbloqueaEdicion && (
+                <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                  La cotización volverá a estar <strong>disponible para edición</strong>.
+                </p>
+              )}
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <button
+                  onClick={() => setConfirmEstado(null)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  disabled={estadoMut.isPending}
+                  onClick={() => { estadoMut.mutate(confirmEstado); setConfirmEstado(null); }}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {estadoMut.isPending ? 'Cambiando…' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </Layout>
   );
 }

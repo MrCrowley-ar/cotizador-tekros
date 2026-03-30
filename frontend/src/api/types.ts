@@ -58,7 +58,7 @@ export interface Precio {
 // ─── Descuentos ───────────────────────────────────────────────────────────────
 export type TipoAplicacion = 'global' | 'cultivo' | 'hibrido';
 export type ModoDescuento = 'basico' | 'avanzado' | 'selector';
-export type CampoCondicion = 'cantidad' | 'cultivo_id' | 'hibrido_id' | 'banda_id' | 'precio' | 'subtotal' | 'ratio_cultivo';
+export type CampoCondicion = 'cantidad' | 'cultivo_id' | 'hibrido_id' | 'banda_id' | 'precio' | 'subtotal' | 'ratio_cultivo' | 'volumen' | 'monto' | 'precio_ponderado' | 'subtotal_items' | 'desc_items' | 'total';
 export type OperadorCondicion = '=' | '!=' | '>' | '<' | '>=' | '<=' | 'entre';
 
 export interface DescuentoCondicion {
@@ -67,6 +67,9 @@ export interface DescuentoCondicion {
   operador: OperadorCondicion;
   valor: number;
   valor2: number | null;
+  // Condición relativa: cuando valorCampo está definido, el lado derecho es (valorMultiplier × ctx[valorCampo])
+  valorCampo: CampoCondicion | null;
+  valorMultiplier: number | null;
 }
 export interface DescuentoRegla {
   id: number;

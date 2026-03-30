@@ -46,4 +46,48 @@ export class EvaluarDescuentoDto {
   @Min(0)
   @IsOptional()
   ratioCultivo?: number;
+
+  // Agregados de cotización (nivel cultivo o global según alcance)
+  @Transform(({ value }) => (value == null ? undefined : value))
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @IsOptional()
+  volumen?: number;
+
+  @Transform(({ value }) => (value == null ? undefined : value))
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @IsOptional()
+  monto?: number;
+
+  @Transform(({ value }) => (value == null ? undefined : value))
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @IsOptional()
+  precioPonderado?: number;
+
+  // Totales globales de la cotización
+  @Transform(({ value }) => (value == null ? undefined : value))
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @IsOptional()
+  subtotalItems?: number;
+
+  @Transform(({ value }) => (value == null ? undefined : value))
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @IsOptional()
+  descuentosItems?: number;
+
+  @Transform(({ value }) => (value == null ? undefined : value))
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @IsOptional()
+  totalCotizacion?: number;
 }

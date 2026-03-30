@@ -15,6 +15,14 @@ export enum CampoCondicion {
   PRECIO = 'precio',
   SUBTOTAL = 'subtotal',
   RATIO_CULTIVO = 'ratio_cultivo',
+  // Agregados de cotización (nivel cultivo o global según alcance del descuento)
+  VOLUMEN = 'volumen',
+  MONTO = 'monto',
+  PRECIO_PONDERADO = 'precio_ponderado',
+  // Totales globales de la cotización
+  SUBTOTAL_ITEMS = 'subtotal_items',
+  DESC_ITEMS = 'desc_items',
+  TOTAL = 'total',
 }
 
 export enum OperadorCondicion {
@@ -42,12 +50,21 @@ export class DescuentoCondicion {
   operador: OperadorCondicion;
 
   // Valor principal (o límite inferior para operador ENTRE)
-  @Column({ type: 'decimal', precision: 12, scale: 4 })
+  @Column({ type: 'decimal', precision: 12, scale: 4, default: 0 })
   valor: number;
 
   // Solo para operador ENTRE: límite superior
   @Column({ name: 'valor_2', type: 'decimal', precision: 12, scale: 4, nullable: true })
   valor2: number | null;
+
+  // ── Comparación relativa (si se usan, "valor" es ignorado) ────────────────
+  // Permite condiciones del tipo: campo op (valorMultiplier × valorCampo)
+  // Ej: "Bolsas >= 1/2 × Monto"
+  @Column({ name: 'valor_campo', type: 'enum', enum: CampoCondicion, nullable: true })
+  valorCampo: CampoCondicion | null;
+
+  @Column({ name: 'valor_multiplier', type: 'decimal', precision: 8, scale: 6, nullable: true })
+  valorMultiplier: number | null;
 
   @ManyToOne(() => DescuentoRegla, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'regla_id' })

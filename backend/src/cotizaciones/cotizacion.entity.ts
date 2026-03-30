@@ -11,11 +11,10 @@ import { Cliente } from '../clientes/cliente.entity';
 import { Usuario } from '../usuarios/usuario.entity';
 
 export enum EstadoCotizacion {
-  BORRADOR = 'borrador',
-  ENVIADA = 'enviada',
-  APROBADA = 'aprobada',
-  RECHAZADA = 'rechazada',
-  CERRADA = 'cerrada',
+  GENERADO = 'generado',
+  ENVIADO  = 'enviado',
+  ACEPTADO = 'aceptado',
+  PERDIDO  = 'perdido',
 }
 
 @Entity('cotizaciones')
@@ -38,7 +37,7 @@ export class Cotizacion {
   @Column({
     type: 'enum',
     enum: EstadoCotizacion,
-    default: EstadoCotizacion.BORRADOR,
+    default: EstadoCotizacion.GENERADO,
   })
   estado: EstadoCotizacion;
 
