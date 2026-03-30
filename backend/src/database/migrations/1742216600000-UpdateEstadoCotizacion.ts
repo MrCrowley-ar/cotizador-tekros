@@ -15,6 +15,9 @@ export class UpdateEstadoCotizacion1742216600000 implements MigrationInterface {
     await queryRunner.query(`UPDATE "cotizaciones" SET "estado" = 'enviado'  WHERE "estado" = 'enviada'`);
     await queryRunner.query(`UPDATE "cotizaciones" SET "estado" = 'aceptado' WHERE "estado" = 'aprobada'`);
     await queryRunner.query(`UPDATE "cotizaciones" SET "estado" = 'perdido'  WHERE "estado" IN ('rechazada', 'cerrada')`);
+
+    // Update column default so new rows get 'generado'
+    await queryRunner.query(`ALTER TABLE "cotizaciones" ALTER COLUMN "estado" SET DEFAULT 'generado'`);
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

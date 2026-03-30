@@ -737,6 +737,12 @@ const ESTADO_LABEL: Record<string, string> = {
   enviado:  'Enviado',
   aceptado: 'Aceptado',
   perdido:  'Perdido',
+  // legacy
+  borrador:  'Generado',
+  enviada:   'Enviado',
+  aprobada:  'Aceptado',
+  rechazada: 'Perdido',
+  cerrada:   'Perdido',
 };
 
 export function CotizacionEditorPage() {
@@ -982,7 +988,8 @@ export function CotizacionEditorPage() {
   }
 
   const isLatestVersion = versiones[0]?.id === selectedVersionId;
-  const isEditable = cotizacion.estado === 'generado' && isLatestVersion;
+  const isGenerado = cotizacion.estado === 'generado' || cotizacion.estado === 'borrador';
+  const isEditable = isGenerado && isLatestVersion;
 
   const existingCultivoIds = new Set(version?.items?.map((i) => i.cultivoId) ?? []);
   const activeCultivoIds = new Set([...existingCultivoIds, ...selectedCultivos]);
@@ -1037,6 +1044,10 @@ export function CotizacionEditorPage() {
               {ESTADOS.map((e) => (
                 <option key={e} value={e}>{ESTADO_LABEL[e]}</option>
               ))}
+              {/* Opción temporal para estados legacy si la migración no corrió aún */}
+              {!ESTADOS.includes(cotizacion.estado as any) && (
+                <option value={cotizacion.estado}>{ESTADO_LABEL[cotizacion.estado] ?? cotizacion.estado}</option>
+              )}
             </select>
           </div>
         </div>
