@@ -215,12 +215,21 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
       .map((r) => ({ id: newId(), nombre: r.nombre ?? '', pct: String(r.valor) }));
   });
 
-  // Cultivos (para fijo + cultivo)
+  // Per-cultivo state (para por_rango + cultivo y personalizado + cultivo)
+  const [cultivoActivoId, setCultivoActivoId] = useState<number | null>(null);
+  const [tramosPorCultivo, setTramosPorCultivo] = useState<Record<number, Tramo[]>>({});
+  const [pctDefaultPorCultivo, setPctDefaultPorCultivo] = useState<Record<number, string>>({});
+  const [customRulesPorCultivo, setCustomRulesPorCultivo] = useState<Record<number, RuleData[]>>({});
+
+  // Cultivos (para cualquier combinación con alcance cultivo)
   const { data: cultivos = [] } = useQuery({
     queryKey: ['cultivos'],
     queryFn: () => productosApi.getCultivos(true),
-    enabled: tipoCondicion === 'fijo' && alcance === 'cultivo',
+    enabled: alcance === 'cultivo',
   });
+
+  // Cultivo activo: usa el seleccionado o cae al primero disponible
+  const effectiveCultivoId = cultivoActivoId ?? cultivos[0]?.id ?? null;
 
   // ── Guardar ──
   const saveMut = useMutation({
@@ -254,6 +263,29 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
+      if (tipoCondicion === 'por_rango' && alcance === 'cultivo') {
+        const allRules: any[] = [];
+        let prio = 1;
+        for (const cultivo of cultivos) {
+          const tramosC = [...(tramosPorCultivo[cultivo.id] ?? [])]
+            .filter((t) => t.pct !== '')
+            .sort((a, b) => Number(a.desde) - Number(b.desde));
+          const pctDefC = pctDefaultPorCultivo[cultivo.id] ?? '';
+          [...tramosC].reverse().forEach((t) => {
+            const tieneHasta = t.hasta && t.hasta !== '';
+            const condRango = tieneHasta
+              ? { campo: driver as string, operador: 'entre' as const, valor: Number(t.desde), valor2: Number(t.hasta) }
+              : { campo: driver as string, operador: '>=' as CondOp, valor: Number(t.desde) };
+            allRules.push({ valor: Number(t.pct), prioridad: prio++, condiciones: [{ campo: 'cultivo_id' as const, operador: '=' as CondOp, valor: cultivo.id }, condRango] });
+          });
+          if (pctDefC !== '') {
+            allRules.push({ valor: Number(pctDefC), prioridad: prio++, condiciones: [{ campo: 'cultivo_id' as const, operador: '=' as CondOp, valor: cultivo.id }, { campo: driver as string, operador: '>=' as CondOp, valor: 0 }] });
+          }
+        }
+        const payload = { nombre, tipoAplicacion: 'cultivo' as const, modo: 'avanzado' as const, fechaVigencia, reglas: allRules };
+        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
+      }
+
       if (tipoCondicion === 'por_rango') {
         const tramosValidos = [...tramos]
           .filter((t) => t.pct !== '')
@@ -276,6 +308,32 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           nombre, tipoAplicacion: alcance,
           modo: 'avanzado' as const, fechaVigencia, reglas,
         };
+        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
+      }
+
+      if (tipoCondicion === 'personalizado' && alcance === 'cultivo') {
+        const allRules: any[] = [];
+        let prio = 1;
+        for (const cultivo of cultivos) {
+          for (const r of (customRulesPorCultivo[cultivo.id] ?? [])) {
+            allRules.push({
+              valor: r.valor,
+              prioridad: prio++,
+              condiciones: [
+                { campo: 'cultivo_id' as const, operador: '=' as CondOp, valor: cultivo.id },
+                ...r.condiciones.map((c) => ({
+                  campo: c.campo,
+                  operador: c.operador,
+                  valor: c.valorCampo ? 0 : c.valor,
+                  valor2: c.valor2,
+                  valorCampo: c.valorCampo,
+                  valorMultiplier: c.valorMultiplier,
+                })),
+              ],
+            });
+          }
+        }
+        const payload = { nombre, tipoAplicacion: 'cultivo' as const, modo: 'avanzado' as const, fechaVigencia, reglas: allRules };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
@@ -324,8 +382,12 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     if (tipoCondicion === 'fijo' && alcance === 'cultivo')
       return cultivos.some((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0);
     if (tipoCondicion === 'fijo') return pctFijo !== '' && Number(pctFijo) >= 0;
+    if (tipoCondicion === 'por_rango' && alcance === 'cultivo')
+      return cultivos.some((c) => (tramosPorCultivo[c.id] ?? []).some((t) => t.pct !== '') || (pctDefaultPorCultivo[c.id] ?? '') !== '');
     if (tipoCondicion === 'por_rango')
       return pctDefault !== '' || tramos.some((t) => t.pct !== '');
+    if (tipoCondicion === 'personalizado' && alcance === 'cultivo')
+      return cultivos.some((c) => (customRulesPorCultivo[c.id] ?? []).length > 0);
     if (tipoCondicion === 'personalizado') return customRules.length > 0;
     // por_selector
     return opciones.some((o) => o.nombre.trim() !== '' && o.pct !== '');
@@ -517,96 +579,109 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
               )}
             </div>
 
-            {/* Cabecera de la tabla de tramos */}
-            <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-2 items-center px-3 pb-0.5">
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Desde</span>
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Hasta</span>
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Descuento</span>
-              <span />
-            </div>
+            {/* Tabs por cultivo cuando alcance = cultivo */}
+            {alcance === 'cultivo' && cultivos.length === 0 && (
+              <div className="flex justify-center py-4"><Spinner /></div>
+            )}
+            {alcance === 'cultivo' && cultivos.length > 0 && (
+              <div className="flex gap-1 border-b border-gray-200 mb-1">
+                {cultivos.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCultivoActivoId(c.id)}
+                    className={`px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                      effectiveCultivoId === c.id
+                        ? 'border-blue-500 text-blue-700'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    {c.nombre}
+                    {(tramosPorCultivo[c.id] ?? []).some((t) => t.pct !== '') || (pctDefaultPorCultivo[c.id] ?? '') !== ''
+                      ? <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 inline-block align-middle" />
+                      : null}
+                  </button>
+                ))}
+              </div>
+            )}
 
-            <div className="space-y-1.5">
-              {[...tramos]
-                .sort((a, b) => Number(a.desde) - Number(b.desde))
-                .map((t) => {
-                  const step = driver === 'ratio_cultivo' || driver === 'precio_ponderado' ? 0.01 : 1;
-                  return (
-                    <div key={t.id} className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-2 items-center group">
-                      <input
-                        type="number"
-                        min={0}
-                        step={step}
-                        value={t.desde}
-                        onChange={(e) =>
-                          setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, desde: e.target.value } : x))
-                        }
-                        className="border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="0"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        step={step}
-                        value={t.hasta ?? ''}
-                        onChange={(e) =>
-                          setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, hasta: e.target.value } : x))
-                        }
-                        className="border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-500 placeholder-gray-300"
-                        placeholder="sin límite"
-                      />
+            {/* Tabla de tramos — por cultivo activo o global */}
+            {(alcance !== 'cultivo' || effectiveCultivoId !== null) && (() => {
+              const isCultivo = alcance === 'cultivo' && effectiveCultivoId !== null;
+              const tramosActivos = isCultivo ? (tramosPorCultivo[effectiveCultivoId!] ?? []) : tramos;
+              const setTramosActivos = isCultivo
+                ? (fn: (prev: Tramo[]) => Tramo[]) => setTramosPorCultivo((prev) => ({ ...prev, [effectiveCultivoId!]: fn(prev[effectiveCultivoId!] ?? []) }))
+                : setTramos;
+              const pctDef = isCultivo ? (pctDefaultPorCultivo[effectiveCultivoId!] ?? '') : pctDefault;
+              const setPctDef = isCultivo
+                ? (v: string) => setPctDefaultPorCultivo((prev) => ({ ...prev, [effectiveCultivoId!]: v }))
+                : setPctDefault;
+              const step = driver === 'ratio_cultivo' || driver === 'precio_ponderado' ? 0.01 : 1;
+              return (
+                <>
+                  <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-2 items-center px-3 pb-0.5">
+                    <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Desde</span>
+                    <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Hasta</span>
+                    <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Descuento</span>
+                    <span />
+                  </div>
+                  <div className="space-y-1.5">
+                    {[...tramosActivos]
+                      .sort((a, b) => Number(a.desde) - Number(b.desde))
+                      .map((t) => (
+                        <div key={t.id} className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-2 items-center group">
+                          <input
+                            type="number" min={0} step={step} value={t.desde}
+                            onChange={(e) => setTramosActivos((prev) => prev.map((x) => x.id === t.id ? { ...x, desde: e.target.value } : x))}
+                            className="border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="0"
+                          />
+                          <input
+                            type="number" min={0} step={step} value={t.hasta ?? ''}
+                            onChange={(e) => setTramosActivos((prev) => prev.map((x) => x.id === t.id ? { ...x, hasta: e.target.value } : x))}
+                            className="border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-500 placeholder-gray-300"
+                            placeholder="sin límite"
+                          />
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number" min={0} max={100} step={0.01} value={t.pct}
+                              onChange={(e) => setTramosActivos((prev) => prev.map((x) => x.id === t.id ? { ...x, pct: e.target.value } : x))}
+                              className="w-16 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="0"
+                            />
+                            <span className="text-xs text-gray-500">%</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setTramosActivos((prev) => prev.filter((x) => x.id !== t.id))}
+                            className="text-gray-300 hover:text-red-500 text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity justify-self-center"
+                          >×</button>
+                        </div>
+                      ))}
+                    <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-2 items-center mt-1 pt-2 border-t border-gray-100">
+                      <div className="col-span-2 text-xs text-amber-700 font-medium">En los demás casos</div>
                       <div className="flex items-center gap-1">
                         <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step={0.01}
-                          value={t.pct}
-                          onChange={(e) =>
-                            setTramos((prev) => prev.map((x) => x.id === t.id ? { ...x, pct: e.target.value } : x))
-                          }
-                          className="w-16 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          type="number" min={0} max={100} step={0.01} value={pctDef}
+                          onChange={(e) => setPctDef(e.target.value)}
+                          className="w-16 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-amber-400 bg-amber-50"
                           placeholder="0"
                         />
                         <span className="text-xs text-gray-500">%</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setTramos((prev) => prev.filter((x) => x.id !== t.id))}
-                        className="text-gray-300 hover:text-red-500 text-base leading-none opacity-0 group-hover:opacity-100 transition-opacity justify-self-center"
-                      >
-                        ×
-                      </button>
+                      <span />
                     </div>
-                  );
-                })}
-
-              {/* Fila "En los demás casos" */}
-              <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-x-2 items-center mt-1 pt-2 border-t border-gray-100">
-                <div className="col-span-2 text-xs text-amber-700 font-medium">En los demás casos</div>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.01}
-                    value={pctDefault}
-                    onChange={(e) => setPctDefault(e.target.value)}
-                    className="w-16 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-amber-400 bg-amber-50"
-                    placeholder="0"
-                  />
-                  <span className="text-xs text-gray-500">%</span>
-                </div>
-                <span />
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setTramos((prev) => [...prev, { id: newId(), desde: '', hasta: '', pct: '' }])}
-              className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
-            >
-              + Agregar tramo
-            </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTramosActivos((prev) => [...prev, { id: newId(), desde: '', hasta: '', pct: '' }])}
+                    className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    + Agregar tramo
+                  </button>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -617,7 +692,41 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
               Armá reglas con condiciones libres. La <strong>primera regla</strong> cuyas condiciones se cumplan gana.
               Usá el botón <strong>÷</strong> en cada condición para comparar con una fracción de otra variable.
             </div>
-            <RuleBuilder rules={customRules} onChange={setCustomRules} />
+
+            {/* Tabs por cultivo cuando alcance = cultivo */}
+            {alcance === 'cultivo' && cultivos.length === 0 && (
+              <div className="flex justify-center py-4"><Spinner /></div>
+            )}
+            {alcance === 'cultivo' && cultivos.length > 0 && (
+              <div className="flex gap-1 border-b border-gray-200 mb-1">
+                {cultivos.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCultivoActivoId(c.id)}
+                    className={`px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                      effectiveCultivoId === c.id
+                        ? 'border-blue-500 text-blue-700'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    {c.nombre}
+                    {(customRulesPorCultivo[c.id] ?? []).length > 0
+                      ? <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 inline-block align-middle" />
+                      : null}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {alcance === 'cultivo' && effectiveCultivoId !== null ? (
+              <RuleBuilder
+                rules={customRulesPorCultivo[effectiveCultivoId] ?? []}
+                onChange={(rules) => setCustomRulesPorCultivo((prev) => ({ ...prev, [effectiveCultivoId!]: rules }))}
+              />
+            ) : alcance !== 'cultivo' ? (
+              <RuleBuilder rules={customRules} onChange={setCustomRules} />
+            ) : null}
           </div>
         )}
 
