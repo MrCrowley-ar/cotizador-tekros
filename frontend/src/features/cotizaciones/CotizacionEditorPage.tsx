@@ -462,7 +462,8 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
   onApplySelector: (desc: Descuento, pct: number | null) => void;
   version: CotizacionVersion | undefined;
 }) {
-  const nonGlobal = allDescuentos.filter((d) => d.tipoAplicacion !== 'global');
+  // Show non-global discounts + global selectors (selectors always apply per-item)
+  const nonGlobal = allDescuentos.filter((d) => d.tipoAplicacion !== 'global' || d.modo === 'selector');
   if (nonGlobal.length === 0) return null;
 
   // Find currently applied pct for selector discounts
@@ -575,7 +576,8 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
     queryFn: () => descuentosApi.getAll(true),
   });
 
-  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion === 'global');
+  // Exclude selectors — they're handled in ItemDescuentosPanel and shown as table columns
+  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion === 'global' && d.modo !== 'selector');
   if (descuentos.length === 0) return null;
 
   function isApplied(desc: Descuento) {
@@ -808,8 +810,11 @@ export function CotizacionEditorPage() {
   }, [version, selectedVersionId, cotizacionId, qc]);
 
   // Active discounts as full objects (for passing to CultivoSection)
+  // Include global selectors alongside non-global discounts so they show as table columns
   const activeDescuentos = useMemo(
-    () => allDescuentos.filter((d) => d.tipoAplicacion !== 'global' && activeDiscountIds.has(d.id)),
+    () => allDescuentos.filter((d) =>
+      (d.tipoAplicacion !== 'global' || d.modo === 'selector') && activeDiscountIds.has(d.id)
+    ),
     [allDescuentos, activeDiscountIds],
   );
 
