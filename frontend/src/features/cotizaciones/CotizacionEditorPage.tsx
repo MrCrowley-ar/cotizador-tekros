@@ -755,6 +755,7 @@ export function CotizacionEditorPage() {
   const [selectedCultivos, setSelectedCultivos] = useState<Set<number>>(new Set());
   const [showHistory, setShowHistory] = useState(false);
   const [rightWidth, setRightWidth] = useState(288);
+  const [confirmEstado, setConfirmEstado] = useState<string | null>(null);
 
   // Discount state lifted to page level
   const [activeDiscountIds, setActiveDiscountIds] = useState<Set<number>>(new Set());
@@ -988,8 +989,8 @@ export function CotizacionEditorPage() {
   }
 
   const isLatestVersion = versiones[0]?.id === selectedVersionId;
-  const isGenerado = cotizacion.estado === 'generado' || cotizacion.estado === 'borrador';
-  const isEditable = isGenerado && isLatestVersion;
+  const isLocked = cotizacion.estado === 'enviado' || cotizacion.estado === 'enviada';
+  const isEditable = !isLocked && isLatestVersion;
 
   const existingCultivoIds = new Set(version?.items?.map((i) => i.cultivoId) ?? []);
   const activeCultivoIds = new Set([...existingCultivoIds, ...selectedCultivos]);
@@ -1028,8 +1029,7 @@ export function CotizacionEditorPage() {
             {isLatestVersion && (
               <button
                 onClick={() => newVersionMut.mutate()}
-                disabled={newVersionMut.isPending || !isEditable}
-                title={!isEditable ? 'Solo disponible en estado Generado' : undefined}
+                disabled={newVersionMut.isPending}
                 className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
               >
                 {newVersionMut.isPending ? <Spinner /> : '+ Nueva versión'}
@@ -1037,14 +1037,13 @@ export function CotizacionEditorPage() {
             )}
             <select
               value={cotizacion.estado}
-              onChange={(e) => estadoMut.mutate(e.target.value)}
+              onChange={(e) => setConfirmEstado(e.target.value)}
               disabled={estadoMut.isPending}
               className="text-sm border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             >
               {ESTADOS.map((e) => (
                 <option key={e} value={e}>{ESTADO_LABEL[e]}</option>
               ))}
-              {/* Opción temporal para estados legacy si la migración no corrió aún */}
               {!ESTADOS.includes(cotizacion.estado as any) && (
                 <option value={cotizacion.estado}>{ESTADO_LABEL[cotizacion.estado] ?? cotizacion.estado}</option>
               )}
@@ -1142,6 +1141,50 @@ export function CotizacionEditorPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Confirmación de cambio de estado ── */}
+      {confirmEstado && (() => {
+        const desde = ESTADO_LABEL[cotizacion.estado] ?? cotizacion.estado;
+        const hacia = ESTADO_LABEL[confirmEstado] ?? confirmEstado;
+        const bloqueaEdicion = confirmEstado === 'enviado';
+        const desbloqueaEdicion = isLocked && confirmEstado !== 'enviado';
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-xl shadow-xl w-[400px] p-6 space-y-4">
+              <h3 className="text-base font-semibold text-gray-900">Cambiar estado</h3>
+              <p className="text-sm text-gray-600">
+                ¿Cambiar de <span className="font-medium">{desde}</span> a{' '}
+                <span className="font-medium">{hacia}</span>?
+              </p>
+              {bloqueaEdicion && (
+                <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                  La cotización quedará <strong>bloqueada para edición</strong> hasta que cambies el estado nuevamente.
+                </p>
+              )}
+              {desbloqueaEdicion && (
+                <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                  La cotización volverá a estar <strong>disponible para edición</strong>.
+                </p>
+              )}
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <button
+                  onClick={() => setConfirmEstado(null)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  disabled={estadoMut.isPending}
+                  onClick={() => { estadoMut.mutate(confirmEstado); setConfirmEstado(null); }}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {estadoMut.isPending ? 'Cambiando…' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </Layout>
   );
 }
