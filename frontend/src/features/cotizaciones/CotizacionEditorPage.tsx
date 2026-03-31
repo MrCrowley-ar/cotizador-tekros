@@ -90,9 +90,9 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
             const newBolsas = Number(bolsas);
             const volumen = cultivoVolumen + newBolsas;
             const monto = cultivoMonto;
-            const precioPonderado = volumen > 0 ? monto / volumen : undefined;
+            const precioPonderado = volumen > 0 ? Math.round((monto / volumen) * 1e4) / 1e4 : undefined;
             const allTotalBolsas = totalBolsas + newBolsas;
-            const ratioCultivo = allTotalBolsas > 0 ? volumen / allTotalBolsas : 0;
+            const ratioCultivo = allTotalBolsas > 0 ? Math.round((volumen / allTotalBolsas) * 1e6) / 1e6 : 0;
             const subtotalItems = (version.items ?? []).reduce((s, i) => s + Number(i.subtotal), 0);
             const results = await descuentosApi.evaluar({
               tipoAplicacion: desc.tipoAplicacion as 'global',
@@ -868,7 +868,7 @@ export function CotizacionEditorPage() {
 
   // ratio de bolsas de un cultivo sobre el total (para descuento cross selling)
   const getRatioCultivo = (cultivoId: number) =>
-    totalBolsas > 0 ? (cultivoStats.get(cultivoId)?.bolsas ?? 0) / totalBolsas : 0;
+    totalBolsas > 0 ? Math.round(((cultivoStats.get(cultivoId)?.bolsas ?? 0) / totalBolsas) * 1e6) / 1e6 : 0;
 
   function markDiscPending(id: number, on: boolean) {
     setPendingDiscountIds((prev) => { const n = new Set(prev); on ? n.add(id) : n.delete(id); return n; });
@@ -925,7 +925,7 @@ export function CotizacionEditorPage() {
 
           for (const item of allItems) {
             const stats = cultivoStats.get(item.cultivoId) ?? { bolsas: 0, monto: 0 };
-            const precioPonderado = stats.bolsas > 0 ? stats.monto / stats.bolsas : undefined;
+            const precioPonderado = stats.bolsas > 0 ? Math.round((stats.monto / stats.bolsas) * 1e4) / 1e4 : undefined;
             const results = await descuentosApi.evaluar({
               tipoAplicacion: desc.tipoAplicacion as 'global',
               cultivoId: item.cultivoId,
