@@ -87,12 +87,10 @@ export function useCotizacionExportPng({
   }
 
   const node = (
+    <div style={{ position: 'absolute', left: '-9999px', top: 0, overflow: 'hidden' }}>
     <div
       ref={ref}
       style={{
-        position: 'fixed',
-        left: '-9999px',
-        top: 0,
         width: '800px',
         fontFamily: 'Arial, Helvetica, sans-serif',
         fontSize: '14px',
@@ -148,6 +146,7 @@ export function useCotizacionExportPng({
           })}
         </tbody>
       </table>
+    </div>
     </div>
   );
 
