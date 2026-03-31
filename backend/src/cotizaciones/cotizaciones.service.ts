@@ -157,7 +157,7 @@ export class CotizacionesService {
   }
 
   // Clona la última versión: copia items y sus descuentos, y los descuentos globales
-  async crearNuevaVersion(cotizacionId: number, usuarioId: number): Promise<CotizacionVersion> {
+  async crearNuevaVersion(cotizacionId: number, usuarioId: number, nombre?: string): Promise<CotizacionVersion> {
     const cotizacion = await this.findOne(cotizacionId);
 
     const nuevaVersion = await this.dataSource.transaction(async (em) => {
@@ -169,6 +169,7 @@ export class CotizacionesService {
       const nueva = em.create(CotizacionVersion, {
         cotizacionId,
         version: ultima.version + 1,
+        nombre: nombre ?? null,
         usuarioId,
         total: ultima.total,
       });

@@ -8,6 +8,7 @@ import { Layout } from '../../components/Layout';
 import { Badge } from '../../components/Badge';
 import { Spinner } from '../../components/Spinner';
 import { VersionHistory } from './VersionHistory';
+import { useCotizacionExportPng } from './CotizacionExportPng';
 import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../../api/types';
 
 // ─── Resize Divider ───────────────────────────────────────────────────────────
@@ -43,10 +44,14 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
 
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
   discountCount: number;
   activeDescuentos: Descuento[];
+  cultivoVolumen: number;
+  cultivoMonto: number;
+  totalBolsas: number;
+  version: CotizacionVersion;
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -80,14 +85,27 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
               descuentoId: desc.id,
               porcentaje: Number(desc.valorPorcentaje),
             });
+          } else if (desc.modo === 'selector') {
+            // selector discounts are applied via the dropdown, skip
           } else {
+            const newBolsas = Number(bolsas);
+            const volumen = cultivoVolumen + newBolsas;
+            const monto = cultivoMonto;
+            const precioPonderado = volumen > 0 ? Math.round((monto / volumen) * 1e4) / 1e4 : undefined;
+            const allTotalBolsas = totalBolsas + newBolsas;
+            const ratioCultivo = allTotalBolsas > 0 ? Math.round((volumen / allTotalBolsas) * 1e6) / 1e6 : 0;
+            const subtotalItems = (version.items ?? []).reduce((s, i) => s + Number(i.subtotal), 0);
             const results = await descuentosApi.evaluar({
               tipoAplicacion: desc.tipoAplicacion as 'global',
               cultivoId,
               hibridoId: Number(hibridoId),
               bandaId: Number(bandaId),
-              cantidad: Number(bolsas),
-              // precio/subtotal not available for new item before price calculation
+              cantidad: newBolsas,
+              volumen,
+              monto,
+              ...(precioPonderado != null ? { precioPonderado } : {}),
+              ratioCultivo,
+              subtotalItems,
             });
             const match = results.find((r) => r.descuentoId === desc.id);
             if (match) {
@@ -233,13 +251,16 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
 
 // ─── Cultivo Section ──────────────────────────────────────────────────────────
 
-function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos }: {
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas }: {
   cultivo: Cultivo;
   items: CotizacionItem[];
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
   activeDescuentos: Descuento[];
+  cultivoVolumen: number;
+  cultivoMonto: number;
+  totalBolsas: number;
 }) {
   const [showNewItem, setShowNewItem] = useState(false);
 
@@ -297,6 +318,10 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 onDone={() => setShowNewItem(false)}
                 discountCount={activeDescuentos.length}
                 activeDescuentos={activeDescuentos}
+                cultivoVolumen={cultivoVolumen}
+                cultivoMonto={cultivoMonto}
+                totalBolsas={totalBolsas}
+                version={version}
               />
             )}
             {!showNewItem && items.length === 0 && (
@@ -462,7 +487,8 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
   onApplySelector: (desc: Descuento, pct: number | null) => void;
   version: CotizacionVersion | undefined;
 }) {
-  const nonGlobal = allDescuentos.filter((d) => d.tipoAplicacion !== 'global');
+  // Show non-global discounts + global selectors (selectors always apply per-item)
+  const nonGlobal = allDescuentos.filter((d) => d.tipoAplicacion !== 'global' || d.modo === 'selector');
   if (nonGlobal.length === 0) return null;
 
   // Find currently applied pct for selector discounts
@@ -575,7 +601,8 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
     queryFn: () => descuentosApi.getAll(true),
   });
 
-  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion === 'global');
+  // Exclude selectors — they're handled in ItemDescuentosPanel and shown as table columns
+  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion === 'global' && d.modo !== 'selector');
   if (descuentos.length === 0) return null;
 
   function isApplied(desc: Descuento) {
@@ -778,6 +805,12 @@ export function CotizacionEditorPage() {
     queryKey: ['descuentos', 'activos'],
     queryFn: () => descuentosApi.getAll(true),
   });
+  const { data: totals } = useQuery({
+    queryKey: ['total', cotizacionId, selectedVersionId],
+    queryFn: () => cotizacionesApi.getTotal(cotizacionId, selectedVersionId!),
+    enabled: !!selectedVersionId,
+    staleTime: 0,
+  });
 
   useEffect(() => {
     if (versiones.length > 0 && !selectedVersionId) {
@@ -792,14 +825,19 @@ export function CotizacionEditorPage() {
     staleTime: 0,
   });
 
-  // Sync active discounts from version on version change
-  useEffect(() => {
-    if (!version) return;
-    const applied = new Set(
+  // Sync active discounts from version data (items → applied discount IDs)
+  // Derives from version.items so it updates on every refetch, not just version switch
+  const serverDiscountIds = useMemo(() => {
+    if (!version) return new Set<number>();
+    return new Set(
       (version.items ?? []).flatMap((i) => i.descuentos.map((d) => d.descuentoId))
     );
-    setActiveDiscountIds(applied);
-  }, [version?.id]); // only on version switch, not every refetch
+  }, [version]);
+
+  useEffect(() => {
+    if (!version) return;
+    setActiveDiscountIds(serverDiscountIds);
+  }, [serverDiscountIds]);
 
   useEffect(() => {
     if (selectedVersionId) {
@@ -808,10 +846,22 @@ export function CotizacionEditorPage() {
   }, [version, selectedVersionId, cotizacionId, qc]);
 
   // Active discounts as full objects (for passing to CultivoSection)
+  // Include global selectors alongside non-global discounts so they show as table columns
   const activeDescuentos = useMemo(
-    () => allDescuentos.filter((d) => d.tipoAplicacion !== 'global' && activeDiscountIds.has(d.id)),
+    () => allDescuentos.filter((d) =>
+      (d.tipoAplicacion !== 'global' || d.modo === 'selector') && activeDiscountIds.has(d.id)
+    ),
     [allDescuentos, activeDiscountIds],
   );
+
+  // PNG export
+  const pngExport = useCotizacionExportPng({
+    cotizacion: cotizacion ?? undefined,
+    version: version ?? undefined,
+    totals: totals ?? undefined,
+    allDescuentos,
+    activeDescuentos,
+  });
 
   // Stats por cultivo: volumen (bolsas), monto (suma subtotales), precio ponderado
   // Se guardan como variables disponibles para el evaluador de descuentos
@@ -834,7 +884,7 @@ export function CotizacionEditorPage() {
 
   // ratio de bolsas de un cultivo sobre el total (para descuento cross selling)
   const getRatioCultivo = (cultivoId: number) =>
-    totalBolsas > 0 ? (cultivoStats.get(cultivoId)?.bolsas ?? 0) / totalBolsas : 0;
+    totalBolsas > 0 ? Math.round(((cultivoStats.get(cultivoId)?.bolsas ?? 0) / totalBolsas) * 1e6) / 1e6 : 0;
 
   function markDiscPending(id: number, on: boolean) {
     setPendingDiscountIds((prev) => { const n = new Set(prev); on ? n.add(id) : n.delete(id); return n; });
@@ -891,7 +941,7 @@ export function CotizacionEditorPage() {
 
           for (const item of allItems) {
             const stats = cultivoStats.get(item.cultivoId) ?? { bolsas: 0, monto: 0 };
-            const precioPonderado = stats.bolsas > 0 ? stats.monto / stats.bolsas : undefined;
+            const precioPonderado = stats.bolsas > 0 ? Math.round((stats.monto / stats.bolsas) * 1e4) / 1e4 : undefined;
             const results = await descuentosApi.evaluar({
               tipoAplicacion: desc.tipoAplicacion as 'global',
               cultivoId: item.cultivoId,
@@ -965,7 +1015,7 @@ export function CotizacionEditorPage() {
   }
 
   const newVersionMut = useMutation({
-    mutationFn: () => cotizacionesApi.crearVersion(cotizacionId),
+    mutationFn: (nombre?: string) => cotizacionesApi.crearVersion(cotizacionId, nombre),
     onSuccess: (v) => {
       qc.refetchQueries({ queryKey: ['versiones', cotizacionId] });
       setSelectedVersionId(v.id);
@@ -1017,9 +1067,21 @@ export function CotizacionEditorPage() {
             <button onClick={() => navigate('/cotizaciones')} className="text-gray-400 hover:text-gray-700">←</button>
             <h1 className="text-xl font-semibold text-gray-900">{cotizacion.numero}</h1>
             <Badge label={cotizacion.estado} />
-            {version && <span className="text-sm text-gray-400">v{version.version}</span>}
+            {version && (
+              <span className="text-sm text-gray-400">
+                v{version.version}{version.nombre ? ` — ${version.nombre}` : ''}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {version && totals && (
+              <button
+                onClick={pngExport.download}
+                className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Descargar PNG
+              </button>
+            )}
             <button
               onClick={() => setShowHistory((v) => !v)}
               className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 transition-colors"
@@ -1028,7 +1090,11 @@ export function CotizacionEditorPage() {
             </button>
             {isLatestVersion && (
               <button
-                onClick={() => newVersionMut.mutate()}
+                onClick={() => {
+                  const nombre = prompt('Nombre para la nueva versión (opcional):');
+                  if (nombre === null) return; // cancelled
+                  newVersionMut.mutate(nombre.trim() || undefined);
+                }}
                 disabled={newVersionMut.isPending}
                 className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
               >
@@ -1088,17 +1154,23 @@ export function CotizacionEditorPage() {
                   : 'Sin ítems en esta versión.'}
               </div>
             ) : (
-              activeCultivos.map((cultivo) => (
-                <CultivoSection
-                  key={cultivo.id}
-                  cultivo={cultivo}
-                  items={(version?.items ?? []).filter((i) => i.cultivoId === cultivo.id)}
-                  cotizacionId={cotizacionId}
-                  version={version!}
-                  isEditable={isEditable}
-                  activeDescuentos={activeDescuentos}
-                />
-              ))
+              activeCultivos.map((cultivo) => {
+                const stats = cultivoStats.get(cultivo.id) ?? { bolsas: 0, monto: 0 };
+                return (
+                  <CultivoSection
+                    key={cultivo.id}
+                    cultivo={cultivo}
+                    items={(version?.items ?? []).filter((i) => i.cultivoId === cultivo.id)}
+                    cotizacionId={cotizacionId}
+                    version={version!}
+                    isEditable={isEditable}
+                    activeDescuentos={activeDescuentos}
+                    cultivoVolumen={stats.bolsas}
+                    cultivoMonto={stats.monto}
+                    totalBolsas={totalBolsas}
+                  />
+                );
+              })
             )}
           </div>
 
@@ -1185,6 +1257,8 @@ export function CotizacionEditorPage() {
           </div>
         );
       })()}
+      {/* Hidden node for PNG export */}
+      {version && totals && pngExport.node}
     </Layout>
   );
 }
