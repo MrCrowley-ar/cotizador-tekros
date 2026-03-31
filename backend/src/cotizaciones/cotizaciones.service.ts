@@ -156,6 +156,25 @@ export class CotizacionesService {
     return v;
   }
 
+  async eliminarVersion(cotizacionId: number, versionId: number, usuarioId: number): Promise<void> {
+    const versiones = await this.getVersiones(cotizacionId);
+    if (versiones.length <= 1) {
+      throw new BadRequestException('No se puede eliminar la única versión de la cotización');
+    }
+    const version = versiones.find((v) => v.id === versionId);
+    if (!version) throw new NotFoundException(`Versión ${versionId} no encontrada`);
+
+    await this.versionRepo.remove(version);
+
+    await this.historialService.registrar({
+      usuarioId,
+      tipoEntidad: TipoEntidad.COTIZACION,
+      tipoAccion: TipoAccion.ELIMINAR,
+      entidadId: cotizacionId,
+      descripcion: `Versión ${version.version}${version.nombre ? ` (${version.nombre})` : ''} eliminada`,
+    });
+  }
+
   // Clona la última versión: copia items y sus descuentos, y los descuentos globales
   async crearNuevaVersion(cotizacionId: number, usuarioId: number, nombre?: string): Promise<CotizacionVersion> {
     const cotizacion = await this.findOne(cotizacionId);
