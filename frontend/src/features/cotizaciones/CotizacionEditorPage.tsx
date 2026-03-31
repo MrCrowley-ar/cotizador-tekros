@@ -8,6 +8,7 @@ import { Layout } from '../../components/Layout';
 import { Badge } from '../../components/Badge';
 import { Spinner } from '../../components/Spinner';
 import { VersionHistory } from './VersionHistory';
+import { useCotizacionExportPng } from './CotizacionExportPng';
 import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../../api/types';
 
 // ─── Resize Divider ───────────────────────────────────────────────────────────
@@ -804,6 +805,12 @@ export function CotizacionEditorPage() {
     queryKey: ['descuentos', 'activos'],
     queryFn: () => descuentosApi.getAll(true),
   });
+  const { data: totals } = useQuery({
+    queryKey: ['total', cotizacionId, selectedVersionId],
+    queryFn: () => cotizacionesApi.getTotal(cotizacionId, selectedVersionId!),
+    enabled: !!selectedVersionId,
+    staleTime: 0,
+  });
 
   useEffect(() => {
     if (versiones.length > 0 && !selectedVersionId) {
@@ -846,6 +853,15 @@ export function CotizacionEditorPage() {
     ),
     [allDescuentos, activeDiscountIds],
   );
+
+  // PNG export
+  const pngExport = useCotizacionExportPng({
+    cotizacion: cotizacion ?? undefined,
+    version: version ?? undefined,
+    totals: totals ?? undefined,
+    allDescuentos,
+    activeDescuentos,
+  });
 
   // Stats por cultivo: volumen (bolsas), monto (suma subtotales), precio ponderado
   // Se guardan como variables disponibles para el evaluador de descuentos
@@ -1054,6 +1070,14 @@ export function CotizacionEditorPage() {
             {version && <span className="text-sm text-gray-400">v{version.version}</span>}
           </div>
           <div className="flex items-center gap-2">
+            {version && totals && (
+              <button
+                onClick={pngExport.download}
+                className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Descargar PNG
+              </button>
+            )}
             <button
               onClick={() => setShowHistory((v) => !v)}
               className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 transition-colors"
@@ -1225,6 +1249,8 @@ export function CotizacionEditorPage() {
           </div>
         );
       })()}
+      {/* Hidden node for PNG export */}
+      {version && totals && pngExport.node}
     </Layout>
   );
 }
