@@ -24,6 +24,9 @@ export class CotizacionVersion {
   @Column()
   version: number;
 
+  @Column({ length: 200, nullable: true })
+  nombre: string | null;
+
   @CreateDateColumn({ name: 'fecha' })
   fecha: Date;
 

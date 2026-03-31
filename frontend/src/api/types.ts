@@ -128,6 +128,7 @@ export interface CotizacionVersion {
   id: number;
   cotizacionId: number;
   version: number;
+  nombre: string | null;
   fecha: string;
   usuarioId: number | null;
   total: number;

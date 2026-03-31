@@ -1015,7 +1015,7 @@ export function CotizacionEditorPage() {
   }
 
   const newVersionMut = useMutation({
-    mutationFn: () => cotizacionesApi.crearVersion(cotizacionId),
+    mutationFn: (nombre?: string) => cotizacionesApi.crearVersion(cotizacionId, nombre),
     onSuccess: (v) => {
       qc.refetchQueries({ queryKey: ['versiones', cotizacionId] });
       setSelectedVersionId(v.id);
@@ -1067,7 +1067,11 @@ export function CotizacionEditorPage() {
             <button onClick={() => navigate('/cotizaciones')} className="text-gray-400 hover:text-gray-700">←</button>
             <h1 className="text-xl font-semibold text-gray-900">{cotizacion.numero}</h1>
             <Badge label={cotizacion.estado} />
-            {version && <span className="text-sm text-gray-400">v{version.version}</span>}
+            {version && (
+              <span className="text-sm text-gray-400">
+                v{version.version}{version.nombre ? ` — ${version.nombre}` : ''}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {version && totals && (
@@ -1086,7 +1090,11 @@ export function CotizacionEditorPage() {
             </button>
             {isLatestVersion && (
               <button
-                onClick={() => newVersionMut.mutate()}
+                onClick={() => {
+                  const nombre = prompt('Nombre para la nueva versión (opcional):');
+                  if (nombre === null) return; // cancelled
+                  newVersionMut.mutate(nombre.trim() || undefined);
+                }}
                 disabled={newVersionMut.isPending}
                 className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
               >

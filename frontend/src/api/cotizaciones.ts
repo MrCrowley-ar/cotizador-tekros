@@ -21,7 +21,8 @@ export const cotizacionesApi = {
 
   getVersiones: (id: number) => api.get<CotizacionVersion[]>(`${base(id)}/versiones`),
   getVersion: (id: number, vid: number) => api.get<CotizacionVersion>(ver(id, vid)),
-  crearVersion: (id: number) => api.post<CotizacionVersion>(`${base(id)}/versiones`),
+  crearVersion: (id: number, nombre?: string) =>
+    api.post<CotizacionVersion>(`${base(id)}/versiones`, nombre ? { nombre } : {}),
   getTotal: (id: number, vid: number) => api.get<TotalDesglose>(`${ver(id, vid)}/total`),
 
   addItem: (id: number, vid: number, body: { cultivoId: number; hibridoId: number; bandaId: number; bolsas: number }) =>

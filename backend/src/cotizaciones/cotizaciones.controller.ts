@@ -58,9 +58,10 @@ export class CotizacionesController {
   @Post(':id/versiones')
   crearNuevaVersion(
     @Param('id', ParseIntPipe) id: number,
+    @Body() body: { nombre?: string },
     @CurrentUser() user: Usuario,
   ) {
-    return this.service.crearNuevaVersion(id, user.id);
+    return this.service.crearNuevaVersion(id, user.id, body?.nombre);
   }
 
   @Get(':id/versiones/:versionId')
