@@ -87,14 +87,10 @@ export function VersionHistory({ cotizacionId, currentVersionId, onSelect }: Pro
                     }
                   }}
                   disabled={deleteMut.isPending}
-                  className={`shrink-0 px-2 py-1 mr-1 text-sm rounded transition-colors ${
-                    isCurrent
-                      ? 'text-blue-200 hover:text-white'
-                      : 'text-gray-300 hover:text-red-500'
-                  }`}
+                  className="shrink-0 w-6 h-6 mr-1.5 flex items-center justify-center rounded-full text-xs font-bold transition-all opacity-40 hover:opacity-100 hover:bg-red-100 hover:text-red-600 text-gray-400"
                   title="Eliminar versión"
                 >
-                  ×
+                  ✕
                 </button>
               )}
             </div>

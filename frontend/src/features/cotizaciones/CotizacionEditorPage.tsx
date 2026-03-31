@@ -395,7 +395,12 @@ function CultivoStatsPanel({ version, cultivos }: { version: CotizacionVersion; 
       String(item.cultivoId);
     const cur = byCultivo.get(item.cultivoId) ?? { nombre, bolsas: 0, monto: 0 };
     cur.bolsas += Number(item.bolsas);
-    cur.monto += Number(item.precioBase);
+    // Monto = sum of (precio con descuentos × bolsas) per cultivo
+    const precioConDesc = (item.descuentos ?? []).reduce(
+      (acc, d) => acc * (1 - Number(d.valorPorcentaje) / 100),
+      Number(item.precioBase),
+    );
+    cur.monto += precioConDesc * Number(item.bolsas);
     byCultivo.set(item.cultivoId, cur);
   }
 

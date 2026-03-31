@@ -164,6 +164,13 @@ export class CotizacionesService {
     const version = versiones.find((v) => v.id === versionId);
     if (!version) throw new NotFoundException(`Versión ${versionId} no encontrada`);
 
+    // Delete children manually (no cascade on FK)
+    const items = await this.itemRepo.find({ where: { versionId } });
+    for (const item of items) {
+      await this.itemDescRepo.delete({ cotizacionItemId: item.id });
+    }
+    await this.itemRepo.delete({ versionId });
+    await this.descRepo.delete({ versionId });
     await this.versionRepo.remove(version);
 
     await this.historialService.registrar({
