@@ -818,14 +818,19 @@ export function CotizacionEditorPage() {
     staleTime: 0,
   });
 
-  // Sync active discounts from version on version change
-  useEffect(() => {
-    if (!version) return;
-    const applied = new Set(
+  // Sync active discounts from version data (items → applied discount IDs)
+  // Derives from version.items so it updates on every refetch, not just version switch
+  const serverDiscountIds = useMemo(() => {
+    if (!version) return new Set<number>();
+    return new Set(
       (version.items ?? []).flatMap((i) => i.descuentos.map((d) => d.descuentoId))
     );
-    setActiveDiscountIds(applied);
-  }, [version?.id]); // only on version switch, not every refetch
+  }, [version]);
+
+  useEffect(() => {
+    if (!version) return;
+    setActiveDiscountIds(serverDiscountIds);
+  }, [serverDiscountIds]);
 
   useEffect(() => {
     if (selectedVersionId) {
