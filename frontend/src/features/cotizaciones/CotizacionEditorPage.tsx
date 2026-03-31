@@ -43,10 +43,14 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
 
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
   discountCount: number;
   activeDescuentos: Descuento[];
+  cultivoVolumen: number;
+  cultivoMonto: number;
+  totalBolsas: number;
+  version: CotizacionVersion;
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -80,14 +84,27 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
               descuentoId: desc.id,
               porcentaje: Number(desc.valorPorcentaje),
             });
+          } else if (desc.modo === 'selector') {
+            // selector discounts are applied via the dropdown, skip
           } else {
+            const newBolsas = Number(bolsas);
+            const volumen = cultivoVolumen + newBolsas;
+            const monto = cultivoMonto;
+            const precioPonderado = volumen > 0 ? monto / volumen : undefined;
+            const allTotalBolsas = totalBolsas + newBolsas;
+            const ratioCultivo = allTotalBolsas > 0 ? volumen / allTotalBolsas : 0;
+            const subtotalItems = (version.items ?? []).reduce((s, i) => s + Number(i.subtotal), 0);
             const results = await descuentosApi.evaluar({
               tipoAplicacion: desc.tipoAplicacion as 'global',
               cultivoId,
               hibridoId: Number(hibridoId),
               bandaId: Number(bandaId),
-              cantidad: Number(bolsas),
-              // precio/subtotal not available for new item before price calculation
+              cantidad: newBolsas,
+              volumen,
+              monto,
+              ...(precioPonderado != null ? { precioPonderado } : {}),
+              ratioCultivo,
+              subtotalItems,
             });
             const match = results.find((r) => r.descuentoId === desc.id);
             if (match) {
@@ -233,13 +250,16 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
 
 // ─── Cultivo Section ──────────────────────────────────────────────────────────
 
-function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos }: {
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas }: {
   cultivo: Cultivo;
   items: CotizacionItem[];
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
   activeDescuentos: Descuento[];
+  cultivoVolumen: number;
+  cultivoMonto: number;
+  totalBolsas: number;
 }) {
   const [showNewItem, setShowNewItem] = useState(false);
 
@@ -297,6 +317,10 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 onDone={() => setShowNewItem(false)}
                 discountCount={activeDescuentos.length}
                 activeDescuentos={activeDescuentos}
+                cultivoVolumen={cultivoVolumen}
+                cultivoMonto={cultivoMonto}
+                totalBolsas={totalBolsas}
+                version={version}
               />
             )}
             {!showNewItem && items.length === 0 && (
@@ -1093,17 +1117,23 @@ export function CotizacionEditorPage() {
                   : 'Sin ítems en esta versión.'}
               </div>
             ) : (
-              activeCultivos.map((cultivo) => (
-                <CultivoSection
-                  key={cultivo.id}
-                  cultivo={cultivo}
-                  items={(version?.items ?? []).filter((i) => i.cultivoId === cultivo.id)}
-                  cotizacionId={cotizacionId}
-                  version={version!}
-                  isEditable={isEditable}
-                  activeDescuentos={activeDescuentos}
-                />
-              ))
+              activeCultivos.map((cultivo) => {
+                const stats = cultivoStats.get(cultivo.id) ?? { bolsas: 0, monto: 0 };
+                return (
+                  <CultivoSection
+                    key={cultivo.id}
+                    cultivo={cultivo}
+                    items={(version?.items ?? []).filter((i) => i.cultivoId === cultivo.id)}
+                    cotizacionId={cotizacionId}
+                    version={version!}
+                    isEditable={isEditable}
+                    activeDescuentos={activeDescuentos}
+                    cultivoVolumen={stats.bolsas}
+                    cultivoMonto={stats.monto}
+                    totalBolsas={totalBolsas}
+                  />
+                );
+              })
             )}
           </div>
 
