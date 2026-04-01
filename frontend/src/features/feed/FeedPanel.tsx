@@ -68,6 +68,105 @@ function MessageItem({ msg, onToggle, onDelete }: {
   );
 }
 
+/** Inline version for embedding in sidebars (no resize, no aside wrapper) */
+export function FeedPanelInline() {
+  const [texto, setTexto] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
+
+  const { data: mensajes = [], isLoading } = useQuery({
+    queryKey: ['mensajes'],
+    queryFn: mensajesApi.getAll,
+    refetchInterval: 30_000,
+  });
+
+  const createMut = useMutation({
+    mutationFn: async ({ contenido, file }: { contenido: string; file: File | null }) => {
+      let imageUrls: string[] | undefined;
+      if (file) {
+        const { url } = await mensajesApi.uploadImagen(file);
+        imageUrls = [url];
+      }
+      return mensajesApi.create(contenido, imageUrls);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mensajes'] });
+      setTexto('');
+      setSelectedFile(null);
+      setPreviewUrl(null);
+    },
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: mensajesApi.toggleFijado,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mensajes'] }),
+  });
+  const deleteMut = useMutation({
+    mutationFn: mensajesApi.remove,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mensajes'] }),
+  });
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setSelectedFile(file);
+    setPreviewUrl(file ? URL.createObjectURL(file) : null);
+  }
+
+  function removeFile() {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!texto.trim() && !selectedFile) return;
+    createMut.mutate({ contenido: texto.trim(), file: selectedFile });
+  }
+
+  return (
+    <div className="bg-white rounded-xl border">
+      <div className="px-3 py-2 border-b">
+        <span className="text-sm font-semibold text-gray-700">Anotador</span>
+      </div>
+      <form onSubmit={handleSubmit} className="px-3 py-2 border-b space-y-2">
+        <textarea
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          placeholder="Escribir nota..."
+          rows={2}
+          className="w-full text-xs border rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e); } }}
+        />
+        {previewUrl && (
+          <div className="relative inline-block">
+            <img src={previewUrl} alt="preview" className="max-h-16 rounded border border-gray-200 object-cover" />
+            <button type="button" onClick={removeFile} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center leading-none hover:bg-red-600">×</button>
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => fileInputRef.current?.click()} title="Adjuntar imagen" className="text-gray-400 hover:text-blue-600 transition-colors text-base leading-none">🖼</button>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+          <button type="submit" disabled={createMut.isPending || (!texto.trim() && !selectedFile)} className="flex-1 text-xs bg-blue-600 text-white rounded-lg py-1.5 hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            {createMut.isPending ? 'Publicando…' : 'Publicar'}
+          </button>
+        </div>
+      </form>
+      <div className="max-h-48 overflow-y-auto px-3 py-2 space-y-2">
+        {isLoading && <div className="flex justify-center pt-2"><Spinner /></div>}
+        {mensajes.map((m) => (
+          <MessageItem key={m.id} msg={m} onToggle={() => toggleMut.mutate(m.id)} onDelete={() => deleteMut.mutate(m.id)} />
+        ))}
+        {!isLoading && mensajes.length === 0 && (
+          <p className="text-xs text-gray-400 text-center py-2">Sin anotaciones aún</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function FeedPanel() {
   const [texto, setTexto] = useState('');
   const [panelWidth, setPanelWidth] = useState(288);

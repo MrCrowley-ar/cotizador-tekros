@@ -62,8 +62,8 @@ export class DescuentoEvaluadorService {
     descuento: Descuento,
     contexto: ContextoDescuento,
   ): DescuentoAplicado | null {
-    // Descuentos selector se aplican manualmente desde el cliente (no se evalúan aquí)
-    if (descuento.modo === ModoDescuento.SELECTOR) return null;
+    // Descuentos selector y manual se aplican desde el cliente (no se evalúan aquí)
+    if (descuento.modo === ModoDescuento.SELECTOR || descuento.modo === ModoDescuento.MANUAL) return null;
 
     if (descuento.modo === ModoDescuento.BASICO) {
       if (descuento.valorPorcentaje == null) return null;

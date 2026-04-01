@@ -1,1 +1,77 @@
 @import "tailwindcss";
+
+/* ─── Dark Mode Overrides ─────────────────────────────────────────────────── */
+/* Applied when <html class="dark"> is set                                    */
+
+/* Backgrounds */
+.dark .bg-white      { background-color: #1e1e2e !important; }
+.dark .bg-gray-50    { background-color: #181825 !important; }
+.dark .bg-gray-100   { background-color: #1e1e2e !important; }
+.dark .bg-gray-200   { background-color: #313244 !important; }
+.dark .hover\:bg-gray-50:hover  { background-color: #262637 !important; }
+.dark .hover\:bg-gray-100:hover { background-color: #313244 !important; }
+
+/* Text */
+.dark .text-gray-900 { color: #f0f0f5 !important; }
+.dark .text-gray-800 { color: #e0e0ea !important; }
+.dark .text-gray-700 { color: #d0d0da !important; }
+.dark .text-gray-600 { color: #b0b0c0 !important; }
+.dark .text-gray-500 { color: #9090a0 !important; }
+.dark .text-gray-400 { color: #707080 !important; }
+
+/* Borders */
+.dark .border-gray-200,
+.dark .border-gray-100,
+.dark .divide-gray-100 > :not(:first-child),
+.dark .divide-gray-200 > :not(:first-child) {
+  border-color: #313244 !important;
+}
+.dark .border-b { border-color: #313244; }
+.dark .border-t { border-color: #313244; }
+
+/* Inputs & selects */
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #262637 !important;
+  color: #e0e0ea !important;
+  border-color: #3b3b50 !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #606070 !important;
+}
+.dark input:focus,
+.dark textarea:focus,
+.dark select:focus {
+  border-color: #5b6abf !important;
+}
+
+/* Table headers */
+.dark thead.bg-gray-50,
+.dark .bg-gray-50 th {
+  background-color: #262637 !important;
+}
+.dark .text-gray-500.text-xs.uppercase {
+  color: #8080a0 !important;
+}
+
+/* Cards & panels on white bg */
+.dark .bg-white.rounded-xl,
+.dark .bg-white.rounded-lg {
+  background-color: #1e1e2e !important;
+}
+
+/* Orange accents (discounts) stay visible */
+.dark .bg-orange-50 { background-color: #2d2520 !important; }
+.dark .bg-yellow-50 { background-color: #2d2a1a !important; }
+.dark .bg-red-50    { background-color: #2d1a1a !important; }
+.dark .bg-blue-50   { background-color: #1a1a2d !important; }
+
+/* Modal overlay */
+.dark .bg-black\/40 { background-color: rgba(0, 0, 0, 0.6) !important; }
+
+/* Scrollbar */
+.dark ::-webkit-scrollbar { width: 6px; }
+.dark ::-webkit-scrollbar-track { background: #181825; }
+.dark ::-webkit-scrollbar-thumb { background: #3b3b50; border-radius: 3px; }

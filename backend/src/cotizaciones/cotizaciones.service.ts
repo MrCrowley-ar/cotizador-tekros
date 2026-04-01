@@ -124,6 +124,7 @@ export class CotizacionesService {
     await this.findOne(cotizacionId); // valida existencia
     return this.versionRepo.find({
       where: { cotizacionId },
+      relations: ['usuario'],
       order: { version: 'DESC' },
     });
   }
@@ -154,6 +155,32 @@ export class CotizacionesService {
       .getOne();
     if (!v) throw new NotFoundException(`No hay versiones para cotización ${cotizacionId}`);
     return v;
+  }
+
+  async eliminarVersion(cotizacionId: number, versionId: number, usuarioId: number): Promise<void> {
+    const versiones = await this.getVersiones(cotizacionId);
+    if (versiones.length <= 1) {
+      throw new BadRequestException('No se puede eliminar la única versión de la cotización');
+    }
+    const version = versiones.find((v) => v.id === versionId);
+    if (!version) throw new NotFoundException(`Versión ${versionId} no encontrada`);
+
+    // Delete children manually (no cascade on FK)
+    const items = await this.itemRepo.find({ where: { versionId } });
+    for (const item of items) {
+      await this.itemDescRepo.delete({ cotizacionItemId: item.id });
+    }
+    await this.itemRepo.delete({ versionId });
+    await this.descRepo.delete({ versionId });
+    await this.versionRepo.remove(version);
+
+    await this.historialService.registrar({
+      usuarioId,
+      tipoEntidad: TipoEntidad.COTIZACION,
+      tipoAccion: TipoAccion.ELIMINAR,
+      entidadId: cotizacionId,
+      descripcion: `Versión ${version.version}${version.nombre ? ` (${version.nombre})` : ''} eliminada`,
+    });
   }
 
   // Clona la última versión: copia items y sus descuentos, y los descuentos globales

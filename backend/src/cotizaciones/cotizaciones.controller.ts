@@ -72,6 +72,16 @@ export class CotizacionesController {
     return this.service.getVersion(id, versionId);
   }
 
+  @Delete(':id/versiones/:versionId')
+  @HttpCode(204)
+  eliminarVersion(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('versionId', ParseIntPipe) versionId: number,
+    @CurrentUser() user: Usuario,
+  ) {
+    return this.service.eliminarVersion(id, versionId, user.id);
+  }
+
   // ─── TOTAL ────────────────────────────────────────────────────────────────
 
   @Get(':id/versiones/:versionId/total')
@@ -91,6 +101,7 @@ export class CotizacionesController {
   }
 
   @Delete(':id/versiones/:versionId/items/:itemId')
+  @HttpCode(204)
   eliminarItem(
     @Param('versionId', ParseIntPipe) versionId: number,
     @Param('itemId', ParseIntPipe) itemId: number,
