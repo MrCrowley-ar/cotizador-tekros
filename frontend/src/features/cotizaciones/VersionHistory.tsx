@@ -13,6 +13,7 @@ interface Props {
 export function VersionHistory({ cotizacionId, currentVersionId, onSelect }: Props) {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
 
   const { data: versiones = [], isLoading } = useQuery({
     queryKey: ['versiones', cotizacionId],
@@ -21,8 +22,17 @@ export function VersionHistory({ cotizacionId, currentVersionId, onSelect }: Pro
 
   const deleteMut = useMutation({
     mutationFn: (vid: number) => cotizacionesApi.deleteVersion(cotizacionId, vid),
-    onSuccess: () => {
-      qc.refetchQueries({ queryKey: ['versiones', cotizacionId] });
+    onSuccess: (_data, deletedVid) => {
+      qc.invalidateQueries({ queryKey: ['versiones', cotizacionId] });
+      // If the deleted version was selected, switch to the latest remaining
+      if (deletedVid === currentVersionId) {
+        const remaining = versiones.filter((v) => v.id !== deletedVid);
+        if (remaining.length > 0) onSelect(remaining[0]);
+      }
+      setError('');
+    },
+    onError: (e: any) => {
+      setError(e.message ?? 'Error al eliminar');
     },
   });
 
@@ -37,7 +47,10 @@ export function VersionHistory({ cotizacionId, currentVersionId, onSelect }: Pro
 
   return (
     <div className="space-y-2">
-      {/* Search */}
+      {error && (
+        <p className="text-xs text-red-600 bg-red-50 rounded px-2 py-1">{error}</p>
+      )}
+
       <input
         type="text"
         value={search}
@@ -46,18 +59,17 @@ export function VersionHistory({ cotizacionId, currentVersionId, onSelect }: Pro
         className="w-full text-xs border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
       />
 
-      {/* Version list */}
       <div className="space-y-1">
         {filtered.length === 0 && (
           <p className="text-xs text-gray-400 text-center py-2">Sin resultados</p>
         )}
         {filtered.map((v) => {
           const isCurrent = v.id === currentVersionId;
-          const canDelete = versiones.length > 1 && !isCurrent;
+          const canDelete = versiones.length > 1;
           return (
             <div
               key={v.id}
-              className={`flex items-center gap-1 rounded-lg transition-colors ${
+              className={`group flex items-center gap-1 rounded-lg transition-colors ${
                 isCurrent ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 text-gray-700'
               }`}
             >
@@ -87,7 +99,11 @@ export function VersionHistory({ cotizacionId, currentVersionId, onSelect }: Pro
                     }
                   }}
                   disabled={deleteMut.isPending}
-                  className="shrink-0 w-6 h-6 mr-1.5 flex items-center justify-center rounded-full text-xs font-bold transition-all opacity-40 hover:opacity-100 hover:bg-red-100 hover:text-red-600 text-gray-400"
+                  className={`shrink-0 w-6 h-6 mr-1.5 flex items-center justify-center rounded-full text-xs font-bold transition-all
+                    ${isCurrent
+                      ? 'opacity-50 hover:opacity-100 hover:bg-blue-500 text-blue-200'
+                      : 'opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600 text-gray-400'
+                    }`}
                   title="Eliminar versión"
                 >
                   ✕

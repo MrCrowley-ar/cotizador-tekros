@@ -124,6 +124,7 @@ export class CotizacionesService {
     await this.findOne(cotizacionId); // valida existencia
     return this.versionRepo.find({
       where: { cotizacionId },
+      relations: ['usuario'],
       order: { version: 'DESC' },
     });
   }
