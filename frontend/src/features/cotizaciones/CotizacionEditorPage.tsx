@@ -190,6 +190,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
 }) {
   const qc = useQueryClient();
   const [deleteError, setDeleteError] = useState('');
+  const [editingManual, setEditingManual] = useState<Record<number, string>>({});
 
   const deleteMut = useMutation({
     mutationFn: () => cotizacionesApi.deleteItem(cotizacionId, version.id, item.id),
@@ -202,6 +203,27 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
 
   const fmt = (n: number) =>
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  function invalidate() {
+    qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
+    qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
+  }
+
+  async function saveManualPct(descId: number, pctStr: string) {
+    const pct = Number(pctStr);
+    if (isNaN(pct) || pct < 0 || pct > 100) return;
+    // Remove existing then re-apply
+    const existing = item.descuentos.find((x) => x.descuentoId === descId);
+    if (existing) {
+      await cotizacionesApi.deleteItemDescuento(cotizacionId, version.id, item.id, existing.descuentoId);
+    }
+    await cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
+      descuentoId: descId,
+      porcentaje: pct,
+    });
+    setEditingManual((prev) => { const n = { ...prev }; delete n[descId]; return n; });
+    invalidate();
+  }
 
   // Subtotal = precioBase (no se multiplica por bolsas) × descuentos aplicados
   const bruto = Number(item.precioBase);
@@ -219,6 +241,33 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
       <td className="px-4 py-2 text-sm text-right text-gray-500 whitespace-nowrap">${fmt(Number(item.precioBase))}</td>
       {activeDescuentos.map((d) => {
         const applied = item.descuentos.find((x) => x.descuentoId === d.id);
+        const isManual = d.modo === 'manual';
+
+        if (isManual && isEditable) {
+          const currentPct = applied ? String(Number(applied.valorPorcentaje)) : '0';
+          const editing = editingManual[d.id];
+          return (
+            <td key={d.id} className="px-1 py-1 text-sm text-right whitespace-nowrap">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.01}
+                value={editing ?? currentPct}
+                onChange={(e) => setEditingManual((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                onBlur={(e) => {
+                  if (e.target.value !== currentPct) saveManualPct(d.id, e.target.value);
+                  else setEditingManual((prev) => { const n = { ...prev }; delete n[d.id]; return n; });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                }}
+                className="w-16 text-xs text-right border rounded px-1.5 py-1 text-orange-600 font-medium focus:outline-none focus:ring-1 focus:ring-orange-400"
+              />
+            </td>
+          );
+        }
+
         return (
           <td key={d.id} className="px-4 py-2 text-sm text-right whitespace-nowrap">
             {applied ? (
@@ -523,8 +572,8 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
   onApplySelector: (desc: Descuento, pct: number | null) => void;
   version: CotizacionVersion | undefined;
 }) {
-  // Show non-global discounts + global selectors (selectors always apply per-item)
-  const nonGlobal = allDescuentos.filter((d) => d.tipoAplicacion !== 'global' || d.modo === 'selector');
+  // Show non-global discounts + global selectors/manual (apply per-item)
+  const nonGlobal = allDescuentos.filter((d) => d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual');
   if (nonGlobal.length === 0) return null;
 
   // Find currently applied pct for selector discounts
@@ -637,8 +686,8 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
     queryFn: () => descuentosApi.getAll(true),
   });
 
-  // Exclude selectors — they're handled in ItemDescuentosPanel and shown as table columns
-  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion === 'global' && d.modo !== 'selector');
+  // Exclude selectors/manual — they're handled in ItemDescuentosPanel and shown as table columns
+  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion === 'global' && d.modo !== 'selector' && d.modo !== 'manual');
   if (descuentos.length === 0) return null;
 
   function isApplied(desc: Descuento) {
@@ -882,10 +931,10 @@ export function CotizacionEditorPage() {
   }, [version, selectedVersionId, cotizacionId, qc]);
 
   // Active discounts as full objects (for passing to CultivoSection)
-  // Include global selectors alongside non-global discounts so they show as table columns
+  // Include global selectors and manual discounts alongside non-global discounts
   const activeDescuentos = useMemo(
     () => allDescuentos.filter((d) =>
-      (d.tipoAplicacion !== 'global' || d.modo === 'selector') && activeDiscountIds.has(d.id)
+      (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual') && activeDiscountIds.has(d.id)
     ),
     [allDescuentos, activeDiscountIds],
   );
@@ -966,6 +1015,16 @@ export function CotizacionEditorPage() {
           );
         } else if (desc.modo === 'selector') {
           // selector discounts must be applied via the dropdown — skip auto-eval
+        } else if (desc.modo === 'manual') {
+          // manual discounts: apply with 0% initially, user edits % per item in the table
+          await Promise.all(
+            allItems.map((item) =>
+              cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
+                descuentoId: desc.id,
+                porcentaje: 0,
+              })
+            )
+          );
         } else {
           // Pre-compute global totals once (outside the per-item loop)
           const subtotalItems = allItems.reduce((s, i) => s + Number(i.subtotal), 0);

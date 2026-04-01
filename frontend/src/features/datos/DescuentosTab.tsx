@@ -12,7 +12,7 @@ import type { Descuento } from '../../api/types';
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
-type TipoCondicion = 'fijo' | 'por_rango' | 'por_selector' | 'personalizado';
+type TipoCondicion = 'fijo' | 'por_rango' | 'por_selector' | 'manual' | 'personalizado';
 type DriverRango = 'cantidad' | 'precio' | 'subtotal' | 'ratio_cultivo' | 'volumen' | 'monto' | 'precio_ponderado' | 'subtotal_items' | 'desc_items' | 'total';
 
 // hasta es opcional: si se define, el tramo usa operador ENTRE (desde-hasta)
@@ -30,6 +30,7 @@ function inferirAlcance(d: Descuento): import('../../api/types').TipoAplicacion 
 
 function inferirTipoCondicion(d: Descuento): TipoCondicion {
   if (d.modo === 'selector') return 'por_selector';
+  if (d.modo === 'manual') return 'manual';
   if (d.modo === 'basico') return 'fijo';
 
   const reglas = d.reglas ?? [];
@@ -97,6 +98,7 @@ const TIPO_LABEL: Record<TipoCondicion, string> = {
   fijo: 'Fijo',
   por_rango: 'Por rango',
   por_selector: 'Por selector',
+  manual: 'Manual',
   personalizado: 'Personalizado',
 };
 
@@ -446,6 +448,15 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
+      // manual: sin valor, sin reglas — el % se pone por ítem en la cotización
+      if (tipoCondicion === 'manual') {
+        const payload = {
+          nombre, tipoAplicacion: alcance,
+          modo: 'manual' as const, fechaVigencia,
+        };
+        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
+      }
+
       // por_selector
       const reglas = opciones
         .filter((o) => o.nombre.trim() !== '' && o.pct !== '')
@@ -478,6 +489,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     if (tipoCondicion === 'personalizado' && alcance === 'cultivo')
       return cultivos.some((c) => (customRulesPorCultivo[c.id] ?? []).length > 0);
     if (tipoCondicion === 'personalizado') return customRules.length > 0;
+    if (tipoCondicion === 'manual') return true; // solo necesita nombre y fecha
     // por_selector
     return opciones.some((o) => o.nombre.trim() !== '' && o.pct !== '');
   })();
@@ -495,6 +507,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     { value: 'fijo',         label: 'Fijo',          desc: alcance === 'cultivo' ? '% distinto por cultivo' : 'Un % igual para todos' },
     { value: 'por_rango',    label: 'Por rango',     desc: '% según una variable (desde / desde–hasta)' },
     { value: 'por_selector', label: 'Por selector',  desc: 'El usuario elige la opción al cotizar' },
+    { value: 'manual',       label: 'Manual',        desc: 'El % se ingresa por híbrido en la cotización' },
     { value: 'personalizado', label: 'Personalizado', desc: 'Condiciones libres: variable op valor/fracción' },
   ];
 
@@ -1206,6 +1219,8 @@ export function DescuentosTab() {
                       ? `${d.valorPorcentaje}%`
                       : d.modo === 'selector'
                       ? `${d.reglas?.length ?? 0} opción(es)`
+                      : d.modo === 'manual'
+                      ? '% por ítem'
                       : `${d.reglas?.length ?? 0} regla(s)`}
                   </td>
                   <td className="px-4 py-3 text-gray-500">

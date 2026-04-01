@@ -15,6 +15,7 @@ export enum ModoDescuento {
   BASICO = 'basico',
   AVANZADO = 'avanzado',
   SELECTOR = 'selector',
+  MANUAL = 'manual',
 }
 
 // El nombre puede repetirse en distintas fechas (historial de cambios).
