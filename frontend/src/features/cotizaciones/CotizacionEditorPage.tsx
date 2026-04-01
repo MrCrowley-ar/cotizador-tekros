@@ -248,22 +248,25 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
           const editing = editingManual[d.id];
           return (
             <td key={d.id} className="px-1 py-1 text-sm text-right whitespace-nowrap">
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={0.01}
-                value={editing ?? currentPct}
-                onChange={(e) => setEditingManual((prev) => ({ ...prev, [d.id]: e.target.value }))}
-                onBlur={(e) => {
-                  if (e.target.value !== currentPct) saveManualPct(d.id, e.target.value);
-                  else setEditingManual((prev) => { const n = { ...prev }; delete n[d.id]; return n; });
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                }}
-                className="w-16 text-xs text-right border rounded px-1.5 py-1 text-orange-600 font-medium focus:outline-none focus:ring-1 focus:ring-orange-400"
-              />
+              <div className="inline-flex items-center gap-0.5">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={editing ?? currentPct}
+                  onChange={(e) => setEditingManual((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                  onBlur={(e) => {
+                    if (e.target.value !== currentPct) saveManualPct(d.id, e.target.value);
+                    else setEditingManual((prev) => { const n = { ...prev }; delete n[d.id]; return n; });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  }}
+                  className="w-16 text-xs text-right border rounded px-1.5 py-1 text-orange-600 font-medium focus:outline-none focus:ring-1 focus:ring-orange-400"
+                />
+                <span className="text-xs text-orange-600 font-medium">%</span>
+              </div>
             </td>
           );
         }
