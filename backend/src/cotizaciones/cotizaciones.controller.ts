@@ -101,6 +101,7 @@ export class CotizacionesController {
   }
 
   @Delete(':id/versiones/:versionId/items/:itemId')
+  @HttpCode(204)
   eliminarItem(
     @Param('versionId', ParseIntPipe) versionId: number,
     @Param('itemId', ParseIntPipe) itemId: number,
