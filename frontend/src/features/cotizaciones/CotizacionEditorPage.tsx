@@ -9,6 +9,7 @@ import { Badge } from '../../components/Badge';
 import { Spinner } from '../../components/Spinner';
 import { VersionHistory } from './VersionHistory';
 import { useCotizacionExportPng } from './CotizacionExportPng';
+import { FeedPanelInline } from '../feed/FeedPanel';
 import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../../api/types';
 
 // ─── Resize Divider ───────────────────────────────────────────────────────────
@@ -214,7 +215,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
     <tr className="hover:bg-gray-50">
       <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{item.hibrido?.nombre ?? item.hibridoId}</td>
       <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{item.banda?.nombre ?? item.bandaId}</td>
-      <td className="px-4 py-2 text-sm text-right text-gray-700">{fmt(Number(item.bolsas))}</td>
+      <td className="px-4 py-2 text-sm text-right text-gray-700">{Math.round(Number(item.bolsas)).toLocaleString('es-AR')}</td>
       <td className="px-4 py-2 text-sm text-right text-gray-500 whitespace-nowrap">${fmt(Number(item.precioBase))}</td>
       {activeDescuentos.map((d) => {
         const applied = item.descuentos.find((x) => x.descuentoId === d.id);
@@ -265,6 +266,21 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
   const [showNewItem, setShowNewItem] = useState(false);
 
   const totalCols = 6 + activeDescuentos.length;
+
+  const fmt = (n: number) =>
+    n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Compute totals for the footer row
+  const totalBolsasCultivo = items.reduce((s, i) => s + Math.round(Number(i.bolsas)), 0);
+  const totalMontoUSD = items.reduce((s, item) => {
+    const subtUnit = activeDescuentos.reduce((acc, d) => {
+      const applied = item.descuentos.find((x) => x.descuentoId === d.id);
+      if (!applied) return acc;
+      return acc * (1 - Number(applied.valorPorcentaje) / 100);
+    }, Number(item.precioBase));
+    return s + subtUnit * Number(item.bolsas);
+  }, 0);
+  const precioPonderado = totalBolsasCultivo > 0 ? totalMontoUSD / totalBolsasCultivo : 0;
 
   return (
     <div className="bg-white rounded-xl border overflow-hidden">
@@ -332,6 +348,21 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
               </tr>
             )}
           </tbody>
+          {items.length > 0 && (
+            <tfoot>
+              <tr className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-sm">
+                <td className="px-4 py-2 text-orange-600 uppercase">Total</td>
+                <td className="px-4 py-2"></td>
+                <td className="px-4 py-2 text-right text-orange-600">{totalBolsasCultivo.toLocaleString('es-AR')}</td>
+                <td className="px-4 py-2"></td>
+                {activeDescuentos.map((d) => (
+                  <td key={d.id} className="px-4 py-2"></td>
+                ))}
+                <td className="px-4 py-2 text-right text-gray-700">${fmt(precioPonderado)}</td>
+                <td className="px-4 py-2"></td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>
@@ -1183,12 +1214,6 @@ export function CotizacionEditorPage() {
 
           {/* Right panel — independent scroll */}
           <div style={{ width: rightWidth }} className="shrink-0 overflow-y-auto space-y-4">
-            {version && (
-              <CultivoStatsPanel version={version} cultivos={cultivos} />
-            )}
-            {selectedVersionId && (
-              <TotalsPanel cotizacionId={cotizacionId} versionId={selectedVersionId} />
-            )}
             <ItemDescuentosPanel
               isEditable={isEditable}
               activeIds={activeDiscountIds}
@@ -1205,6 +1230,10 @@ export function CotizacionEditorPage() {
                 isEditable={isEditable}
               />
             )}
+            {selectedVersionId && (
+              <TotalsPanel cotizacionId={cotizacionId} versionId={selectedVersionId} />
+            )}
+            <FeedPanelInline />
             {showHistory && (
               <div className="bg-white rounded-xl border p-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Historial de versiones</h3>
