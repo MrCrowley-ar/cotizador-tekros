@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -71,6 +72,7 @@ export class MensajesController {
   }
 
   @Delete(':id')
+  @HttpCode(204)
   remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: Usuario) {
     return this.service.remove(id, user.id);
   }
