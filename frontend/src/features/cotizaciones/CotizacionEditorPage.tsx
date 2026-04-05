@@ -522,7 +522,7 @@ function CultivoStatsPanel({ version, cultivos }: { version: CotizacionVersion; 
 
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
-function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version }: {
+function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds }: {
   isEditable: boolean;
   activeIds: Set<number>;
   pendingIds: Set<number>;
@@ -530,9 +530,13 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
   onToggle: (desc: Descuento) => void;
   onApplySelector: (desc: Descuento, pct: number | null) => void;
   version: CotizacionVersion | undefined;
+  excludeIds?: Set<number>;
 }) {
   // Show non-global discounts + global selectors/manual (apply per-item)
-  const nonGlobal = allDescuentos.filter((d) => d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual');
+  const nonGlobal = allDescuentos.filter((d) =>
+    (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual')
+    && !(excludeIds?.has(d.id)),
+  );
   if (nonGlobal.length === 0) return null;
 
   // Find currently applied pct for selector discounts
@@ -631,10 +635,11 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
 
 // ─── Global Discounts Panel (right sidebar) ───────────────────────────────────
 
-function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
+function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds }: {
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
+  excludeIds?: Set<number>;
 }) {
   const qc = useQueryClient();
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
@@ -646,7 +651,11 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
   });
 
   // Exclude selectors/manual — they're handled in ItemDescuentosPanel and shown as table columns
-  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion === 'global' && d.modo !== 'selector' && d.modo !== 'manual');
+  // Also exclude section-variable discounts
+  const descuentos = allDescuentos.filter((d) =>
+    d.tipoAplicacion === 'global' && d.modo !== 'selector' && d.modo !== 'manual'
+    && !(excludeIds?.has(d.id)),
+  );
   if (descuentos.length === 0) return null;
 
   function isApplied(desc: Descuento) {
@@ -1141,6 +1150,21 @@ export function CotizacionEditorPage() {
     .filter((c) => activeCultivoIds.has(c.id))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
+  // IDs of discounts managed by sections (should be hidden from the right panel)
+  const sectionVariableDescIds = useMemo(() => {
+    const ids = new Set<number>();
+    if ((version?.secciones ?? []).length === 0) return ids;
+    for (const item of version?.items ?? []) {
+      for (const d of item.descuentos) {
+        if (d.seccionId !== null && d.descuentoId != null) ids.add(d.descuentoId);
+      }
+    }
+    for (const d of version?.descuentos ?? []) {
+      if (d.seccionId !== null && d.descuentoId != null) ids.add(d.descuentoId);
+    }
+    return ids;
+  }, [version]);
+
   return (
     <Layout title={cotizacion.numero} fullHeight>
       <div className="h-full flex flex-col gap-3 p-5 overflow-hidden">
@@ -1434,12 +1458,14 @@ export function CotizacionEditorPage() {
               onToggle={toggleDiscount}
               onApplySelector={applySelector}
               version={version}
+              excludeIds={sectionVariableDescIds}
             />
             {version && (
               <DescuentosGlobalesPanel
                 cotizacionId={cotizacionId}
                 version={version}
                 isEditable={isEditable}
+                excludeIds={sectionVariableDescIds}
               />
             )}
             <FeedPanelInline />
