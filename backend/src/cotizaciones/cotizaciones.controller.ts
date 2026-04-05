@@ -187,16 +187,6 @@ export class CotizacionesController {
     @Param('did', ParseIntPipe) did: number,
     @Body() dto: UpdateSeccionDescuentoDto,
   ) {
-    return this.service.updateSeccionDescuento(seccionId, did, dto, 'global');
-  }
-
-  @Patch(':id/versiones/:versionId/secciones/:seccionId/items/:itemId/descuentos/:did')
-  updateSeccionItemDescuento(
-    @Param('seccionId', ParseIntPipe) seccionId: number,
-    @Param('itemId', ParseIntPipe) itemId: number,
-    @Param('did', ParseIntPipe) did: number,
-    @Body() dto: UpdateSeccionDescuentoDto,
-  ) {
-    return this.service.updateSeccionDescuento(seccionId, did, dto, 'item', itemId);
+    return this.service.updateSeccionDescuento(seccionId, did, dto);
   }
 }

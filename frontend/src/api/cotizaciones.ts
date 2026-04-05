@@ -52,6 +52,4 @@ export const cotizacionesApi = {
     api.delete(`${ver(id, vid)}/secciones/${seccionId}`),
   updateSeccionDescuento: (id: number, vid: number, seccionId: number, did: number, porcentaje: number) =>
     api.patch(`${ver(id, vid)}/secciones/${seccionId}/descuentos/${did}`, { porcentaje }),
-  updateSeccionItemDescuento: (id: number, vid: number, seccionId: number, itemId: number, did: number, porcentaje: number) =>
-    api.patch(`${ver(id, vid)}/secciones/${seccionId}/items/${itemId}/descuentos/${did}`, { porcentaje }),
 };

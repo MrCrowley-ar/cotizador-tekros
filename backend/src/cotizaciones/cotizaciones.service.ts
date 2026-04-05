@@ -632,27 +632,35 @@ export class CotizacionesService {
     });
   }
 
+  /**
+   * Actualiza TODOS los descuentos de un descuento específico en una sección.
+   * Busca tanto a nivel de ítem como global y actualiza todos los que encuentre.
+   */
   async updateSeccionDescuento(
     seccionId: number,
     descuentoId: number,
     dto: UpdateSeccionDescuentoDto,
-    tipo: 'item' | 'global',
-    itemId?: number,
   ): Promise<void> {
-    if (tipo === 'item' && itemId) {
-      const d = await this.itemDescRepo.findOneBy({
-        seccionId,
-        descuentoId,
-        cotizacionItemId: itemId,
-      });
-      if (!d) throw new NotFoundException('Descuento de sección no encontrado');
+    let updated = false;
+
+    // Update all item-level discounts for this descuento+section
+    const itemDescs = await this.itemDescRepo.find({ where: { seccionId, descuentoId } });
+    for (const d of itemDescs) {
       d.valorPorcentaje = dto.porcentaje;
       await this.itemDescRepo.save(d);
-    } else {
-      const d = await this.descRepo.findOneBy({ seccionId, descuentoId });
-      if (!d) throw new NotFoundException('Descuento global de sección no encontrado');
+      updated = true;
+    }
+
+    // Update all global-level discounts for this descuento+section
+    const globalDescs = await this.descRepo.find({ where: { seccionId, descuentoId } });
+    for (const d of globalDescs) {
       d.valorPorcentaje = dto.porcentaje;
       await this.descRepo.save(d);
+      updated = true;
+    }
+
+    if (!updated) {
+      throw new NotFoundException(`Descuento ${descuentoId} no encontrado en sección ${seccionId}`);
     }
 
     // Recalcular
