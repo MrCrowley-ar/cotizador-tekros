@@ -1257,65 +1257,186 @@ export function CotizacionEditorPage() {
               </div>
             ) : (version?.secciones ?? []).length > 0 ? (
               /* ── Renderizado con secciones ── */
-              (version!.secciones ?? [])
-                .sort((a, b) => a.orden - b.orden)
-                .map((seccion) => {
-                  const secTotal = totals?.secciones?.find((s) => s.seccionId === seccion.id);
-                  // Filter active descuentos for this section:
-                  // Include shared (seccionId=null) + section-specific descuentos
-                  const seccionDescuentos = activeDescuentos;
-                  return (
-                    <div key={seccion.id} className="space-y-4">
-                      <div className="flex items-center gap-3 px-1">
-                        <h3 className="text-sm font-semibold text-gray-700">
-                          {seccion.nombre ?? `Sección ${seccion.orden + 1}`}
-                        </h3>
-                        {secTotal && (
-                          <span className="text-xs text-gray-500">
-                            Total: ${secTotal.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        )}
-                        {isEditable && (version!.secciones ?? []).length > 1 && (
-                          <button
-                            onClick={() => deleteSeccionMut.mutate(seccion.id)}
-                            disabled={deleteSeccionMut.isPending}
-                            className="text-xs text-red-400 hover:text-red-600 ml-auto"
-                          >
-                            Eliminar sección
-                          </button>
-                        )}
-                      </div>
-                      {activeCultivos.map((cultivo) => {
-                        const stats = cultivoStats.get(cultivo.id) ?? { bolsas: 0, monto: 0 };
-                        // Build items with section-aware descuentos:
-                        // For each item, filter descuentos to shared + this section
-                        const itemsWithSeccion = (version?.items ?? [])
-                          .filter((i) => i.cultivoId === cultivo.id)
-                          .map((item) => ({
-                            ...item,
-                            descuentos: item.descuentos.filter(
-                              (d) => d.seccionId === null || d.seccionId === seccion.id,
-                            ),
-                          }));
-                        return (
-                          <CultivoSection
-                            key={`${seccion.id}-${cultivo.id}`}
-                            cultivo={cultivo}
-                            items={itemsWithSeccion}
-                            cotizacionId={cotizacionId}
-                            version={version!}
-                            isEditable={isEditable}
-                            activeDescuentos={seccionDescuentos}
-                            cultivoVolumen={stats.bolsas}
-                            cultivoMonto={stats.monto}
-                            totalBolsas={totalBolsas}
-                          />
+              (() => {
+                // Identify variable discount IDs (those with seccionId !== null)
+                const variableDescIds = new Set<number>();
+                for (const item of version!.items ?? []) {
+                  for (const d of item.descuentos) {
+                    if (d.seccionId !== null && d.descuentoId != null) variableDescIds.add(d.descuentoId);
+                  }
+                }
+                for (const d of version!.descuentos ?? []) {
+                  if (d.seccionId !== null && d.descuentoId != null) variableDescIds.add(d.descuentoId);
+                }
+                // Get full descuento objects for variable discounts
+                const variableDescs = allDescuentos.filter((d) => variableDescIds.has(d.id));
+
+                return (version!.secciones ?? [])
+                  .sort((a, b) => a.orden - b.orden)
+                  .map((seccion) => {
+                    const secTotal = totals?.secciones?.find((s) => s.seccionId === seccion.id);
+
+                    // Get the applied percentage for a variable discount in this section
+                    const getSeccionPct = (descId: number): number | null => {
+                      // Check item-level descuentos first
+                      for (const item of version!.items ?? []) {
+                        const found = item.descuentos.find(
+                          (d) => d.descuentoId === descId && d.seccionId === seccion.id,
                         );
-                      })}
-                      <hr className="border-gray-200" />
-                    </div>
-                  );
-                })
+                        if (found) return Number(found.valorPorcentaje);
+                      }
+                      // Check global descuentos
+                      const globalFound = (version!.descuentos ?? []).find(
+                        (d) => d.descuentoId === descId && d.seccionId === seccion.id,
+                      );
+                      if (globalFound) return Number(globalFound.valorPorcentaje);
+                      return null;
+                    };
+
+                    return (
+                      <div key={seccion.id} className="space-y-3">
+                        {/* Section header with variable discount selectors */}
+                        <div className="bg-white rounded-xl border px-4 py-3">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-sm font-semibold text-gray-700">
+                              {seccion.nombre ?? `Sección ${seccion.orden + 1}`}
+                            </h3>
+                            {secTotal && (
+                              <span className="text-xs text-gray-500">
+                                Total: ${secTotal.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            )}
+                            {isEditable && (version!.secciones ?? []).length > 1 && (
+                              <button
+                                onClick={() => deleteSeccionMut.mutate(seccion.id)}
+                                disabled={deleteSeccionMut.isPending}
+                                className="text-xs text-red-400 hover:text-red-600 ml-auto"
+                              >
+                                Eliminar
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Variable discount selectors for this section */}
+                          {variableDescs.length > 0 && (
+                            <div className="flex flex-wrap gap-3">
+                              {variableDescs.map((desc) => {
+                                const appliedPct = getSeccionPct(desc.id);
+                                const isSelector = desc.modo === 'selector';
+                                const reglasSorted = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
+                                const currentReglaId = isSelector && appliedPct != null
+                                  ? (reglasSorted.find((r) => Number(r.valor) === appliedPct)?.id ?? '')
+                                  : '';
+
+                                return (
+                                  <div key={desc.id} className="flex items-center gap-2 bg-orange-50 rounded-lg px-3 py-1.5">
+                                    <span className="text-xs font-medium text-gray-600">{desc.nombre}</span>
+                                    {isSelector ? (
+                                      <select
+                                        disabled={!isEditable}
+                                        value={currentReglaId}
+                                        onChange={async (e) => {
+                                          const reglaId = Number(e.target.value);
+                                          const regla = reglasSorted.find((r) => r.id === reglaId);
+                                          const pct = regla ? Number(regla.valor) : 0;
+                                          await cotizacionesApi.updateSeccionDescuento(
+                                            cotizacionId, version!.id, seccion.id, desc.id, pct,
+                                          );
+                                          // Also update item-level section discounts
+                                          for (const item of version!.items ?? []) {
+                                            const found = item.descuentos.find(
+                                              (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
+                                            );
+                                            if (found) {
+                                              await cotizacionesApi.updateSeccionItemDescuento(
+                                                cotizacionId, version!.id, seccion.id, item.id, desc.id, pct,
+                                              );
+                                            }
+                                          }
+                                          invalidateVersion();
+                                        }}
+                                        className="text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
+                                      >
+                                        <option value="">— Ninguno —</option>
+                                        {reglasSorted.map((r) => (
+                                          <option key={r.id} value={r.id}>
+                                            {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="number"
+                                          disabled={!isEditable}
+                                          defaultValue={appliedPct ?? 0}
+                                          key={`${seccion.id}-${desc.id}-${appliedPct}`}
+                                          min={0}
+                                          max={100}
+                                          step={0.5}
+                                          onBlur={async (e) => {
+                                            const pct = Math.max(0, Math.min(100, Number(e.target.value)));
+                                            if (pct === appliedPct) return;
+                                            // Update global-level section discount
+                                            await cotizacionesApi.updateSeccionDescuento(
+                                              cotizacionId, version!.id, seccion.id, desc.id, pct,
+                                            ).catch(() => {});
+                                            // Update item-level section discounts
+                                            for (const item of version!.items ?? []) {
+                                              const found = item.descuentos.find(
+                                                (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
+                                              );
+                                              if (found) {
+                                                await cotizacionesApi.updateSeccionItemDescuento(
+                                                  cotizacionId, version!.id, seccion.id, item.id, desc.id, pct,
+                                                ).catch(() => {});
+                                              }
+                                            }
+                                            invalidateVersion();
+                                          }}
+                                          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                          className="w-16 text-xs border rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
+                                        />
+                                        <span className="text-xs text-gray-400">%</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {activeCultivos.map((cultivo) => {
+                          const stats = cultivoStats.get(cultivo.id) ?? { bolsas: 0, monto: 0 };
+                          const itemsWithSeccion = (version?.items ?? [])
+                            .filter((i) => i.cultivoId === cultivo.id)
+                            .map((item) => ({
+                              ...item,
+                              descuentos: item.descuentos.filter(
+                                (d) => d.seccionId === null || d.seccionId === seccion.id,
+                              ),
+                            }));
+                          return (
+                            <CultivoSection
+                              key={`${seccion.id}-${cultivo.id}`}
+                              cultivo={cultivo}
+                              items={itemsWithSeccion}
+                              cotizacionId={cotizacionId}
+                              version={version!}
+                              isEditable={isEditable}
+                              activeDescuentos={activeDescuentos}
+                              cultivoVolumen={stats.bolsas}
+                              cultivoMonto={stats.monto}
+                              totalBolsas={totalBolsas}
+                            />
+                          );
+                        })}
+                        <hr className="border-gray-200" />
+                      </div>
+                    );
+                  });
+              })()
             ) : (
               /* ── Renderizado sin secciones (default) ── */
               activeCultivos.map((cultivo) => {
