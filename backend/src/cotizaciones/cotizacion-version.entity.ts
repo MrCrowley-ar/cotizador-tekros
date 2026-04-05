@@ -49,4 +49,7 @@ export class CotizacionVersion {
 
   @OneToMany('CotizacionDescuento', 'version')
   descuentos: any[];
+
+  @OneToMany('CotizacionVersionSeccion', 'version')
+  secciones: any[];
 }

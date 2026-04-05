@@ -18,7 +18,10 @@ import { CotizacionDescuento } from './cotizacion-descuento.entity';
 import { CotizacionItemDescuento } from './cotizacion-item-descuento.entity';
 import { CotizacionItem } from './cotizacion-item.entity';
 import { CotizacionVersion } from './cotizacion-version.entity';
+import { CotizacionVersionSeccion } from './cotizacion-version-seccion.entity';
 import { Cotizacion, EstadoCotizacion } from './cotizacion.entity';
+import { CreateSeccionDto } from './dto/create-seccion.dto';
+import { UpdateSeccionDescuentoDto } from './dto/update-seccion-descuento.dto';
 
 @Injectable()
 export class CotizacionesService {
@@ -33,6 +36,8 @@ export class CotizacionesService {
     private readonly itemDescRepo: Repository<CotizacionItemDescuento>,
     @InjectRepository(CotizacionDescuento)
     private readonly descRepo: Repository<CotizacionDescuento>,
+    @InjectRepository(CotizacionVersionSeccion)
+    private readonly seccionRepo: Repository<CotizacionVersionSeccion>,
     private readonly preciosService: PreciosService,
     private readonly descuentosService: DescuentosService,
     private readonly descuentosVolumenService: DescuentosVolumenService,
@@ -141,6 +146,7 @@ export class CotizacionesService {
         'items.descuentos.descuento',
         'descuentos',
         'descuentos.descuento',
+        'secciones',
       ],
     });
     if (!v) throw new NotFoundException(`Versión ${versionId} no encontrada`);
@@ -450,30 +456,234 @@ export class CotizacionesService {
     });
   }
 
+  // ─── SECCIONES ─────────────────────────────────────────────────────────────
+
+  async getSecciones(versionId: number): Promise<CotizacionVersionSeccion[]> {
+    return this.seccionRepo.find({
+      where: { versionId },
+      order: { orden: 'ASC' },
+    });
+  }
+
+  async crearSeccion(
+    versionId: number,
+    dto: CreateSeccionDto,
+    usuarioId?: number,
+  ): Promise<CotizacionVersionSeccion> {
+    const version = await this.versionRepo.findOneBy({ id: versionId });
+    if (!version) throw new NotFoundException(`Versión ${versionId} no encontrada`);
+
+    const seccionesExistentes = await this.seccionRepo.find({ where: { versionId } });
+
+    return this.dataSource.transaction(async (em) => {
+      // Si es la primera sección, crear "Sección 1" para los descuentos existentes
+      let seccionOriginal: CotizacionVersionSeccion | null = null;
+      if (seccionesExistentes.length === 0) {
+        seccionOriginal = await em.save(
+          em.create(CotizacionVersionSeccion, {
+            versionId,
+            nombre: 'Sección 1',
+            orden: 0,
+          }),
+        );
+      }
+
+      // Crear la nueva sección
+      const nuevaSeccion = await em.save(
+        em.create(CotizacionVersionSeccion, {
+          versionId,
+          nombre: dto.nombre ?? `Sección ${seccionesExistentes.length + (seccionOriginal ? 2 : 1)}`,
+          orden: seccionesExistentes.length + (seccionOriginal ? 1 : 0),
+        }),
+      );
+
+      // Para los descuentos marcados como variables:
+      // - Si es primera vez (seccionOriginal existe), migrar los descuentos existentes a la sección original
+      //   y crear copias para la nueva sección
+      // - Si ya hay secciones, copiar los descuentos de la primera sección a la nueva
+      const variableIds = new Set(dto.descuentosVariables);
+
+      if (seccionOriginal) {
+        // Migrar descuentos de ítem existentes (seccion_id = null) que son variables
+        const itemDescs = await em.find(CotizacionItemDescuento, {
+          where: { item: { versionId } },
+          relations: ['item'],
+        });
+        for (const d of itemDescs) {
+          if (variableIds.has(d.descuentoId!)) {
+            // Asignar a sección original
+            await em.update(CotizacionItemDescuento, d.id, { seccionId: seccionOriginal.id });
+            // Crear copia para nueva sección
+            await em.save(
+              em.create(CotizacionItemDescuento, {
+                cotizacionItemId: d.cotizacionItemId,
+                descuentoId: d.descuentoId,
+                valorPorcentaje: d.valorPorcentaje,
+                seccionId: nuevaSeccion.id,
+              }),
+            );
+          }
+          // Los no-variables quedan con seccion_id = null (aplican a todas)
+        }
+
+        // Migrar descuentos globales
+        const globalDescs = await em.find(CotizacionDescuento, { where: { versionId } });
+        for (const d of globalDescs) {
+          if (variableIds.has(d.descuentoId!)) {
+            await em.update(CotizacionDescuento, d.id, { seccionId: seccionOriginal.id });
+            await em.save(
+              em.create(CotizacionDescuento, {
+                versionId,
+                descuentoId: d.descuentoId,
+                valorPorcentaje: d.valorPorcentaje,
+                seccionId: nuevaSeccion.id,
+              }),
+            );
+          }
+        }
+      } else {
+        // Ya hay secciones: copiar los descuentos variables de la primera sección
+        const primeraSeccion = seccionesExistentes[0];
+
+        const itemDescs = await em.find(CotizacionItemDescuento, {
+          where: { seccionId: primeraSeccion.id },
+          relations: ['item'],
+        });
+        for (const d of itemDescs) {
+          await em.save(
+            em.create(CotizacionItemDescuento, {
+              cotizacionItemId: d.cotizacionItemId,
+              descuentoId: d.descuentoId,
+              valorPorcentaje: d.valorPorcentaje,
+              seccionId: nuevaSeccion.id,
+            }),
+          );
+        }
+
+        const globalDescs = await em.find(CotizacionDescuento, {
+          where: { versionId, seccionId: primeraSeccion.id },
+        });
+        for (const d of globalDescs) {
+          await em.save(
+            em.create(CotizacionDescuento, {
+              versionId,
+              descuentoId: d.descuentoId,
+              valorPorcentaje: d.valorPorcentaje,
+              seccionId: nuevaSeccion.id,
+            }),
+          );
+        }
+      }
+
+      await this.historialService.registrar({
+        usuarioId: usuarioId ?? null,
+        cotizacionId: version.cotizacionId,
+        tipoEntidad: TipoEntidad.COTIZACION_VERSION,
+        tipoAccion: TipoAccion.CREAR,
+        entidadId: nuevaSeccion.id,
+        descripcion: `Sección "${nuevaSeccion.nombre}" creada en versión ${version.version}`,
+        datosNuevos: { seccionId: nuevaSeccion.id, nombre: nuevaSeccion.nombre, descuentosVariables: dto.descuentosVariables },
+      });
+
+      return nuevaSeccion;
+    });
+  }
+
+  async eliminarSeccion(versionId: number, seccionId: number, usuarioId?: number): Promise<void> {
+    const seccion = await this.seccionRepo.findOneBy({ id: seccionId, versionId });
+    if (!seccion) throw new NotFoundException(`Sección ${seccionId} no encontrada`);
+
+    const secciones = await this.seccionRepo.find({ where: { versionId } });
+
+    await this.dataSource.transaction(async (em) => {
+      // Eliminar descuentos asociados a esta sección
+      await em.delete(CotizacionItemDescuento, { seccionId });
+      await em.delete(CotizacionDescuento, { seccionId });
+      await em.remove(seccion);
+
+      // Si queda solo 1 sección, revertir al modo sin secciones
+      if (secciones.length === 2) {
+        const restante = secciones.find((s) => s.id !== seccionId)!;
+        // Mover descuentos de la sección restante a seccion_id = null
+        await em
+          .createQueryBuilder()
+          .update(CotizacionItemDescuento)
+          .set({ seccionId: null })
+          .where('seccionId = :id', { id: restante.id })
+          .execute();
+        await em
+          .createQueryBuilder()
+          .update(CotizacionDescuento)
+          .set({ seccionId: null })
+          .where('seccionId = :id', { id: restante.id })
+          .execute();
+        await em.remove(restante);
+      }
+    });
+
+    const version = await this.versionRepo.findOneBy({ id: versionId });
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      cotizacionId: version?.cotizacionId ?? null,
+      tipoEntidad: TipoEntidad.COTIZACION_VERSION,
+      tipoAccion: TipoAccion.ELIMINAR,
+      entidadId: seccionId,
+      descripcion: `Sección "${seccion.nombre}" eliminada de versión ${versionId}`,
+    });
+  }
+
+  async updateSeccionDescuento(
+    seccionId: number,
+    descuentoId: number,
+    dto: UpdateSeccionDescuentoDto,
+    tipo: 'item' | 'global',
+    itemId?: number,
+  ): Promise<void> {
+    if (tipo === 'item' && itemId) {
+      const d = await this.itemDescRepo.findOneBy({
+        seccionId,
+        descuentoId,
+        cotizacionItemId: itemId,
+      });
+      if (!d) throw new NotFoundException('Descuento de sección no encontrado');
+      d.valorPorcentaje = dto.porcentaje;
+      await this.itemDescRepo.save(d);
+    } else {
+      const d = await this.descRepo.findOneBy({ seccionId, descuentoId });
+      if (!d) throw new NotFoundException('Descuento global de sección no encontrado');
+      d.valorPorcentaje = dto.porcentaje;
+      await this.descRepo.save(d);
+    }
+
+    // Recalcular
+    const seccion = await this.seccionRepo.findOneBy({ id: seccionId });
+    if (seccion) await this.recalcularTotal(seccion.versionId);
+  }
+
   // ─── CÁLCULO DE TOTAL (siempre en backend) ────────────────────────────────
 
-  async calcularTotal(versionId: number): Promise<{
-    subtotalItems: number;
-    descuentosItems: number;
-    subtotalNeto: number;
-    descuentosGlobales: number;
-    total: number;
-    desglose: object[];
-  }> {
-    const version = await this.getVersion(
-      (await this.versionRepo.findOneBy({ id: versionId }))!.cotizacionId,
-      versionId,
-    );
-
+  private calcularTotalParaDescuentos(
+    items: CotizacionItem[],
+    itemDescuentos: CotizacionItemDescuento[],
+    globalDescuentos: CotizacionDescuento[],
+  ) {
     let subtotalItems = 0;
     let descuentosItems = 0;
     const desglose: object[] = [];
 
-    for (const item of version.items) {
+    // Index item discounts by item id
+    const descByItem = new Map<number, CotizacionItemDescuento[]>();
+    for (const d of itemDescuentos) {
+      const arr = descByItem.get(d.cotizacionItemId) ?? [];
+      arr.push(d);
+      descByItem.set(d.cotizacionItemId, arr);
+    }
+
+    for (const item of items) {
       const subtotalItem = Number(item.precioBase);
       let descuentoItemTotal = 0;
 
-      for (const d of item.descuentos) {
+      for (const d of descByItem.get(item.id) ?? []) {
         descuentoItemTotal += subtotalItem * (Number(d.valorPorcentaje) / 100);
       }
 
@@ -496,12 +706,84 @@ export class CotizacionesService {
     const subtotalNeto = subtotalItems - descuentosItems;
 
     let descuentosGlobales = 0;
-    for (const d of version.descuentos) {
+    for (const d of globalDescuentos) {
       descuentosGlobales += subtotalNeto * (Number(d.valorPorcentaje) / 100);
     }
 
     const total = subtotalNeto - descuentosGlobales;
     return { subtotalItems, descuentosItems, subtotalNeto, descuentosGlobales, total, desglose };
+  }
+
+  async calcularTotal(versionId: number): Promise<{
+    subtotalItems: number;
+    descuentosItems: number;
+    subtotalNeto: number;
+    descuentosGlobales: number;
+    total: number;
+    desglose: object[];
+    secciones?: Array<{
+      seccionId: number;
+      nombre: string | null;
+      subtotalItems: number;
+      descuentosItems: number;
+      subtotalNeto: number;
+      descuentosGlobales: number;
+      total: number;
+      desglose: object[];
+    }>;
+  }> {
+    const version = await this.getVersion(
+      (await this.versionRepo.findOneBy({ id: versionId }))!.cotizacionId,
+      versionId,
+    );
+
+    const secciones = version.secciones ?? [];
+    const hasSecciones = secciones.length > 0;
+
+    if (!hasSecciones) {
+      // Backward compatible: sin secciones, calcular como antes
+      return this.calcularTotalParaDescuentos(
+        version.items,
+        version.items.flatMap((i) => i.descuentos),
+        version.descuentos,
+      );
+    }
+
+    // Con secciones: calcular por sección
+    // Descuentos compartidos (seccion_id = null) + descuentos específicos de cada sección
+    const sharedItemDescs = version.items.flatMap((i) =>
+      i.descuentos.filter((d) => d.seccionId === null),
+    );
+    const sharedGlobalDescs = version.descuentos.filter((d) => d.seccionId === null);
+
+    const seccionResults = secciones
+      .sort((a, b) => a.orden - b.orden)
+      .map((sec) => {
+        const secItemDescs = version.items.flatMap((i) =>
+          i.descuentos.filter((d) => d.seccionId === sec.id),
+        );
+        const secGlobalDescs = version.descuentos.filter((d) => d.seccionId === sec.id);
+
+        const result = this.calcularTotalParaDescuentos(
+          version.items,
+          [...sharedItemDescs, ...secItemDescs],
+          [...sharedGlobalDescs, ...secGlobalDescs],
+        );
+
+        return {
+          seccionId: sec.id,
+          nombre: sec.nombre,
+          ...result,
+        };
+      });
+
+    // El total general es la suma o el de la primera sección (usamos primera como principal)
+    const principal = seccionResults[0] ?? this.calcularTotalParaDescuentos(version.items, [], []);
+
+    return {
+      ...principal,
+      secciones: seccionResults,
+    };
   }
 
   private async recalcularTotal(versionId: number): Promise<void> {

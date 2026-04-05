@@ -7,6 +7,7 @@ import { CotizacionDescuento } from './cotizacion-descuento.entity';
 import { CotizacionItemDescuento } from './cotizacion-item-descuento.entity';
 import { CotizacionItem } from './cotizacion-item.entity';
 import { CotizacionVersion } from './cotizacion-version.entity';
+import { CotizacionVersionSeccion } from './cotizacion-version-seccion.entity';
 import { Cotizacion } from './cotizacion.entity';
 import { CotizacionesController } from './cotizaciones.controller';
 import { CotizacionesService } from './cotizaciones.service';
@@ -16,6 +17,7 @@ import { CotizacionesService } from './cotizaciones.service';
     TypeOrmModule.forFeature([
       Cotizacion,
       CotizacionVersion,
+      CotizacionVersionSeccion,
       CotizacionItem,
       CotizacionItemDescuento,
       CotizacionDescuento,

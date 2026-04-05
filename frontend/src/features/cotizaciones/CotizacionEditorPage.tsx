@@ -520,50 +520,6 @@ function CultivoStatsPanel({ version, cultivos }: { version: CotizacionVersion; 
   );
 }
 
-// ─── Totals Panel ─────────────────────────────────────────────────────────────
-
-function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versionId: number }) {
-  const { data: totals } = useQuery({
-    queryKey: ['total', cotizacionId, versionId],
-    queryFn: () => cotizacionesApi.getTotal(cotizacionId, versionId),
-    staleTime: 0,
-  });
-
-  const fmt = (n: number | null | undefined) =>
-    (n ?? 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  if (!totals) return null;
-
-  return (
-    <div className="bg-white rounded-xl border p-4 text-sm space-y-2">
-      <div className="flex justify-between text-gray-600">
-        <span>Subtotal ítems</span>
-        <span>${fmt(totals.subtotalItems)}</span>
-      </div>
-      {totals.descuentosItems > 0 && (
-        <div className="flex justify-between text-orange-600">
-          <span>Desc. ítems</span>
-          <span>−${fmt(totals.descuentosItems)}</span>
-        </div>
-      )}
-      <div className="flex justify-between text-gray-600 border-t pt-2">
-        <span>Subtotal neto</span>
-        <span>${fmt(totals.subtotalNeto)}</span>
-      </div>
-      {totals.descuentosGlobales > 0 && (
-        <div className="flex justify-between text-orange-600">
-          <span>Desc. globales</span>
-          <span>−${fmt(totals.descuentosGlobales)}</span>
-        </div>
-      )}
-      <div className="flex justify-between font-bold text-gray-900 text-base border-t pt-2">
-        <span>Total</span>
-        <span>${fmt(totals.total)}</span>
-      </div>
-    </div>
-  );
-}
-
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
 function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version }: {
@@ -876,6 +832,19 @@ export function CotizacionEditorPage() {
   const [activeDiscountIds, setActiveDiscountIds] = useState<Set<number>>(new Set());
   const [pendingDiscountIds, setPendingDiscountIds] = useState<Set<number>>(new Set());
 
+  // Section state
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const [showSeccionModal, setShowSeccionModal] = useState(false);
+  const [seccionVariables, setSeccionVariables] = useState<Set<number>>(new Set());
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showAddMenu) return;
+    const handler = () => setShowAddMenu(false);
+    const timer = setTimeout(() => document.addEventListener('click', handler), 0);
+    return () => { clearTimeout(timer); document.removeEventListener('click', handler); };
+  }, [showAddMenu]);
+
   const { data: cotizacion, isLoading: loadingCot } = useQuery({
     queryKey: ['cotizacion', cotizacionId],
     queryFn: () => cotizacionesApi.getOne(cotizacionId),
@@ -1125,6 +1094,22 @@ export function CotizacionEditorPage() {
     onSuccess: () => qc.refetchQueries({ queryKey: ['cotizacion', cotizacionId] }),
   });
 
+  const seccionMut = useMutation({
+    mutationFn: (body: { nombre?: string; descuentosVariables: number[] }) =>
+      cotizacionesApi.crearSeccion(cotizacionId, selectedVersionId!, body),
+    onSuccess: () => {
+      invalidateVersion();
+      setShowSeccionModal(false);
+      setSeccionVariables(new Set());
+    },
+  });
+
+  const deleteSeccionMut = useMutation({
+    mutationFn: (seccionId: number) =>
+      cotizacionesApi.deleteSeccion(cotizacionId, selectedVersionId!, seccionId),
+    onSuccess: () => invalidateVersion(),
+  });
+
   if (loadingCot) {
     return (
       <Layout>
@@ -1159,9 +1144,9 @@ export function CotizacionEditorPage() {
   return (
     <Layout title={cotizacion.numero} fullHeight>
       <div className="h-full flex flex-col gap-3 p-5 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
+        {/* Header + Client info */}
+        <div className="flex items-center justify-between shrink-0 flex-wrap gap-y-1">
+          <div className="flex items-center gap-3 flex-wrap">
             <button onClick={() => navigate('/cotizaciones')} className="text-gray-400 hover:text-gray-700">←</button>
             <h1 className="text-xl font-semibold text-gray-900">{cotizacion.numero}</h1>
             <Badge label={cotizacion.estado} />
@@ -1170,8 +1155,19 @@ export function CotizacionEditorPage() {
                 v{version.version}{version.nombre ? ` — ${version.nombre}` : ''}
               </span>
             )}
+            <span className="text-gray-300">|</span>
+            <span className="text-sm font-medium text-gray-700">{cotizacion.cliente?.nombre}</span>
+            {cotizacion.cliente?.razonSocial && (
+              <span className="text-sm text-gray-500">{cotizacion.cliente.razonSocial}</span>
+            )}
+            {cotizacion.cliente?.cuit && (
+              <span className="text-xs text-gray-400 font-mono">CUIT: {cotizacion.cliente.cuit}</span>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">
+              {new Date(cotizacion.fechaCreacion).toLocaleDateString('es-AR', { dateStyle: 'long' })}
+            </span>
             {version && totals && (
               <button
                 onClick={pngExport.download}
@@ -1187,17 +1183,39 @@ export function CotizacionEditorPage() {
               📋 Versiones
             </button>
             {isLatestVersion && (
-              <button
-                onClick={() => {
-                  const nombre = prompt('Nombre para la nueva versión (opcional):');
-                  if (nombre === null) return; // cancelled
-                  newVersionMut.mutate(nombre.trim() || undefined);
-                }}
-                disabled={newVersionMut.isPending}
-                className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-              >
-                {newVersionMut.isPending ? <Spinner /> : '+ Nueva versión'}
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowAddMenu((v) => !v)}
+                  disabled={newVersionMut.isPending || seccionMut.isPending}
+                  className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                >
+                  {newVersionMut.isPending || seccionMut.isPending ? <Spinner /> : '+'}
+                </button>
+                {showAddMenu && (
+                  <div className="absolute right-0 top-full mt-1 bg-white border rounded-lg shadow-lg z-20 min-w-[180px]">
+                    <button
+                      onClick={() => {
+                        setShowAddMenu(false);
+                        const nombre = prompt('Nombre para la nueva versión (opcional):');
+                        if (nombre === null) return;
+                        newVersionMut.mutate(nombre.trim() || undefined);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 rounded-t-lg"
+                    >
+                      Nueva versión
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowAddMenu(false);
+                        setShowSeccionModal(true);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 rounded-b-lg border-t"
+                    >
+                      Agregar sección
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
             <select
               value={cotizacion.estado}
@@ -1213,20 +1231,6 @@ export function CotizacionEditorPage() {
               )}
             </select>
           </div>
-        </div>
-
-        {/* Client info */}
-        <div className="bg-white rounded-xl border px-4 py-2.5 text-sm text-gray-600 flex flex-wrap items-center gap-x-4 gap-y-1 shrink-0">
-          <span className="font-medium text-gray-800">{cotizacion.cliente?.nombre}</span>
-          {cotizacion.cliente?.razonSocial && (
-            <span className="text-gray-500">{cotizacion.cliente.razonSocial}</span>
-          )}
-          {cotizacion.cliente?.cuit && (
-            <span className="text-gray-400 font-mono text-xs">CUIT: {cotizacion.cliente.cuit}</span>
-          )}
-          <span className="text-gray-400 ml-auto">
-            {new Date(cotizacion.fechaCreacion).toLocaleDateString('es-AR', { dateStyle: 'long' })}
-          </span>
         </div>
 
         {/* Cultivo selector */}
@@ -1251,7 +1255,69 @@ export function CotizacionEditorPage() {
                   ? 'Seleccioná un cultivo arriba para comenzar a cargar ítems.'
                   : 'Sin ítems en esta versión.'}
               </div>
+            ) : (version?.secciones ?? []).length > 0 ? (
+              /* ── Renderizado con secciones ── */
+              (version!.secciones ?? [])
+                .sort((a, b) => a.orden - b.orden)
+                .map((seccion) => {
+                  const secTotal = totals?.secciones?.find((s) => s.seccionId === seccion.id);
+                  // Filter active descuentos for this section:
+                  // Include shared (seccionId=null) + section-specific descuentos
+                  const seccionDescuentos = activeDescuentos;
+                  return (
+                    <div key={seccion.id} className="space-y-4">
+                      <div className="flex items-center gap-3 px-1">
+                        <h3 className="text-sm font-semibold text-gray-700">
+                          {seccion.nombre ?? `Sección ${seccion.orden + 1}`}
+                        </h3>
+                        {secTotal && (
+                          <span className="text-xs text-gray-500">
+                            Total: ${secTotal.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                        {isEditable && (version!.secciones ?? []).length > 1 && (
+                          <button
+                            onClick={() => deleteSeccionMut.mutate(seccion.id)}
+                            disabled={deleteSeccionMut.isPending}
+                            className="text-xs text-red-400 hover:text-red-600 ml-auto"
+                          >
+                            Eliminar sección
+                          </button>
+                        )}
+                      </div>
+                      {activeCultivos.map((cultivo) => {
+                        const stats = cultivoStats.get(cultivo.id) ?? { bolsas: 0, monto: 0 };
+                        // Build items with section-aware descuentos:
+                        // For each item, filter descuentos to shared + this section
+                        const itemsWithSeccion = (version?.items ?? [])
+                          .filter((i) => i.cultivoId === cultivo.id)
+                          .map((item) => ({
+                            ...item,
+                            descuentos: item.descuentos.filter(
+                              (d) => d.seccionId === null || d.seccionId === seccion.id,
+                            ),
+                          }));
+                        return (
+                          <CultivoSection
+                            key={`${seccion.id}-${cultivo.id}`}
+                            cultivo={cultivo}
+                            items={itemsWithSeccion}
+                            cotizacionId={cotizacionId}
+                            version={version!}
+                            isEditable={isEditable}
+                            activeDescuentos={seccionDescuentos}
+                            cultivoVolumen={stats.bolsas}
+                            cultivoMonto={stats.monto}
+                            totalBolsas={totalBolsas}
+                          />
+                        );
+                      })}
+                      <hr className="border-gray-200" />
+                    </div>
+                  );
+                })
             ) : (
+              /* ── Renderizado sin secciones (default) ── */
               activeCultivos.map((cultivo) => {
                 const stats = cultivoStats.get(cultivo.id) ?? { bolsas: 0, monto: 0 };
                 return (
@@ -1292,9 +1358,6 @@ export function CotizacionEditorPage() {
                 isEditable={isEditable}
               />
             )}
-            {selectedVersionId && (
-              <TotalsPanel cotizacionId={cotizacionId} versionId={selectedVersionId} />
-            )}
             <FeedPanelInline />
             {showHistory && (
               <div className="bg-white rounded-xl border p-4">
@@ -1309,6 +1372,56 @@ export function CotizacionEditorPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Modal crear sección ── */}
+      {showSeccionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-[440px] p-6 space-y-4">
+            <h3 className="text-base font-semibold text-gray-900">Agregar sección</h3>
+            <p className="text-sm text-gray-600">
+              Seleccioná los descuentos que van a <strong>variar</strong> entre secciones.
+              Los demás se comparten automáticamente.
+            </p>
+            <div className="max-h-60 overflow-y-auto space-y-2">
+              {allDescuentos.filter((d) => activeDiscountIds.has(d.id)).map((d) => (
+                <label key={d.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={seccionVariables.has(d.id)}
+                    onChange={() => setSeccionVariables((prev) => {
+                      const n = new Set(prev);
+                      n.has(d.id) ? n.delete(d.id) : n.add(d.id);
+                      return n;
+                    })}
+                  />
+                  <span>{d.nombre}</span>
+                  <span className="text-xs text-gray-400 ml-auto">
+                    {d.valorPorcentaje != null ? `${d.valorPorcentaje}%` : d.modo}
+                  </span>
+                </label>
+              ))}
+              {allDescuentos.filter((d) => activeDiscountIds.has(d.id)).length === 0 && (
+                <p className="text-sm text-gray-400 italic">No hay descuentos activos en esta versión.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => { setShowSeccionModal(false); setSeccionVariables(new Set()); }}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => seccionMut.mutate({ descuentosVariables: [...seccionVariables] })}
+                disabled={seccionMut.isPending || seccionVariables.size === 0}
+                className="px-4 py-2 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
+              >
+                {seccionMut.isPending ? <Spinner /> : 'Crear sección'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Confirmación de cambio de estado ── */}
       {confirmEstado && (() => {
