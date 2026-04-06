@@ -143,7 +143,7 @@ export interface CotizacionVersion {
   total: number;
   items: CotizacionItem[];
   descuentos: CotizacionDescuento[];
-  secciones: CotizacionVersionSeccion[];
+  secciones?: CotizacionVersionSeccion[];
   usuario?: Usuario;
 }
 export interface Cotizacion {

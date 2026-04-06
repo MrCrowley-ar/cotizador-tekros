@@ -1151,19 +1151,20 @@ export function CotizacionEditorPage() {
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   // IDs of discounts managed by sections (should be hidden from the right panel)
+  const hasSecciones = (version?.secciones ?? []).length > 0;
   const sectionVariableDescIds = useMemo(() => {
     const ids = new Set<number>();
-    if ((version?.secciones ?? []).length === 0) return ids;
-    for (const item of version?.items ?? []) {
-      for (const d of item.descuentos) {
-        if (d.seccionId !== null && d.descuentoId != null) ids.add(d.descuentoId);
+    if (!version || !hasSecciones) return ids;
+    for (const item of version.items ?? []) {
+      for (const d of item.descuentos ?? []) {
+        if (d.seccionId && d.descuentoId) ids.add(d.descuentoId);
       }
     }
-    for (const d of version?.descuentos ?? []) {
-      if (d.seccionId !== null && d.descuentoId != null) ids.add(d.descuentoId);
+    for (const d of version.descuentos ?? []) {
+      if (d.seccionId && d.descuentoId) ids.add(d.descuentoId);
     }
     return ids;
-  }, [version]);
+  }, [version, hasSecciones]);
 
   return (
     <Layout title={cotizacion.numero} fullHeight>
@@ -1286,11 +1287,11 @@ export function CotizacionEditorPage() {
                 const variableDescIds = new Set<number>();
                 for (const item of version!.items ?? []) {
                   for (const d of item.descuentos) {
-                    if (d.seccionId !== null && d.descuentoId != null) variableDescIds.add(d.descuentoId);
+                    if (d.seccionId && d.descuentoId) variableDescIds.add(d.descuentoId);
                   }
                 }
                 for (const d of version!.descuentos ?? []) {
-                  if (d.seccionId !== null && d.descuentoId != null) variableDescIds.add(d.descuentoId);
+                  if (d.seccionId && d.descuentoId) variableDescIds.add(d.descuentoId);
                 }
                 const variableDescs = allDescuentos.filter((d) => variableDescIds.has(d.id));
 
@@ -1401,7 +1402,7 @@ export function CotizacionEditorPage() {
                             .map((item) => ({
                               ...item,
                               descuentos: item.descuentos.filter(
-                                (d) => d.seccionId === null || d.seccionId === seccion.id,
+                                (d) => !d.seccionId || d.seccionId === seccion.id,
                               ),
                             }));
                           return (
