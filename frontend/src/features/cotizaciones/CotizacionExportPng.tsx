@@ -147,10 +147,12 @@ export function useCotizacionExportPng({
 
   function renderCultivoTable(cultivoName: string, cultivoItems: typeof items, seccionId?: number) {
     let cultivoTotal = 0;
+    let cultivoBolsas = 0;
     const rows = cultivoItems.map((item) => {
       const subtotal = getItemSubtotal(item, seccionId);
       const totalItem = subtotal * Number(item.bolsas);
       cultivoTotal += totalItem;
+      cultivoBolsas += Number(item.bolsas);
       return (
         <tr key={`${seccionId ?? 0}-${item.id}`}>
           <td style={tdStyle}>{item.hibrido?.nombre ?? item.hibridoId}</td>
@@ -188,9 +190,11 @@ export function useCotizacionExportPng({
           <tbody>
             {rows}
             <tr style={{ borderTop: '2px solid #ccc' }}>
-              <td colSpan={4} style={{ ...tdStyle, fontWeight: 'bold', textAlign: 'right', borderBottom: 'none' }}>
-                Subtotal {cultivoName}
+              <td colSpan={2} style={{ ...tdStyle, borderBottom: 'none' }}></td>
+              <td style={{ ...tdCenter, fontWeight: 'bold', borderBottom: 'none' }}>
+                {cultivoBolsas.toLocaleString('es-AR')}
               </td>
+              <td style={{ ...tdStyle, borderBottom: 'none' }}></td>
               <td style={{ ...tdRight, fontWeight: 'bold', borderBottom: 'none' }}>{fmt(cultivoTotal)}</td>
             </tr>
           </tbody>
@@ -216,9 +220,7 @@ export function useCotizacionExportPng({
       <h1 style={{ textAlign: 'center', fontSize: '22px', fontWeight: 'bold', marginBottom: '4px' }}>
         Cotización Tekros
       </h1>
-      <div style={{ textAlign: 'center', fontSize: '12px', color: '#666', marginBottom: '24px' }}>
-        {cotizacion.numero} — v{version.version} — {fecha}
-      </div>
+      <div style={{ height: '16px' }} />
 
       {/* Client info */}
       <div style={{
@@ -232,21 +234,27 @@ export function useCotizacionExportPng({
         lineHeight: '1.7',
       }}>
         <div>
+          <div><strong>Fecha:</strong> {fecha}</div>
           <div><strong>Cliente:</strong> {cliente?.razonSocial ?? cliente?.nombre ?? '—'}</div>
           <div><strong>CUIT:</strong> {cliente?.cuit ?? '—'}</div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div><strong>Total Bolsas:</strong> {totalBolsas.toLocaleString('es-AR')}</div>
-          <div><strong>Precio Promedio:</strong> {fmt(precioPonderado)} USD</div>
-          {!hasSecciones && <div><strong>Medio de pago:</strong> {medioDePago}</div>}
-        </div>
+        {!hasSecciones && (
+          <div style={{ textAlign: 'right' }}>
+            <div><strong>Medio de pago:</strong> {medioDePago}</div>
+          </div>
+        )}
       </div>
 
       {/* Content: with or without sections */}
       {hasSecciones ? (
         [...secciones].sort((a, b) => a.orden - b.orden).map((seccion) => {
           const label = getSeccionLabel(seccion);
-          const secTotal = totals.secciones?.find((s) => s.seccionId === seccion.id);
+          // Calculate weighted average price for this section
+          const secBolsas = items.reduce((s, i) => s + Number(i.bolsas), 0);
+          const secMonto = items.reduce((s, item) => {
+            return s + getItemSubtotal(item, seccion.id) * Number(item.bolsas);
+          }, 0);
+          const secPrecioProm = secBolsas > 0 ? secMonto / secBolsas : 0;
           return (
             <div key={seccion.id} style={{ marginBottom: '32px' }}>
               {/* Section title */}
@@ -263,11 +271,9 @@ export function useCotizacionExportPng({
                 alignItems: 'center',
               }}>
                 <span>{label}</span>
-                {secTotal && (
-                  <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
-                    Total: {fmt(secTotal.total)} USD
-                  </span>
-                )}
+                <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
+                  Precio Promedio: {fmt(secPrecioProm)} USD
+                </span>
               </div>
               {cultivoGroups.map(([name, cultivoItems]) =>
                 renderCultivoTable(name, cultivoItems, seccion.id),
@@ -292,8 +298,8 @@ export function useCotizacionExportPng({
             fontSize: '15px',
             fontWeight: 'bold',
           }}>
-            <span>Total</span>
-            <span>{fmt(totals.total)} USD</span>
+            <span>Precio Promedio</span>
+            <span>{fmt(precioPonderado)} USD</span>
           </div>
         </>
       )}
