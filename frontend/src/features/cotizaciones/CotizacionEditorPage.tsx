@@ -1119,6 +1119,22 @@ export function CotizacionEditorPage() {
     onSuccess: () => invalidateVersion(),
   });
 
+  // IDs of discounts managed by sections (should be hidden from the right panel)
+  const hasSecciones = (version?.secciones ?? []).length > 0;
+  const sectionVariableDescIds = useMemo(() => {
+    const ids = new Set<number>();
+    if (!version || !hasSecciones) return ids;
+    for (const item of version.items ?? []) {
+      for (const d of item.descuentos ?? []) {
+        if (d.seccionId && d.descuentoId) ids.add(d.descuentoId);
+      }
+    }
+    for (const d of version.descuentos ?? []) {
+      if (d.seccionId && d.descuentoId) ids.add(d.descuentoId);
+    }
+    return ids;
+  }, [version, hasSecciones]);
+
   if (loadingCot) {
     return (
       <Layout>
@@ -1149,22 +1165,6 @@ export function CotizacionEditorPage() {
   const activeCultivos = cultivos
     .filter((c) => activeCultivoIds.has(c.id))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
-
-  // IDs of discounts managed by sections (should be hidden from the right panel)
-  const hasSecciones = (version?.secciones ?? []).length > 0;
-  const sectionVariableDescIds = useMemo(() => {
-    const ids = new Set<number>();
-    if (!version || !hasSecciones) return ids;
-    for (const item of version.items ?? []) {
-      for (const d of item.descuentos ?? []) {
-        if (d.seccionId && d.descuentoId) ids.add(d.descuentoId);
-      }
-    }
-    for (const d of version.descuentos ?? []) {
-      if (d.seccionId && d.descuentoId) ids.add(d.descuentoId);
-    }
-    return ids;
-  }, [version, hasSecciones]);
 
   return (
     <Layout title={cotizacion.numero} fullHeight>
