@@ -2,6 +2,7 @@ import { api } from './client';
 import type {
   Cotizacion,
   CotizacionVersion,
+  CotizacionVersionSeccion,
   CotizacionItem,
   CotizacionItemDescuento,
   CotizacionDescuento,
@@ -41,4 +42,14 @@ export const cotizacionesApi = {
     api.post<CotizacionDescuento>(`${ver(id, vid)}/descuentos`, body),
   deleteGlobalDescuento: (id: number, vid: number, did: number) =>
     api.delete(`${ver(id, vid)}/descuentos/${did}`),
+
+  // Secciones
+  getSecciones: (id: number, vid: number) =>
+    api.get<CotizacionVersionSeccion[]>(`${ver(id, vid)}/secciones`),
+  crearSeccion: (id: number, vid: number, body: { nombre?: string; descuentosVariables: number[] }) =>
+    api.post<CotizacionVersionSeccion>(`${ver(id, vid)}/secciones`, body),
+  deleteSeccion: (id: number, vid: number, seccionId: number) =>
+    api.delete(`${ver(id, vid)}/secciones/${seccionId}`),
+  updateSeccionDescuento: (id: number, vid: number, seccionId: number, did: number, porcentaje: number) =>
+    api.patch(`${ver(id, vid)}/secciones/${seccionId}/descuentos/${did}`, { porcentaje }),
 };

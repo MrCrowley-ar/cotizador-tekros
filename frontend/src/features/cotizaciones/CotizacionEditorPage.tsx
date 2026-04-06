@@ -248,22 +248,25 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
           const editing = editingManual[d.id];
           return (
             <td key={d.id} className="px-1 py-1 text-sm text-right whitespace-nowrap">
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={0.01}
-                value={editing ?? currentPct}
-                onChange={(e) => setEditingManual((prev) => ({ ...prev, [d.id]: e.target.value }))}
-                onBlur={(e) => {
-                  if (e.target.value !== currentPct) saveManualPct(d.id, e.target.value);
-                  else setEditingManual((prev) => { const n = { ...prev }; delete n[d.id]; return n; });
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                }}
-                className="w-16 text-xs text-right border rounded px-1.5 py-1 text-orange-600 font-medium focus:outline-none focus:ring-1 focus:ring-orange-400"
-              />
+              <div className="inline-flex items-center gap-0.5">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={editing ?? currentPct}
+                  onChange={(e) => setEditingManual((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                  onBlur={(e) => {
+                    if (e.target.value !== currentPct) saveManualPct(d.id, e.target.value);
+                    else setEditingManual((prev) => { const n = { ...prev }; delete n[d.id]; return n; });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  }}
+                  className="w-16 text-xs text-right border rounded px-1.5 py-1 text-orange-600 font-medium focus:outline-none focus:ring-1 focus:ring-orange-400"
+                />
+                <span className="text-xs text-orange-600 font-medium">%</span>
+              </div>
             </td>
           );
         }
@@ -517,53 +520,9 @@ function CultivoStatsPanel({ version, cultivos }: { version: CotizacionVersion; 
   );
 }
 
-// ─── Totals Panel ─────────────────────────────────────────────────────────────
-
-function TotalsPanel({ cotizacionId, versionId }: { cotizacionId: number; versionId: number }) {
-  const { data: totals } = useQuery({
-    queryKey: ['total', cotizacionId, versionId],
-    queryFn: () => cotizacionesApi.getTotal(cotizacionId, versionId),
-    staleTime: 0,
-  });
-
-  const fmt = (n: number | null | undefined) =>
-    (n ?? 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  if (!totals) return null;
-
-  return (
-    <div className="bg-white rounded-xl border p-4 text-sm space-y-2">
-      <div className="flex justify-between text-gray-600">
-        <span>Subtotal ítems</span>
-        <span>${fmt(totals.subtotalItems)}</span>
-      </div>
-      {totals.descuentosItems > 0 && (
-        <div className="flex justify-between text-orange-600">
-          <span>Desc. ítems</span>
-          <span>−${fmt(totals.descuentosItems)}</span>
-        </div>
-      )}
-      <div className="flex justify-between text-gray-600 border-t pt-2">
-        <span>Subtotal neto</span>
-        <span>${fmt(totals.subtotalNeto)}</span>
-      </div>
-      {totals.descuentosGlobales > 0 && (
-        <div className="flex justify-between text-orange-600">
-          <span>Desc. globales</span>
-          <span>−${fmt(totals.descuentosGlobales)}</span>
-        </div>
-      )}
-      <div className="flex justify-between font-bold text-gray-900 text-base border-t pt-2">
-        <span>Total</span>
-        <span>${fmt(totals.total)}</span>
-      </div>
-    </div>
-  );
-}
-
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
-function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version }: {
+function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds }: {
   isEditable: boolean;
   activeIds: Set<number>;
   pendingIds: Set<number>;
@@ -571,9 +530,13 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
   onToggle: (desc: Descuento) => void;
   onApplySelector: (desc: Descuento, pct: number | null) => void;
   version: CotizacionVersion | undefined;
+  excludeIds?: Set<number>;
 }) {
   // Show non-global discounts + global selectors/manual (apply per-item)
-  const nonGlobal = allDescuentos.filter((d) => d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual');
+  const nonGlobal = allDescuentos.filter((d) =>
+    (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual')
+    && !(excludeIds?.has(d.id)),
+  );
   if (nonGlobal.length === 0) return null;
 
   // Find currently applied pct for selector discounts
@@ -672,10 +635,11 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
 
 // ─── Global Discounts Panel (right sidebar) ───────────────────────────────────
 
-function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
+function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds }: {
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
+  excludeIds?: Set<number>;
 }) {
   const qc = useQueryClient();
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
@@ -687,7 +651,11 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable }: {
   });
 
   // Exclude selectors/manual — they're handled in ItemDescuentosPanel and shown as table columns
-  const descuentos = allDescuentos.filter((d) => d.tipoAplicacion === 'global' && d.modo !== 'selector' && d.modo !== 'manual');
+  // Also exclude section-variable discounts
+  const descuentos = allDescuentos.filter((d) =>
+    d.tipoAplicacion === 'global' && d.modo !== 'selector' && d.modo !== 'manual'
+    && !(excludeIds?.has(d.id)),
+  );
   if (descuentos.length === 0) return null;
 
   function isApplied(desc: Descuento) {
@@ -872,6 +840,19 @@ export function CotizacionEditorPage() {
   // Discount state lifted to page level
   const [activeDiscountIds, setActiveDiscountIds] = useState<Set<number>>(new Set());
   const [pendingDiscountIds, setPendingDiscountIds] = useState<Set<number>>(new Set());
+
+  // Section state
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const [showSeccionModal, setShowSeccionModal] = useState(false);
+  const [seccionVariables, setSeccionVariables] = useState<Set<number>>(new Set());
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showAddMenu) return;
+    const handler = () => setShowAddMenu(false);
+    const timer = setTimeout(() => document.addEventListener('click', handler), 0);
+    return () => { clearTimeout(timer); document.removeEventListener('click', handler); };
+  }, [showAddMenu]);
 
   const { data: cotizacion, isLoading: loadingCot } = useQuery({
     queryKey: ['cotizacion', cotizacionId],
@@ -1122,6 +1103,38 @@ export function CotizacionEditorPage() {
     onSuccess: () => qc.refetchQueries({ queryKey: ['cotizacion', cotizacionId] }),
   });
 
+  const seccionMut = useMutation({
+    mutationFn: (body: { nombre?: string; descuentosVariables: number[] }) =>
+      cotizacionesApi.crearSeccion(cotizacionId, selectedVersionId!, body),
+    onSuccess: () => {
+      invalidateVersion();
+      setShowSeccionModal(false);
+      setSeccionVariables(new Set());
+    },
+  });
+
+  const deleteSeccionMut = useMutation({
+    mutationFn: (seccionId: number) =>
+      cotizacionesApi.deleteSeccion(cotizacionId, selectedVersionId!, seccionId),
+    onSuccess: () => invalidateVersion(),
+  });
+
+  // IDs of discounts managed by sections (should be hidden from the right panel)
+  const hasSecciones = (version?.secciones ?? []).length > 0;
+  const sectionVariableDescIds = useMemo(() => {
+    const ids = new Set<number>();
+    if (!version || !hasSecciones) return ids;
+    for (const item of version.items ?? []) {
+      for (const d of item.descuentos ?? []) {
+        if (d.seccionId && d.descuentoId) ids.add(d.descuentoId);
+      }
+    }
+    for (const d of version.descuentos ?? []) {
+      if (d.seccionId && d.descuentoId) ids.add(d.descuentoId);
+    }
+    return ids;
+  }, [version, hasSecciones]);
+
   if (loadingCot) {
     return (
       <Layout>
@@ -1156,9 +1169,9 @@ export function CotizacionEditorPage() {
   return (
     <Layout title={cotizacion.numero} fullHeight>
       <div className="h-full flex flex-col gap-3 p-5 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
+        {/* Header + Client info */}
+        <div className="flex items-center justify-between shrink-0 flex-wrap gap-y-1">
+          <div className="flex items-center gap-3 flex-wrap">
             <button onClick={() => navigate('/cotizaciones')} className="text-gray-400 hover:text-gray-700">←</button>
             <h1 className="text-xl font-semibold text-gray-900">{cotizacion.numero}</h1>
             <Badge label={cotizacion.estado} />
@@ -1167,8 +1180,19 @@ export function CotizacionEditorPage() {
                 v{version.version}{version.nombre ? ` — ${version.nombre}` : ''}
               </span>
             )}
+            <span className="text-gray-300">|</span>
+            <span className="text-sm font-medium text-gray-700">{cotizacion.cliente?.nombre}</span>
+            {cotizacion.cliente?.razonSocial && (
+              <span className="text-sm text-gray-500">{cotizacion.cliente.razonSocial}</span>
+            )}
+            {cotizacion.cliente?.cuit && (
+              <span className="text-xs text-gray-400 font-mono">CUIT: {cotizacion.cliente.cuit}</span>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">
+              {new Date(cotizacion.fechaCreacion).toLocaleDateString('es-AR', { dateStyle: 'long' })}
+            </span>
             {version && totals && (
               <button
                 onClick={pngExport.download}
@@ -1184,17 +1208,39 @@ export function CotizacionEditorPage() {
               📋 Versiones
             </button>
             {isLatestVersion && (
-              <button
-                onClick={() => {
-                  const nombre = prompt('Nombre para la nueva versión (opcional):');
-                  if (nombre === null) return; // cancelled
-                  newVersionMut.mutate(nombre.trim() || undefined);
-                }}
-                disabled={newVersionMut.isPending}
-                className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-              >
-                {newVersionMut.isPending ? <Spinner /> : '+ Nueva versión'}
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowAddMenu((v) => !v)}
+                  disabled={newVersionMut.isPending || seccionMut.isPending}
+                  className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                >
+                  {newVersionMut.isPending || seccionMut.isPending ? <Spinner /> : '+'}
+                </button>
+                {showAddMenu && (
+                  <div className="absolute right-0 top-full mt-1 bg-white border rounded-lg shadow-lg z-20 min-w-[180px]">
+                    <button
+                      onClick={() => {
+                        setShowAddMenu(false);
+                        const nombre = prompt('Nombre para la nueva versión (opcional):');
+                        if (nombre === null) return;
+                        newVersionMut.mutate(nombre.trim() || undefined);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 rounded-t-lg"
+                    >
+                      Nueva versión
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowAddMenu(false);
+                        setShowSeccionModal(true);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 rounded-b-lg border-t"
+                    >
+                      Agregar sección
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
             <select
               value={cotizacion.estado}
@@ -1210,20 +1256,6 @@ export function CotizacionEditorPage() {
               )}
             </select>
           </div>
-        </div>
-
-        {/* Client info */}
-        <div className="bg-white rounded-xl border px-4 py-2.5 text-sm text-gray-600 flex flex-wrap items-center gap-x-4 gap-y-1 shrink-0">
-          <span className="font-medium text-gray-800">{cotizacion.cliente?.nombre}</span>
-          {cotizacion.cliente?.razonSocial && (
-            <span className="text-gray-500">{cotizacion.cliente.razonSocial}</span>
-          )}
-          {cotizacion.cliente?.cuit && (
-            <span className="text-gray-400 font-mono text-xs">CUIT: {cotizacion.cliente.cuit}</span>
-          )}
-          <span className="text-gray-400 ml-auto">
-            {new Date(cotizacion.fechaCreacion).toLocaleDateString('es-AR', { dateStyle: 'long' })}
-          </span>
         </div>
 
         {/* Cultivo selector */}
@@ -1248,7 +1280,153 @@ export function CotizacionEditorPage() {
                   ? 'Seleccioná un cultivo arriba para comenzar a cargar ítems.'
                   : 'Sin ítems en esta versión.'}
               </div>
+            ) : (version?.secciones ?? []).length > 0 ? (
+              /* ── Renderizado con secciones ── */
+              (() => {
+                // Identify variable discount IDs (those with seccionId !== null)
+                const variableDescIds = new Set<number>();
+                for (const item of version!.items ?? []) {
+                  for (const d of item.descuentos) {
+                    if (d.seccionId && d.descuentoId) variableDescIds.add(d.descuentoId);
+                  }
+                }
+                for (const d of version!.descuentos ?? []) {
+                  if (d.seccionId && d.descuentoId) variableDescIds.add(d.descuentoId);
+                }
+                const variableDescs = allDescuentos.filter((d) => variableDescIds.has(d.id));
+
+                return (version!.secciones ?? [])
+                  .sort((a, b) => a.orden - b.orden)
+                  .map((seccion) => {
+                    const secTotal = totals?.secciones?.find((s) => s.seccionId === seccion.id);
+
+                    const getSeccionPct = (descId: number): number | null => {
+                      for (const item of version!.items ?? []) {
+                        const found = item.descuentos.find(
+                          (d) => d.descuentoId === descId && d.seccionId === seccion.id,
+                        );
+                        if (found) return Number(found.valorPorcentaje);
+                      }
+                      const globalFound = (version!.descuentos ?? []).find(
+                        (d) => d.descuentoId === descId && d.seccionId === seccion.id,
+                      );
+                      if (globalFound) return Number(globalFound.valorPorcentaje);
+                      return null;
+                    };
+
+                    // Render variable discount selectors inline
+                    const discountSelectors = variableDescs.map((desc) => {
+                      const appliedPct = getSeccionPct(desc.id);
+                      const isSelMode = desc.modo === 'selector';
+                      const reglasSorted = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
+                      const currentReglaId = isSelMode && appliedPct != null
+                        ? (reglasSorted.find((r) => Number(r.valor) === appliedPct)?.id ?? '')
+                        : '';
+
+                      const updatePct = async (pct: number) => {
+                        await cotizacionesApi.updateSeccionDescuento(
+                          cotizacionId, version!.id, seccion.id, desc.id, pct,
+                        );
+                        invalidateVersion();
+                      };
+
+                      return (
+                        <span key={desc.id} className="inline-flex items-center gap-1.5 bg-orange-50 rounded px-2 py-0.5">
+                          <span className="text-xs font-medium text-gray-600">{desc.nombre}:</span>
+                          {isSelMode ? (
+                            <select
+                              disabled={!isEditable}
+                              value={currentReglaId}
+                              onChange={(e) => {
+                                const regla = reglasSorted.find((r) => r.id === Number(e.target.value));
+                                updatePct(regla ? Number(regla.valor) : 0);
+                              }}
+                              className="text-xs border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
+                            >
+                              <option value="">— Ninguno —</option>
+                              {reglasSorted.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                  {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <>
+                              <input
+                                type="number"
+                                disabled={!isEditable}
+                                defaultValue={appliedPct ?? 0}
+                                key={`${seccion.id}-${desc.id}-${appliedPct}`}
+                                min={0} max={100} step={0.5}
+                                onBlur={(e) => {
+                                  const pct = Math.max(0, Math.min(100, Number(e.target.value)));
+                                  if (pct !== appliedPct) updatePct(pct);
+                                }}
+                                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                className="w-14 text-xs border rounded px-1.5 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
+                              />
+                              <span className="text-xs text-gray-400">%</span>
+                            </>
+                          )}
+                        </span>
+                      );
+                    });
+
+                    return (
+                      <div key={seccion.id} className="space-y-4">
+                        {/* Section label + selectors inline, directly above tables */}
+                        <div className="flex items-center gap-2 flex-wrap px-1">
+                          <h3 className="text-sm font-semibold text-gray-700">
+                            {seccion.nombre ?? `Sección ${seccion.orden + 1}`}
+                          </h3>
+                          {discountSelectors}
+                          {secTotal && (
+                            <span className="text-xs text-gray-500 ml-auto">
+                              Total: ${secTotal.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          )}
+                          {isEditable && (version!.secciones ?? []).length > 1 && (
+                            <button
+                              onClick={() => deleteSeccionMut.mutate(seccion.id)}
+                              disabled={deleteSeccionMut.isPending}
+                              className="text-xs text-red-400 hover:text-red-600"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                        {activeCultivos.map((cultivo) => {
+                          const stats = cultivoStats.get(cultivo.id) ?? { bolsas: 0, monto: 0 };
+                          const itemsWithSeccion = (version?.items ?? [])
+                            .filter((i) => i.cultivoId === cultivo.id)
+                            .map((item) => ({
+                              ...item,
+                              descuentos: item.descuentos.filter(
+                                (d) => !d.seccionId || d.seccionId === seccion.id,
+                              ),
+                            }));
+                          return (
+                            <CultivoSection
+                              key={`${seccion.id}-${cultivo.id}`}
+                              cultivo={cultivo}
+                              items={itemsWithSeccion}
+                              cotizacionId={cotizacionId}
+                              version={version!}
+                              isEditable={isEditable}
+                              activeDescuentos={activeDescuentos}
+                              cultivoVolumen={stats.bolsas}
+                              cultivoMonto={stats.monto}
+                              totalBolsas={totalBolsas}
+                            />
+                          );
+                        })}
+                        <hr className="border-gray-200" />
+                      </div>
+                    );
+                  });
+              })()
             ) : (
+              /* ── Renderizado sin secciones (default) ── */
               activeCultivos.map((cultivo) => {
                 const stats = cultivoStats.get(cultivo.id) ?? { bolsas: 0, monto: 0 };
                 return (
@@ -1281,16 +1459,15 @@ export function CotizacionEditorPage() {
               onToggle={toggleDiscount}
               onApplySelector={applySelector}
               version={version}
+              excludeIds={sectionVariableDescIds}
             />
             {version && (
               <DescuentosGlobalesPanel
                 cotizacionId={cotizacionId}
                 version={version}
                 isEditable={isEditable}
+                excludeIds={sectionVariableDescIds}
               />
-            )}
-            {selectedVersionId && (
-              <TotalsPanel cotizacionId={cotizacionId} versionId={selectedVersionId} />
             )}
             <FeedPanelInline />
             {showHistory && (
@@ -1306,6 +1483,56 @@ export function CotizacionEditorPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Modal crear sección ── */}
+      {showSeccionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-[440px] p-6 space-y-4">
+            <h3 className="text-base font-semibold text-gray-900">Agregar sección</h3>
+            <p className="text-sm text-gray-600">
+              Seleccioná los descuentos que van a <strong>variar</strong> entre secciones.
+              Los demás se comparten automáticamente.
+            </p>
+            <div className="max-h-60 overflow-y-auto space-y-2">
+              {allDescuentos.filter((d) => activeDiscountIds.has(d.id)).map((d) => (
+                <label key={d.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={seccionVariables.has(d.id)}
+                    onChange={() => setSeccionVariables((prev) => {
+                      const n = new Set(prev);
+                      n.has(d.id) ? n.delete(d.id) : n.add(d.id);
+                      return n;
+                    })}
+                  />
+                  <span>{d.nombre}</span>
+                  <span className="text-xs text-gray-400 ml-auto">
+                    {d.valorPorcentaje != null ? `${d.valorPorcentaje}%` : d.modo}
+                  </span>
+                </label>
+              ))}
+              {allDescuentos.filter((d) => activeDiscountIds.has(d.id)).length === 0 && (
+                <p className="text-sm text-gray-400 italic">No hay descuentos activos en esta versión.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => { setShowSeccionModal(false); setSeccionVariables(new Set()); }}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => seccionMut.mutate({ descuentosVariables: [...seccionVariables] })}
+                disabled={seccionMut.isPending || seccionVariables.size === 0}
+                className="px-4 py-2 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
+              >
+                {seccionMut.isPending ? <Spinner /> : 'Crear sección'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Confirmación de cambio de estado ── */}
       {confirmEstado && (() => {

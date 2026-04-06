@@ -99,10 +99,18 @@ export interface DescuentoAplicado {
 // ─── Cotizaciones ─────────────────────────────────────────────────────────────
 export type EstadoCotizacion = 'borrador' | 'enviada' | 'aprobada' | 'rechazada' | 'cerrada';
 
+export interface CotizacionVersionSeccion {
+  id: number;
+  versionId: number;
+  nombre: string | null;
+  orden: number;
+}
+
 export interface CotizacionItemDescuento {
   id: number;
   descuentoId: number;
   valorPorcentaje: number;
+  seccionId: number | null;
   descuento?: Descuento;
 }
 export interface CotizacionItem {
@@ -122,6 +130,7 @@ export interface CotizacionDescuento {
   id: number;
   descuentoId: number;
   valorPorcentaje: number;
+  seccionId: number | null;
   descuento?: Descuento;
 }
 export interface CotizacionVersion {
@@ -134,6 +143,7 @@ export interface CotizacionVersion {
   total: number;
   items: CotizacionItem[];
   descuentos: CotizacionDescuento[];
+  secciones?: CotizacionVersionSeccion[];
   usuario?: Usuario;
 }
 export interface Cotizacion {
@@ -147,6 +157,17 @@ export interface Cotizacion {
   usuario?: Usuario;
   versiones?: CotizacionVersion[];
 }
+export interface SeccionTotalDesglose {
+  seccionId: number;
+  nombre: string | null;
+  subtotalItems: number;
+  descuentosItems: number;
+  subtotalNeto: number;
+  descuentosGlobales: number;
+  total: number;
+  desglose: object[];
+}
+
 export interface TotalDesglose {
   subtotalItems: number;
   descuentosItems: number;
@@ -154,6 +175,7 @@ export interface TotalDesglose {
   descuentosGlobales: number;
   total: number;
   desglose: object[];
+  secciones?: SeccionTotalDesglose[];
 }
 
 // ─── Mensajes ─────────────────────────────────────────────────────────────────

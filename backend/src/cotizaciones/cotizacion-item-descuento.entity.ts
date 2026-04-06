@@ -7,6 +7,7 @@ import {
 } from 'typeorm';
 import { Descuento } from '../descuentos/descuento.entity';
 import { CotizacionItem } from './cotizacion-item.entity';
+import { CotizacionVersionSeccion } from './cotizacion-version-seccion.entity';
 
 @Entity('cotizacion_item_descuentos')
 export class CotizacionItemDescuento {
@@ -27,7 +28,14 @@ export class CotizacionItemDescuento {
   @JoinColumn({ name: 'cotizacion_item_id' })
   item: CotizacionItem;
 
+  @Column({ name: 'seccion_id', nullable: true })
+  seccionId: number | null;
+
   @ManyToOne(() => Descuento, (d) => d.itemDescuentos)
   @JoinColumn({ name: 'descuento_id' })
   descuento: Descuento;
+
+  @ManyToOne(() => CotizacionVersionSeccion, { nullable: true })
+  @JoinColumn({ name: 'seccion_id' })
+  seccion: CotizacionVersionSeccion | null;
 }

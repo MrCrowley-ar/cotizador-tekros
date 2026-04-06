@@ -38,7 +38,6 @@ export function useCotizacionExportPng({
     }
   }, [cotizacion, version]);
 
-  // If data not ready, return empty node
   if (!cotizacion || !version || !totals) {
     return { node: null, download };
   }
@@ -47,43 +46,154 @@ export function useCotizacionExportPng({
   const fecha = new Date().toLocaleDateString('es-AR');
   const cliente = cotizacion.cliente;
 
-  // Total bolsas & precio ponderado
   const totalBolsas = items.reduce((s, i) => s + Number(i.bolsas), 0);
   const totalMonto = items.reduce((s, i) => s + Number(i.precioBase), 0);
   const precioPonderado = totalBolsas > 0 ? totalMonto / totalBolsas : 0;
 
-  // Medio de pago: find applied global selector discount
-  const globalSelectorDescs = allDescuentos.filter(
-    (d) => d.tipoAplicacion === 'global' && d.modo === 'selector',
-  );
-  let medioDePago = '—';
-  for (const desc of globalSelectorDescs) {
-    // Check per-item (selectors moved to per-item application)
-    const appliedItem = items[0]?.descuentos.find((d) => d.descuentoId === desc.id);
-    // Also check global descuentos
-    const appliedGlobal = version.descuentos.find((d) => d.descuentoId === desc.id);
-    const appliedPct = appliedItem
-      ? Number(appliedItem.valorPorcentaje)
-      : appliedGlobal
-        ? Number(appliedGlobal.valorPorcentaje)
-        : null;
-    if (appliedPct !== null) {
-      const regla = [...(desc.reglas ?? [])]
-        .sort((a, b) => a.prioridad - b.prioridad)
-        .find((r) => Number(r.valor) === appliedPct);
-      medioDePago = regla?.nombre ?? `${appliedPct}%`;
-      break;
-    }
+  // Group items by cultivo
+  const cultivoMap = new Map<string, typeof items>();
+  for (const item of items) {
+    const name = item.cultivo?.nombre ?? `Cultivo ${item.cultivoId}`;
+    const arr = cultivoMap.get(name) ?? [];
+    arr.push(item);
+    cultivoMap.set(name, arr);
   }
+  const cultivoGroups = [...cultivoMap.entries()];
 
-  // Compute item subtotal after discounts — same logic as ItemRow
-  function getItemSubtotal(item: typeof items[0]) {
+  // Compute item subtotal after discounts, optionally filtering by seccionId
+  function getItemSubtotal(item: typeof items[0], seccionId?: number) {
     const bruto = Number(item.precioBase);
+    const descs = seccionId
+      ? item.descuentos.filter((d) => !d.seccionId || d.seccionId === seccionId)
+      : item.descuentos;
     return activeDescuentos.reduce((acc, d) => {
-      const applied = item.descuentos.find((x) => x.descuentoId === d.id);
+      const applied = descs.find((x) => x.descuentoId === d.id);
       if (!applied) return acc;
       return acc * (1 - Number(applied.valorPorcentaje) / 100);
     }, bruto);
+  }
+
+  // Detect sections
+  const secciones = version.secciones ?? [];
+  const hasSecciones = secciones.length > 0;
+
+  // Resolve section label from variable selector discount
+  function getSeccionLabel(seccion: typeof secciones[0]): string {
+    // Find the selector discount applied in this section
+    for (const desc of allDescuentos) {
+      if (desc.modo !== 'selector') continue;
+      // Check item descuentos for this section
+      for (const item of items) {
+        const applied = item.descuentos.find(
+          (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
+        );
+        if (applied) {
+          const pct = Number(applied.valorPorcentaje);
+          const regla = [...(desc.reglas ?? [])]
+            .sort((a, b) => a.prioridad - b.prioridad)
+            .find((r) => Number(r.valor) === pct);
+          return regla?.nombre ?? `${desc.nombre} ${pct}%`;
+        }
+      }
+      // Check global descuentos
+      const appliedGlobal = (version?.descuentos ?? []).find(
+        (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
+      );
+      if (appliedGlobal) {
+        const pct = Number(appliedGlobal.valorPorcentaje);
+        const regla = [...(desc.reglas ?? [])]
+          .sort((a, b) => a.prioridad - b.prioridad)
+          .find((r) => Number(r.valor) === pct);
+        return regla?.nombre ?? `${desc.nombre} ${pct}%`;
+      }
+    }
+    return seccion.nombre ?? `Sección ${seccion.orden + 1}`;
+  }
+
+  // Medio de pago for non-section mode
+  let medioDePago = '—';
+  if (!hasSecciones) {
+    const globalSelectorDescs = allDescuentos.filter(
+      (d) => d.tipoAplicacion === 'global' && d.modo === 'selector',
+    );
+    for (const desc of globalSelectorDescs) {
+      const appliedItem = items[0]?.descuentos.find((d) => d.descuentoId === desc.id);
+      const appliedGlobal = (version?.descuentos ?? []).find((d) => d.descuentoId === desc.id);
+      const appliedPct = appliedItem
+        ? Number(appliedItem.valorPorcentaje)
+        : appliedGlobal
+          ? Number(appliedGlobal.valorPorcentaje)
+          : null;
+      if (appliedPct !== null) {
+        const regla = [...(desc.reglas ?? [])]
+          .sort((a, b) => a.prioridad - b.prioridad)
+          .find((r) => Number(r.valor) === appliedPct);
+        medioDePago = regla?.nombre ?? `${appliedPct}%`;
+        break;
+      }
+    }
+  }
+
+  // Table styles
+  const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontWeight: 'bold', borderBottom: '2px solid #333' };
+  const thRight: React.CSSProperties = { ...thStyle, textAlign: 'right' };
+  const thCenter: React.CSSProperties = { ...thStyle, textAlign: 'center' };
+  const tdStyle: React.CSSProperties = { padding: '6px 10px', borderBottom: '1px solid #e5e5e5' };
+  const tdRight: React.CSSProperties = { ...tdStyle, textAlign: 'right' };
+  const tdCenter: React.CSSProperties = { ...tdStyle, textAlign: 'center' };
+
+  function renderCultivoTable(cultivoName: string, cultivoItems: typeof items, seccionId?: number) {
+    let cultivoTotal = 0;
+    const rows = cultivoItems.map((item) => {
+      const subtotal = getItemSubtotal(item, seccionId);
+      const totalItem = subtotal * Number(item.bolsas);
+      cultivoTotal += totalItem;
+      return (
+        <tr key={`${seccionId ?? 0}-${item.id}`}>
+          <td style={tdStyle}>{item.hibrido?.nombre ?? item.hibridoId}</td>
+          <td style={tdCenter}>{item.banda?.nombre ?? item.bandaId}</td>
+          <td style={tdCenter}>{Number(item.bolsas).toLocaleString('es-AR')}</td>
+          <td style={tdRight}>{fmt(subtotal)}</td>
+          <td style={tdRight}>{fmt(totalItem)}</td>
+        </tr>
+      );
+    });
+
+    return (
+      <div key={`${seccionId ?? 0}-${cultivoName}`} style={{ marginBottom: '20px' }}>
+        <div style={{
+          fontSize: '14px',
+          fontWeight: 'bold',
+          color: '#333',
+          padding: '6px 10px',
+          background: '#f3f4f6',
+          borderRadius: '4px',
+          marginBottom: '4px',
+        }}>
+          {cultivoName}
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Híbrido</th>
+              <th style={thCenter}>Banda</th>
+              <th style={thCenter}>Bolsas</th>
+              <th style={thRight}>Precio USD</th>
+              <th style={thRight}>Total USD</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows}
+            <tr style={{ borderTop: '2px solid #ccc' }}>
+              <td colSpan={4} style={{ ...tdStyle, fontWeight: 'bold', textAlign: 'right', borderBottom: 'none' }}>
+                Subtotal {cultivoName}
+              </td>
+              <td style={{ ...tdRight, fontWeight: 'bold', borderBottom: 'none' }}>{fmt(cultivoTotal)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    );
   }
 
   const node = (
@@ -99,53 +209,91 @@ export function useCotizacionExportPng({
         padding: '40px',
       }}
     >
-      <h1 style={{ textAlign: 'center', fontSize: '22px', fontWeight: 'bold', marginBottom: '24px' }}>
+      {/* Header */}
+      <h1 style={{ textAlign: 'center', fontSize: '22px', fontWeight: 'bold', marginBottom: '4px' }}>
         Cotización Tekros
       </h1>
-
-      <div style={{ marginBottom: '24px', lineHeight: '1.8' }}>
-        <div>Fecha: {fecha}</div>
-        <div>Cliente: {cliente?.razonSocial ?? cliente?.nombre ?? '—'}</div>
-        <div>CUIT: {cliente?.cuit ?? '—'}</div>
-        <div>Total Bolsas: {totalBolsas.toLocaleString('es-AR')}</div>
-        <div>Precio Promedio: {fmt(precioPonderado)} USD</div>
-        <div>Total USD: {fmt(totals.total)}</div>
-        <div>Medio de pago: {medioDePago}</div>
+      <div style={{ textAlign: 'center', fontSize: '12px', color: '#666', marginBottom: '24px' }}>
+        {cotizacion.numero} — v{version.version} — {fecha}
       </div>
 
-      <table
-        style={{
-          width: '100%',
-          borderCollapse: 'collapse',
-          marginBottom: '16px',
-          fontSize: '13px',
-        }}
-      >
-        <thead>
-          <tr style={{ borderBottom: '2px solid #333' }}>
-            <th style={{ textAlign: 'left', padding: '8px', fontWeight: 'bold' }}>Híbrido</th>
-            <th style={{ textAlign: 'center', padding: '8px', fontWeight: 'bold' }}>Banda</th>
-            <th style={{ textAlign: 'center', padding: '8px', fontWeight: 'bold' }}>Bolsas</th>
-            <th style={{ textAlign: 'right', padding: '8px', fontWeight: 'bold' }}>Precio USD</th>
-            <th style={{ textAlign: 'right', padding: '8px', fontWeight: 'bold' }}>Total USD</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => {
-            const subtotal = getItemSubtotal(item);
-            const totalItem = subtotal * Number(item.bolsas);
-            return (
-              <tr key={item.id} style={{ borderBottom: '1px solid #ddd' }}>
-                <td style={{ padding: '8px' }}>{item.hibrido?.nombre ?? item.hibridoId}</td>
-                <td style={{ textAlign: 'center', padding: '8px' }}>{item.banda?.nombre ?? item.bandaId}</td>
-                <td style={{ textAlign: 'center', padding: '8px' }}>{Number(item.bolsas).toLocaleString('es-AR')}</td>
-                <td style={{ textAlign: 'right', padding: '8px' }}>{fmt(subtotal)}</td>
-                <td style={{ textAlign: 'right', padding: '8px' }}>{fmt(totalItem)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {/* Client info */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        marginBottom: '24px',
+        padding: '12px 16px',
+        background: '#f9fafb',
+        borderRadius: '6px',
+        fontSize: '13px',
+        lineHeight: '1.7',
+      }}>
+        <div>
+          <div><strong>Cliente:</strong> {cliente?.razonSocial ?? cliente?.nombre ?? '—'}</div>
+          <div><strong>CUIT:</strong> {cliente?.cuit ?? '—'}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div><strong>Total Bolsas:</strong> {totalBolsas.toLocaleString('es-AR')}</div>
+          <div><strong>Precio Promedio:</strong> {fmt(precioPonderado)} USD</div>
+          {!hasSecciones && <div><strong>Medio de pago:</strong> {medioDePago}</div>}
+        </div>
+      </div>
+
+      {/* Content: with or without sections */}
+      {hasSecciones ? (
+        [...secciones].sort((a, b) => a.orden - b.orden).map((seccion) => {
+          const label = getSeccionLabel(seccion);
+          const secTotal = totals.secciones?.find((s) => s.seccionId === seccion.id);
+          return (
+            <div key={seccion.id} style={{ marginBottom: '32px' }}>
+              {/* Section title */}
+              <div style={{
+                fontSize: '16px',
+                fontWeight: 'bold',
+                color: '#fff',
+                background: '#1f2937',
+                padding: '10px 16px',
+                borderRadius: '6px',
+                marginBottom: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <span>{label}</span>
+                {secTotal && (
+                  <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
+                    Total: {fmt(secTotal.total)} USD
+                  </span>
+                )}
+              </div>
+              {cultivoGroups.map(([name, cultivoItems]) =>
+                renderCultivoTable(name, cultivoItems, seccion.id),
+              )}
+            </div>
+          );
+        })
+      ) : (
+        <>
+          {cultivoGroups.map(([name, cultivoItems]) =>
+            renderCultivoTable(name, cultivoItems),
+          )}
+          {/* Grand total */}
+          <div style={{
+            marginTop: '8px',
+            padding: '12px 16px',
+            background: '#1f2937',
+            color: '#fff',
+            borderRadius: '6px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: '15px',
+            fontWeight: 'bold',
+          }}>
+            <span>Total</span>
+            <span>{fmt(totals.total)} USD</span>
+          </div>
+        </>
+      )}
     </div>
     </div>
   );

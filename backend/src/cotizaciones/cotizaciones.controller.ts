@@ -15,7 +15,9 @@ import { RolUsuario, Usuario } from '../usuarios/usuario.entity';
 import { AddItemDto } from './dto/add-item.dto';
 import { ApplyDescuentoDto } from './dto/apply-descuento.dto';
 import { CreateCotizacionDto } from './dto/create-cotizacion.dto';
+import { CreateSeccionDto } from './dto/create-seccion.dto';
 import { UpdateEstadoDto } from './dto/update-estado.dto';
+import { UpdateSeccionDescuentoDto } from './dto/update-seccion-descuento.dto';
 import { CotizacionesService } from './cotizaciones.service';
 
 @Controller('cotizaciones')
@@ -151,5 +153,40 @@ export class CotizacionesController {
     @CurrentUser() user: Usuario,
   ) {
     return this.service.eliminarDescuentoGlobal(versionId, did, user.id);
+  }
+
+  // ─── SECCIONES ────────────────────────────────────────────────────────────
+
+  @Get(':id/versiones/:versionId/secciones')
+  getSecciones(@Param('versionId', ParseIntPipe) versionId: number) {
+    return this.service.getSecciones(versionId);
+  }
+
+  @Post(':id/versiones/:versionId/secciones')
+  crearSeccion(
+    @Param('versionId', ParseIntPipe) versionId: number,
+    @Body() dto: CreateSeccionDto,
+    @CurrentUser() user: Usuario,
+  ) {
+    return this.service.crearSeccion(versionId, dto, user.id);
+  }
+
+  @Delete(':id/versiones/:versionId/secciones/:seccionId')
+  @HttpCode(204)
+  eliminarSeccion(
+    @Param('versionId', ParseIntPipe) versionId: number,
+    @Param('seccionId', ParseIntPipe) seccionId: number,
+    @CurrentUser() user: Usuario,
+  ) {
+    return this.service.eliminarSeccion(versionId, seccionId, user.id);
+  }
+
+  @Patch(':id/versiones/:versionId/secciones/:seccionId/descuentos/:did')
+  updateSeccionDescuento(
+    @Param('seccionId', ParseIntPipe) seccionId: number,
+    @Param('did', ParseIntPipe) did: number,
+    @Body() dto: UpdateSeccionDescuentoDto,
+  ) {
+    return this.service.updateSeccionDescuento(seccionId, did, dto);
   }
 }
