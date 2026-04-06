@@ -243,7 +243,19 @@ export function useCotizacionExportPng({
       {hasSecciones ? (
         [...secciones].sort((a, b) => a.orden - b.orden).map((seccion) => {
           const label = getSeccionLabel(seccion);
-          const secTotal = totals.secciones?.find((s) => s.seccionId === seccion.id);
+          // Get the variable discount percentage for this section
+          const seccionPcts: string[] = [];
+          for (const desc of allDescuentos) {
+            for (const item of items) {
+              const applied = item.descuentos.find(
+                (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
+              );
+              if (applied) {
+                seccionPcts.push(`${Number(applied.valorPorcentaje)}%`);
+                break;
+              }
+            }
+          }
           return (
             <div key={seccion.id} style={{ marginBottom: '32px' }}>
               {/* Section title */}
@@ -255,16 +267,8 @@ export function useCotizacionExportPng({
                 padding: '10px 16px',
                 borderRadius: '6px',
                 marginBottom: '16px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
               }}>
-                <span>{label}</span>
-                {secTotal && (
-                  <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
-                    Total: {fmt(secTotal.total)} USD
-                  </span>
-                )}
+                {label}{seccionPcts.length > 0 ? ` (${seccionPcts.join(', ')})` : ''}
               </div>
               {cultivoGroups.map(([name, cultivoItems]) =>
                 renderCultivoTable(name, cultivoItems, seccion.id),
