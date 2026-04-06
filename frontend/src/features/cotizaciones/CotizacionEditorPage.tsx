@@ -1057,7 +1057,7 @@ export function CotizacionEditorPage() {
               subtotal: Number(item.subtotal),
               ratioCultivo: getRatioCultivo(item.cultivoId),
               volumen: stats.bolsas,
-              monto: stats.monto,
+              monto: Math.round(stats.monto * 1e4) / 1e4,
               ...(precioPonderado != null ? { precioPonderado } : {}),
               subtotalItems,
               descuentosItems: descuentosItemsVal,
