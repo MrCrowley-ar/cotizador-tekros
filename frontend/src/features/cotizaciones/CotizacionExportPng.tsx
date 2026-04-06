@@ -47,7 +47,10 @@ export function useCotizacionExportPng({
   const cliente = cotizacion.cliente;
 
   const totalBolsas = items.reduce((s, i) => s + Number(i.bolsas), 0);
-  const totalMonto = items.reduce((s, i) => s + Number(i.precioBase), 0);
+  const totalMonto = items.reduce((s, item) => {
+    const subtUnit = getItemSubtotal(item);
+    return s + subtUnit * Number(item.bolsas);
+  }, 0);
   const precioPonderado = totalBolsas > 0 ? totalMonto / totalBolsas : 0;
 
   // Group items by cultivo
