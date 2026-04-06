@@ -210,7 +210,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
   }
 
   async function saveManualPct(descId: number, pctStr: string) {
-    const pct = Number(pctStr);
+    const pct = Math.round(Number(pctStr) * 100) / 100;
     if (isNaN(pct) || pct < 0 || pct > 100) return;
     // Remove existing then re-apply
     const existing = item.descuentos.find((x) => x.descuentoId === descId);
@@ -246,6 +246,19 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
         if (isManual && isEditable) {
           const currentPct = applied ? String(Number(applied.valorPorcentaje)) : '0';
           const editing = editingManual[d.id];
+          const isZero = currentPct === '0' && editing === undefined;
+
+          if (isZero) {
+            return (
+              <td key={d.id} className="px-1 py-1 text-sm text-right whitespace-nowrap">
+                <span
+                  onClick={() => setEditingManual((prev) => ({ ...prev, [d.id]: '' }))}
+                  className="text-gray-300 text-xs cursor-pointer select-none"
+                >—</span>
+              </td>
+            );
+          }
+
           return (
             <td key={d.id} className="px-1 py-1 text-sm text-right whitespace-nowrap">
               <div className="inline-flex items-center gap-0.5">
@@ -254,10 +267,15 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
                   min={0}
                   max={100}
                   step={0.01}
+                  autoFocus={editing === ''}
                   value={editing ?? currentPct}
                   onChange={(e) => setEditingManual((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                  onFocus={(e) => {
+                    if (e.target.value === '0') setEditingManual((prev) => ({ ...prev, [d.id]: '' }));
+                  }}
                   onBlur={(e) => {
-                    if (e.target.value !== currentPct) saveManualPct(d.id, e.target.value);
+                    const val = e.target.value === '' ? '0' : String(Math.round(Number(e.target.value) * 100) / 100);
+                    if (val !== currentPct) saveManualPct(d.id, val);
                     else setEditingManual((prev) => { const n = { ...prev }; delete n[d.id]; return n; });
                   }}
                   onKeyDown={(e) => {
@@ -902,8 +920,13 @@ export function CotizacionEditorPage() {
 
   useEffect(() => {
     if (!version) return;
-    setActiveDiscountIds(serverDiscountIds);
-  }, [serverDiscountIds]);
+    const next = new Set(serverDiscountIds);
+    // Selector discounts are always active
+    for (const d of allDescuentos) {
+      if (d.modo === 'selector') next.add(d.id);
+    }
+    setActiveDiscountIds(next);
+  }, [serverDiscountIds, allDescuentos]);
 
   useEffect(() => {
     if (selectedVersionId) {
@@ -929,15 +952,21 @@ export function CotizacionEditorPage() {
     activeDescuentos,
   });
 
-  // Stats por cultivo: volumen (bolsas), monto (suma subtotales), precio ponderado
+  // Stats por cultivo: volumen (bolsas), monto (suma subtotales con descuentos × bolsas), precio ponderado
   // Se guardan como variables disponibles para el evaluador de descuentos
   const cultivoStats = useMemo(() => {
     const items = version?.items ?? [];
     const map = new Map<number, { bolsas: number; monto: number }>();
     for (const item of items) {
       const cur = map.get(item.cultivoId) ?? { bolsas: 0, monto: 0 };
-      cur.bolsas += Number(item.bolsas);
-      cur.monto += Number(item.precioBase);
+      const bolsas = Number(item.bolsas);
+      cur.bolsas += bolsas;
+      // Monto = precio con descuentos × bolsas
+      const precioConDesc = (item.descuentos ?? []).reduce(
+        (acc, d) => acc * (1 - Number(d.valorPorcentaje) / 100),
+        Number(item.precioBase),
+      );
+      cur.monto += precioConDesc * bolsas;
       map.set(item.cultivoId, cur);
     }
     return map;
@@ -1490,11 +1519,11 @@ export function CotizacionEditorPage() {
           <div className="bg-white rounded-xl shadow-xl w-[440px] p-6 space-y-4">
             <h3 className="text-base font-semibold text-gray-900">Agregar sección</h3>
             <p className="text-sm text-gray-600">
-              Seleccioná los descuentos que van a <strong>variar</strong> entre secciones.
+              Seleccioná los métodos de pago que van a <strong>variar</strong> entre secciones.
               Los demás se comparten automáticamente.
             </p>
             <div className="max-h-60 overflow-y-auto space-y-2">
-              {allDescuentos.filter((d) => activeDiscountIds.has(d.id)).map((d) => (
+              {allDescuentos.filter((d) => d.modo === 'selector').map((d) => (
                 <label key={d.id} className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
                     type="checkbox"
@@ -1511,8 +1540,8 @@ export function CotizacionEditorPage() {
                   </span>
                 </label>
               ))}
-              {allDescuentos.filter((d) => activeDiscountIds.has(d.id)).length === 0 && (
-                <p className="text-sm text-gray-400 italic">No hay descuentos activos en esta versión.</p>
+              {allDescuentos.filter((d) => d.modo === 'selector').length === 0 && (
+                <p className="text-sm text-gray-400 italic">No hay métodos de pago disponibles.</p>
               )}
             </div>
             <div className="flex justify-end gap-2 pt-2">
@@ -1524,7 +1553,7 @@ export function CotizacionEditorPage() {
               </button>
               <button
                 onClick={() => seccionMut.mutate({ descuentosVariables: [...seccionVariables] })}
-                disabled={seccionMut.isPending || seccionVariables.size === 0}
+                disabled={seccionMut.isPending}
                 className="px-4 py-2 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
               >
                 {seccionMut.isPending ? <Spinner /> : 'Crear sección'}
