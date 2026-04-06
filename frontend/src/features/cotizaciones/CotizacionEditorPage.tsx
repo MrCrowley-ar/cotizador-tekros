@@ -1494,12 +1494,7 @@ export function CotizacionEditorPage() {
               Los demás se comparten automáticamente.
             </p>
             <div className="max-h-60 overflow-y-auto space-y-2">
-              {allDescuentos.filter((d) => {
-                // Show discounts active in items OR in global descuentos
-                if (activeDiscountIds.has(d.id)) return true;
-                if (version?.descuentos?.some((vd) => vd.descuentoId === d.id)) return true;
-                return false;
-              }).map((d) => (
+              {allDescuentos.filter((d) => d.activo).map((d) => (
                 <label key={d.id} className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
                     type="checkbox"
@@ -1516,10 +1511,8 @@ export function CotizacionEditorPage() {
                   </span>
                 </label>
               ))}
-              {allDescuentos.filter((d) =>
-                activeDiscountIds.has(d.id) || version?.descuentos?.some((vd) => vd.descuentoId === d.id)
-              ).length === 0 && (
-                <p className="text-sm text-gray-400 italic">No hay descuentos activos en esta versión.</p>
+              {allDescuentos.filter((d) => d.activo).length === 0 && (
+                <p className="text-sm text-gray-400 italic">No hay descuentos disponibles.</p>
               )}
             </div>
             <div className="flex justify-end gap-2 pt-2">
