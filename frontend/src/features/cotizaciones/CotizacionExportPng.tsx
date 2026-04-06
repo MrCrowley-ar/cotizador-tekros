@@ -238,11 +238,6 @@ export function useCotizacionExportPng({
           <div><strong>Cliente:</strong> {cliente?.razonSocial ?? cliente?.nombre ?? '—'}</div>
           <div><strong>CUIT:</strong> {cliente?.cuit ?? '—'}</div>
         </div>
-        {!hasSecciones && (
-          <div style={{ textAlign: 'right' }}>
-            <div><strong>Medio de pago:</strong> {medioDePago}</div>
-          </div>
-        )}
       </div>
 
       {/* Content: with or without sections */}
@@ -295,11 +290,14 @@ export function useCotizacionExportPng({
             borderRadius: '6px',
             display: 'flex',
             justifyContent: 'space-between',
-            fontSize: '15px',
+            alignItems: 'center',
+            fontSize: '16px',
             fontWeight: 'bold',
           }}>
-            <span>Precio Promedio</span>
-            <span>{fmt(precioPonderado)} USD</span>
+            <span>Medio de pago: {medioDePago}</span>
+            <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
+              Precio Promedio: {fmt(precioPonderado)} USD
+            </span>
           </div>
         </>
       )}
