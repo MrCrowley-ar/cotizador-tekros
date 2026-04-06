@@ -1037,12 +1037,12 @@ export function CotizacionEditorPage() {
           );
         } else {
           // Pre-compute global totals once (outside the per-item loop)
-          const subtotalItems = allItems.reduce((s, i) => s + Number(i.subtotal), 0);
-          const descuentosItemsVal = allItems.reduce((s, i) => {
+          const subtotalItems = Math.round(allItems.reduce((s, i) => s + Number(i.subtotal), 0) * 1e4) / 1e4;
+          const descuentosItemsVal = Math.round(allItems.reduce((s, i) => {
             const pct = (i.descuentos ?? []).reduce((dp, d) => dp + Number(d.valorPorcentaje), 0);
             return s + Number(i.subtotal) * pct / 100;
-          }, 0);
-          const totalCotizacion = Number(version.total ?? 0);
+          }, 0) * 1e4) / 1e4;
+          const totalCotizacion = Math.round(Number(version.total ?? 0) * 1e4) / 1e4;
 
           for (const item of allItems) {
             const stats = cultivoStats.get(item.cultivoId) ?? { bolsas: 0, monto: 0 };
