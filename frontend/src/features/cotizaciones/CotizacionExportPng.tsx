@@ -303,6 +303,21 @@ export function useCotizacionExportPng({
           </div>
         </>
       )}
+
+      {/* Disclaimer legal */}
+      <div style={{
+        marginTop: '32px',
+        paddingTop: '16px',
+        borderTop: '1px solid #e5e5e5',
+        fontSize: '11px',
+        color: '#666',
+        lineHeight: '1.6',
+      }}>
+        <p style={{ marginBottom: '6px' }}>La presente cotización refleja valores de referencia expresados en dólares estadounidenses, no contemplando IVA ni otros tributos que pudieran corresponder según la jurisdicción.</p>
+        <p style={{ marginBottom: '6px' }}>Las condiciones aquí detalladas podrán ser revisadas o ajustadas sin notificación previa.</p>
+        <p style={{ marginBottom: '6px' }}>La concreción de la operación estará condicionada a la disponibilidad de stock al momento de su confirmación.</p>
+        <p style={{ marginBottom: '0' }}>El presente documento no constituye una oferta vinculante de venta.</p>
+      </div>
     </div>
     </div>
   );

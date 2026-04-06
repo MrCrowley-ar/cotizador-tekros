@@ -11,6 +11,7 @@ import { VersionHistory } from './VersionHistory';
 import { useCotizacionExportPng } from './CotizacionExportPng';
 import { FeedPanelInline } from '../feed/FeedPanel';
 import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../../api/types';
+import { useDiscountOrder } from '../../hooks/useDiscountOrder';
 
 // ─── Resize Divider ───────────────────────────────────────────────────────────
 
@@ -540,7 +541,7 @@ function CultivoStatsPanel({ version, cultivos }: { version: CotizacionVersion; 
 
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
-function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds }: {
+function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds, reorderMode, onToggleReorderMode, onReorder }: {
   isEditable: boolean;
   activeIds: Set<number>;
   pendingIds: Set<number>;
@@ -549,7 +550,13 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
   onApplySelector: (desc: Descuento, pct: number | null) => void;
   version: CotizacionVersion | undefined;
   excludeIds?: Set<number>;
+  reorderMode: boolean;
+  onToggleReorderMode: () => void;
+  onReorder: (fromIndex: number, toIndex: number) => void;
 }) {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+
   // Show non-global discounts + global selectors/manual (apply per-item)
   const nonGlobal = allDescuentos.filter((d) =>
     (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual')
@@ -557,7 +564,9 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
   );
   if (nonGlobal.length === 0) return null;
 
-  // Find currently applied pct for selector discounts
+  // Map from nonGlobal index to allDescuentos index (for reorder callback)
+  const allDescIds = allDescuentos.map((d) => d.id);
+
   function getAppliedSelectorPct(descId: number): number | null {
     if (!version) return null;
     for (const item of version.items ?? []) {
@@ -567,11 +576,57 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
     return null;
   }
 
+  function handleDragStart(e: React.DragEvent, index: number) {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+  }
+
+  function handleDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropIndex(index);
+  }
+
+  function handleDragLeave() {
+    setDropIndex(null);
+  }
+
+  function handleDrop(e: React.DragEvent, toLocalIndex: number) {
+    e.preventDefault();
+    const fromLocalIndex = dragIndex;
+    setDragIndex(null);
+    setDropIndex(null);
+    if (fromLocalIndex == null || fromLocalIndex === toLocalIndex) return;
+    // Convert local indices (within nonGlobal) to global indices (within allDescuentos)
+    const fromGlobal = allDescIds.indexOf(nonGlobal[fromLocalIndex].id);
+    const toGlobal = allDescIds.indexOf(nonGlobal[toLocalIndex].id);
+    if (fromGlobal !== -1 && toGlobal !== -1) {
+      onReorder(fromGlobal, toGlobal);
+    }
+  }
+
+  function handleDragEnd() {
+    setDragIndex(null);
+    setDropIndex(null);
+  }
+
   return (
     <div className="bg-white rounded-xl border p-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos</h3>
-      <div className="space-y-2">
-        {nonGlobal.map((desc) => {
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-700">Descuentos</h3>
+        {isEditable && nonGlobal.length > 1 && (
+          <button
+            onClick={onToggleReorderMode}
+            className={`text-sm rounded px-1.5 py-0.5 transition-colors ${reorderMode ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
+            title={reorderMode ? 'Listo' : 'Reordenar descuentos'}
+          >
+            {reorderMode ? '✓' : '✏️'}
+          </button>
+        )}
+      </div>
+      <div className="space-y-1">
+        {nonGlobal.map((desc, index) => {
           const applied = activeIds.has(desc.id);
           const pending = pendingIds.has(desc.id);
           const isSelector = desc.modo === 'selector';
@@ -580,6 +635,42 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
           const currentReglaId = isSelector && appliedPct != null
             ? (reglasSorted.find((r) => Number(r.valor) === appliedPct)?.id ?? '')
             : '';
+
+          const isDragging = dragIndex === index;
+          const isDropTarget = dropIndex === index && dragIndex !== index;
+
+          if (reorderMode) {
+            return (
+              <div
+                key={desc.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, index)}
+                onDragEnd={handleDragEnd}
+                className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 select-none transition-all
+                  ${isDragging ? 'opacity-40' : ''}
+                  ${isDropTarget ? 'border-t-2 border-orange-400 bg-orange-50' : 'border-t-2 border-transparent'}
+                  ${applied ? 'bg-orange-50' : 'bg-gray-50'}
+                  cursor-grab active:cursor-grabbing`}
+              >
+                <span className="text-gray-400 text-xs shrink-0" style={{ lineHeight: 1 }}>⠿</span>
+                <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                  {desc.nombre}
+                </span>
+                {desc.modo === 'basico' && desc.valorPorcentaje != null && (
+                  <span className="text-xs text-gray-400">{desc.valorPorcentaje}%</span>
+                )}
+                {isSelector && appliedPct != null && (
+                  <span className="text-xs text-orange-600 font-medium">−{appliedPct}%</span>
+                )}
+                {desc.modo === 'avanzado' && (
+                  <span className="text-xs text-gray-400">{desc.reglas?.length ?? 0} reglas</span>
+                )}
+              </div>
+            );
+          }
 
           if (isSelector) {
             return (
@@ -858,6 +949,7 @@ export function CotizacionEditorPage() {
   // Discount state lifted to page level
   const [activeDiscountIds, setActiveDiscountIds] = useState<Set<number>>(new Set());
   const [pendingDiscountIds, setPendingDiscountIds] = useState<Set<number>>(new Set());
+  const [reorderMode, setReorderMode] = useState(false);
 
   // Section state
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -889,6 +981,7 @@ export function CotizacionEditorPage() {
     queryKey: ['descuentos', 'activos'],
     queryFn: () => descuentosApi.getAll(true),
   });
+  const { reorder: reorderDiscount, sortDescuentos } = useDiscountOrder(selectedVersionId, allDescuentos);
   const { data: totals } = useQuery({
     queryKey: ['total', cotizacionId, selectedVersionId],
     queryFn: () => cotizacionesApi.getTotal(cotizacionId, selectedVersionId!),
@@ -937,10 +1030,10 @@ export function CotizacionEditorPage() {
   // Active discounts as full objects (for passing to CultivoSection)
   // Include global selectors and manual discounts alongside non-global discounts
   const activeDescuentos = useMemo(
-    () => allDescuentos.filter((d) =>
+    () => sortDescuentos(allDescuentos.filter((d) =>
       (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual') && activeDiscountIds.has(d.id)
-    ),
-    [allDescuentos, activeDiscountIds],
+    )),
+    [allDescuentos, activeDiscountIds, sortDescuentos],
   );
 
   // PNG export
@@ -1484,11 +1577,14 @@ export function CotizacionEditorPage() {
               isEditable={isEditable}
               activeIds={activeDiscountIds}
               pendingIds={pendingDiscountIds}
-              allDescuentos={allDescuentos}
+              allDescuentos={sortDescuentos(allDescuentos)}
               onToggle={toggleDiscount}
               onApplySelector={applySelector}
               version={version}
               excludeIds={sectionVariableDescIds}
+              reorderMode={reorderMode}
+              onToggleReorderMode={() => setReorderMode((r) => !r)}
+              onReorder={reorderDiscount}
             />
             {version && (
               <DescuentosGlobalesPanel
