@@ -121,6 +121,7 @@ export interface CotizacionItem {
   bolsas: number;
   precioBase: number;
   subtotal: number;
+  comisionPct: number | null;
   cultivo?: Cultivo;
   hibrido?: Hibrido;
   banda?: Banda;

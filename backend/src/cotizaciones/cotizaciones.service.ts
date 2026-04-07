@@ -273,6 +273,11 @@ export class CotizacionesService {
     const precioBase = Number(precioActual.precio);
     const subtotal = precioBase;
 
+    // Set default commission if active on version
+    const comisionPct = version.comisionMargen != null && version.comisionDescuento != null
+      ? Number(version.comisionMargen) - Number(version.comisionDescuento)
+      : null;
+
     const item = await this.itemRepo.save(
       this.itemRepo.create({
         versionId,
@@ -282,6 +287,7 @@ export class CotizacionesService {
         bolsas: dto.bolsas,
         precioBase,
         subtotal,
+        comisionPct,
       }),
     );
 
@@ -333,6 +339,19 @@ export class CotizacionesService {
       descripcion: `Ítem ${itemId} eliminado de versión ${versionId}`,
       datosPrevios: { hibridoId: item.hibridoId, bandaId: item.bandaId, bolsas: item.bolsas, precioBase: item.precioBase },
     });
+  }
+
+  async actualizarItemComision(
+    versionId: number,
+    itemId: number,
+    porcentaje: number,
+  ): Promise<void> {
+    const item = await this.itemRepo.findOneBy({ id: itemId });
+    if (!item || item.versionId !== versionId)
+      throw new NotFoundException(`Ítem ${itemId} no encontrado`);
+    item.comisionPct = porcentaje;
+    await this.itemRepo.save(item);
+    await this.recalcularTotal(versionId);
   }
 
   // ─── DESCUENTOS POR ÍTEM ──────────────────────────────────────────────────
@@ -472,12 +491,24 @@ export class CotizacionesService {
     if (dto) {
       version.comisionMargen = dto.margen;
       version.comisionDescuento = dto.descuento;
+      await this.versionRepo.save(version);
+      // Set default comisionPct on all items that don't have one yet
+      const efectivo = dto.margen - dto.descuento;
+      const items = await this.itemRepo.find({ where: { versionId } });
+      for (const item of items) {
+        if (item.comisionPct == null) {
+          item.comisionPct = efectivo;
+          await this.itemRepo.save(item);
+        }
+      }
     } else {
       version.comisionMargen = null;
       version.comisionDescuento = null;
+      await this.versionRepo.save(version);
+      // Clear comisionPct from all items
+      await this.itemRepo.update({ versionId }, { comisionPct: null });
     }
 
-    await this.versionRepo.save(version);
     await this.recalcularTotal(versionId);
 
     await this.historialService.registrar({
@@ -756,9 +787,18 @@ export class CotizacionesService {
       descuentosGlobales += subtotalNeto * (Number(d.valorPorcentaje) / 100);
     }
 
+    // Per-item commission: sum each item's (neto * comisionPct / 100)
     let comision = 0;
-    if (comisionMargen != null && comisionDescuento != null) {
-      comision = subtotalNeto * (Number(comisionMargen) - Number(comisionDescuento)) / 100;
+    for (const item of items) {
+      if (item.comisionPct != null) {
+        const subtotalItem = Number(item.precioBase);
+        let descuentoItemTotal = 0;
+        for (const d of descByItem.get(item.id) ?? []) {
+          descuentoItemTotal += subtotalItem * (Number(d.valorPorcentaje) / 100);
+        }
+        const netoItem = subtotalItem - descuentoItemTotal;
+        comision += netoItem * (Number(item.comisionPct) / 100);
+      }
     }
 
     const total = subtotalNeto - descuentosGlobales - comision;

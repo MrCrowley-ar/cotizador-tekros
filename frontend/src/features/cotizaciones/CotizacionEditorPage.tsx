@@ -45,7 +45,7 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
 
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version, comisionPct }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version, showComision }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
   discountCount: number;
   activeDescuentos: Descuento[];
@@ -53,7 +53,7 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
   cultivoMonto: number;
   totalBolsas: number;
   version: CotizacionVersion;
-  comisionPct: number | null;
+  showComision: boolean;
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -160,7 +160,7 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
       </td>
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
       {Array.from({ length: discountCount }).map((_, i) => <td key={i} />)}
-      {comisionPct != null && <td />}
+      {showComision && <td />}
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
       <td className="px-3 py-2">
         {error && <span className="text-xs text-red-600 block mb-1">{error}</span>}
@@ -183,13 +183,13 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
 
 // ─── Item Row ─────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, comisionPct }: {
+function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, showComision }: {
   item: CotizacionItem;
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
   activeDescuentos: Descuento[];
-  comisionPct: number | null;
+  showComision: boolean;
 }) {
   const qc = useQueryClient();
   const [deleteError, setDeleteError] = useState('');
@@ -228,6 +228,8 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, co
     invalidate();
   }
 
+  const [editingComision, setEditingComision] = useState<string | null>(null);
+
   // Subtotal = precioBase (no se multiplica por bolsas) × descuentos aplicados × comisión
   const bruto = Number(item.precioBase);
   const afterDiscounts = activeDescuentos.reduce((acc, d) => {
@@ -235,7 +237,16 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, co
     if (!applied) return acc;
     return acc * (1 - Number(applied.valorPorcentaje) / 100);
   }, bruto);
-  const subtotal = comisionPct != null ? afterDiscounts * (1 - comisionPct / 100) : afterDiscounts;
+  const itemComisionPct = item.comisionPct != null ? Number(item.comisionPct) : null;
+  const subtotal = itemComisionPct != null ? afterDiscounts * (1 - itemComisionPct / 100) : afterDiscounts;
+
+  async function saveComision(pctStr: string) {
+    const pct = Math.round(Number(pctStr) * 100) / 100;
+    if (isNaN(pct) || pct < 0 || pct > 100) return;
+    await cotizacionesApi.updateItemComision(cotizacionId, version.id, item.id, pct);
+    setEditingComision(null);
+    invalidate();
+  }
 
   return (
     <tr className="hover:bg-gray-50">
@@ -305,9 +316,32 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, co
           </td>
         );
       })}
-      {comisionPct != null && (
-        <td className="px-4 py-2 text-sm text-right whitespace-nowrap">
-          <span className="text-blue-600 text-xs font-medium">−{comisionPct}%</span>
+      {showComision && (
+        <td className="px-1 py-1 text-sm text-right whitespace-nowrap">
+          {isEditable ? (
+            <div className="inline-flex items-center gap-0.5">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.01}
+                value={editingComision ?? String(itemComisionPct ?? 0)}
+                onChange={(e) => setEditingComision(e.target.value)}
+                onBlur={(e) => {
+                  const val = e.target.value === '' ? '0' : String(Math.round(Number(e.target.value) * 100) / 100);
+                  if (val !== String(itemComisionPct ?? 0)) saveComision(val);
+                  else setEditingComision(null);
+                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                className="w-16 text-xs text-right border rounded px-1.5 py-1 text-blue-600 font-medium focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              <span className="text-xs text-blue-600 font-medium">%</span>
+            </div>
+          ) : (
+            <span className="text-blue-600 text-xs font-medium">
+              {itemComisionPct != null ? `−${itemComisionPct}%` : '—'}
+            </span>
+          )}
         </td>
       )}
       <td className="px-4 py-2 text-sm text-right font-semibold text-gray-900 whitespace-nowrap">
@@ -331,7 +365,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, co
 
 // ─── Cultivo Section ──────────────────────────────────────────────────────────
 
-function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, comisionPct }: {
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, showComision }: {
   cultivo: Cultivo;
   items: CotizacionItem[];
   cotizacionId: number;
@@ -341,11 +375,11 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
   cultivoVolumen: number;
   cultivoMonto: number;
   totalBolsas: number;
-  comisionPct: number | null;
+  showComision: boolean;
 }) {
   const [showNewItem, setShowNewItem] = useState(false);
 
-  const totalCols = 6 + activeDescuentos.length + (comisionPct != null ? 1 : 0);
+  const totalCols = 6 + activeDescuentos.length + (showComision ? 1 : 0);
 
   const fmt = (n: number) =>
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -358,7 +392,8 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
       if (!applied) return acc;
       return acc * (1 - Number(applied.valorPorcentaje) / 100);
     }, Number(item.precioBase));
-    const subtUnit = comisionPct != null ? afterDisc * (1 - comisionPct / 100) : afterDisc;
+    const icp = item.comisionPct != null ? Number(item.comisionPct) : null;
+    const subtUnit = icp != null ? afterDisc * (1 - icp / 100) : afterDisc;
     return s + subtUnit * Number(item.bolsas);
   }, 0);
   const precioPonderado = totalBolsasCultivo > 0 ? totalMontoUSD / totalBolsasCultivo : 0;
@@ -390,7 +425,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                   {d.nombre}
                 </th>
               ))}
-              {comisionPct != null && (
+              {showComision && (
                 <th className="px-4 py-2 text-right whitespace-nowrap normal-case tracking-normal text-blue-500 font-medium">
                   Comisión
                 </th>
@@ -410,7 +445,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 version={version}
                 isEditable={isEditable}
                 activeDescuentos={activeDescuentos}
-                comisionPct={comisionPct}
+                showComision={showComision}
               />
             ))}
             {showNewItem && (
@@ -425,7 +460,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 cultivoMonto={cultivoMonto}
                 totalBolsas={totalBolsas}
                 version={version}
-                comisionPct={comisionPct}
+                showComision={showComision}
               />
             )}
             {!showNewItem && items.length === 0 && (
@@ -446,7 +481,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 {activeDescuentos.map((d) => (
                   <td key={d.id} className="px-4 py-2"></td>
                 ))}
-                {comisionPct != null && <td className="px-4 py-2"></td>}
+                {showComision && <td className="px-4 py-2"></td>}
                 <td className="px-4 py-2 text-right text-gray-700">${fmt(precioPonderado)}</td>
                 <td className="px-4 py-2"></td>
               </tr>
@@ -1190,10 +1225,8 @@ export function CotizacionEditorPage() {
     [allDescuentos, activeDiscountIds],
   );
 
-  // Commission effective percentage (margen - descuento), null when inactive
-  const comisionPct = version?.comisionMargen != null && version?.comisionDescuento != null
-    ? Number(version.comisionMargen) - Number(version.comisionDescuento)
-    : null;
+  // Commission active when version has margen/descuento set
+  const showComision = version?.comisionMargen != null && version?.comisionDescuento != null;
 
   // PNG export
   const pngExport = useCotizacionExportPng({
@@ -1685,7 +1718,7 @@ export function CotizacionEditorPage() {
                               cultivoVolumen={stats.bolsas}
                               cultivoMonto={stats.monto}
                               totalBolsas={totalBolsas}
-                              comisionPct={comisionPct}
+                              showComision={showComision}
                             />
                           );
                         })}
@@ -1710,7 +1743,7 @@ export function CotizacionEditorPage() {
                     cultivoVolumen={stats.bolsas}
                     cultivoMonto={stats.monto}
                     totalBolsas={totalBolsas}
-                    comisionPct={comisionPct}
+                    showComision={showComision}
                   />
                 );
               })

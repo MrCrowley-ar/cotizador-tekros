@@ -32,6 +32,8 @@ export const cotizacionesApi = {
     api.post<CotizacionItem>(`${ver(id, vid)}/items`, body),
   deleteItem: (id: number, vid: number, itemId: number) =>
     api.delete(`${ver(id, vid)}/items/${itemId}`),
+  updateItemComision: (id: number, vid: number, itemId: number, porcentaje: number) =>
+    api.patch(`${ver(id, vid)}/items/${itemId}/comision`, { porcentaje }),
 
   applyItemDescuento: (id: number, vid: number, itemId: number, body: { descuentoId: number; porcentaje?: number }) =>
     api.post<CotizacionItemDescuento>(`${ver(id, vid)}/items/${itemId}/descuentos`, body),
