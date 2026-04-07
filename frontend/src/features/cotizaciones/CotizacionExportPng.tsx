@@ -278,12 +278,9 @@ export function useCotizacionExportPng({
         })
       ) : (
         <>
-          {cultivoGroups.map(([name, cultivoItems]) =>
-            renderCultivoTable(name, cultivoItems),
-          )}
           {/* Grand total */}
           <div style={{
-            marginTop: '8px',
+            marginBottom: '16px',
             padding: '12px 16px',
             background: '#1f2937',
             color: '#fff',
@@ -299,6 +296,9 @@ export function useCotizacionExportPng({
               Precio Promedio: {fmt(precioPonderado)} USD
             </span>
           </div>
+          {cultivoGroups.map(([name, cultivoItems]) =>
+            renderCultivoTable(name, cultivoItems),
+          )}
         </>
       )}
 
