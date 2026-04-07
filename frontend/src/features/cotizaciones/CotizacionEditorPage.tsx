@@ -183,14 +183,13 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
 
 // ─── Item Row ─────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, showComision, comisionMargen }: {
+function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, showComision }: {
   item: CotizacionItem;
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
   activeDescuentos: Descuento[];
   showComision: boolean;
-  comisionMargen: number;
 }) {
   const qc = useQueryClient();
   const [deleteError, setDeleteError] = useState('');
@@ -238,9 +237,8 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, sh
     if (!applied) return acc;
     return acc * (1 - Number(applied.valorPorcentaje) / 100);
   }, bruto);
-  const itemComisionDesc = item.comisionPct != null ? Number(item.comisionPct) : null;
-  const comisionEfectivo = itemComisionDesc != null ? comisionMargen - itemComisionDesc : null;
-  const subtotal = comisionEfectivo != null ? afterDiscounts * (1 - comisionEfectivo / 100) : afterDiscounts;
+  const itemComisionPct = item.comisionPct != null ? Number(item.comisionPct) : null;
+  const subtotal = itemComisionPct != null ? afterDiscounts * (1 - itemComisionPct / 100) : afterDiscounts;
 
   async function saveComision(pctStr: string) {
     const pct = Math.round(Number(pctStr) * 100) / 100;
@@ -327,11 +325,11 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, sh
                 min={0}
                 max={100}
                 step={0.01}
-                value={editingComision ?? String(itemComisionDesc ?? 0)}
+                value={editingComision ?? String(itemComisionPct ?? 0)}
                 onChange={(e) => setEditingComision(e.target.value)}
                 onBlur={(e) => {
                   const val = e.target.value === '' ? '0' : String(Math.round(Number(e.target.value) * 100) / 100);
-                  if (val !== String(itemComisionDesc ?? 0)) saveComision(val);
+                  if (val !== String(itemComisionPct ?? 0)) saveComision(val);
                   else setEditingComision(null);
                 }}
                 onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
@@ -341,7 +339,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, sh
             </div>
           ) : (
             <span className="text-blue-600 text-xs font-medium">
-              {itemComisionDesc != null ? `−${itemComisionDesc}%` : '—'}
+              {itemComisionPct != null ? `−${itemComisionPct}%` : '—'}
             </span>
           )}
         </td>
@@ -367,7 +365,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, sh
 
 // ─── Cultivo Section ──────────────────────────────────────────────────────────
 
-function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, showComision, comisionMargen }: {
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, showComision }: {
   cultivo: Cultivo;
   items: CotizacionItem[];
   cotizacionId: number;
@@ -378,7 +376,6 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
   cultivoMonto: number;
   totalBolsas: number;
   showComision: boolean;
-  comisionMargen: number;
 }) {
   const [showNewItem, setShowNewItem] = useState(false);
 
@@ -395,9 +392,8 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
       if (!applied) return acc;
       return acc * (1 - Number(applied.valorPorcentaje) / 100);
     }, Number(item.precioBase));
-    const iDesc = item.comisionPct != null ? Number(item.comisionPct) : null;
-    const efectivo = iDesc != null ? comisionMargen - iDesc : null;
-    const subtUnit = efectivo != null ? afterDisc * (1 - efectivo / 100) : afterDisc;
+    const icp = item.comisionPct != null ? Number(item.comisionPct) : null;
+    const subtUnit = icp != null ? afterDisc * (1 - icp / 100) : afterDisc;
     return s + subtUnit * Number(item.bolsas);
   }, 0);
   const precioPonderado = totalBolsasCultivo > 0 ? totalMontoUSD / totalBolsasCultivo : 0;
@@ -450,7 +446,6 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 isEditable={isEditable}
                 activeDescuentos={activeDescuentos}
                 showComision={showComision}
-                comisionMargen={comisionMargen}
               />
             ))}
             {showNewItem && (
@@ -1206,7 +1201,6 @@ export function CotizacionEditorPage() {
 
   // Commission active when version has margen set
   const showComision = version?.comisionMargen != null && version?.comisionDescuento != null;
-  const comisionMargen = Number(version?.comisionMargen ?? 0);
 
   // PNG export
   const pngExport = useCotizacionExportPng({
@@ -1699,7 +1693,6 @@ export function CotizacionEditorPage() {
                               cultivoMonto={stats.monto}
                               totalBolsas={totalBolsas}
                               showComision={showComision}
-                              comisionMargen={comisionMargen}
                             />
                           );
                         })}
@@ -1725,7 +1718,6 @@ export function CotizacionEditorPage() {
                     cultivoMonto={stats.monto}
                     totalBolsas={totalBolsas}
                     showComision={showComision}
-                    comisionMargen={comisionMargen}
                   />
                 );
               })
