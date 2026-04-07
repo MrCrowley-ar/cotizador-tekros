@@ -32,9 +32,6 @@ export const cotizacionesApi = {
     api.post<CotizacionItem>(`${ver(id, vid)}/items`, body),
   deleteItem: (id: number, vid: number, itemId: number) =>
     api.delete(`${ver(id, vid)}/items/${itemId}`),
-  updateItemComision: (id: number, vid: number, itemId: number, porcentaje: number) =>
-    api.patch(`${ver(id, vid)}/items/${itemId}/comision`, { porcentaje }),
-
   applyItemDescuento: (id: number, vid: number, itemId: number, body: { descuentoId: number; porcentaje?: number }) =>
     api.post<CotizacionItemDescuento>(`${ver(id, vid)}/items/${itemId}/descuentos`, body),
   deleteItemDescuento: (id: number, vid: number, itemId: number, did: number) =>
@@ -46,7 +43,7 @@ export const cotizacionesApi = {
     api.delete(`${ver(id, vid)}/descuentos/${did}`),
 
   // Comisión
-  updateComision: (id: number, vid: number, body: { margen: number; descuento: number }) =>
+  updateComision: (id: number, vid: number, body: { margen: number; descuentoId: number | null }) =>
     api.patch(`${ver(id, vid)}/comision`, body),
   deleteComision: (id: number, vid: number) =>
     api.delete(`${ver(id, vid)}/comision`),
