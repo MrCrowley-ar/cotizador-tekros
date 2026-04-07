@@ -113,15 +113,6 @@ export class CotizacionesController {
     return this.service.eliminarItem(versionId, itemId, user.id);
   }
 
-  @Patch(':id/versiones/:versionId/items/:itemId/comision')
-  actualizarItemComision(
-    @Param('versionId', ParseIntPipe) versionId: number,
-    @Param('itemId', ParseIntPipe) itemId: number,
-    @Body() body: { porcentaje: number },
-  ) {
-    return this.service.actualizarItemComision(versionId, itemId, body.porcentaje);
-  }
-
   // ─── DESCUENTOS POR ÍTEM ──────────────────────────────────────────────────
 
   @Post(':id/versiones/:versionId/items/:itemId/descuentos')

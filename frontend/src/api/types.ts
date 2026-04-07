@@ -121,7 +121,6 @@ export interface CotizacionItem {
   bolsas: number;
   precioBase: number;
   subtotal: number;
-  comisionPct: number | null;
   cultivo?: Cultivo;
   hibrido?: Hibrido;
   banda?: Banda;
@@ -143,7 +142,7 @@ export interface CotizacionVersion {
   usuarioId: number | null;
   total: number;
   comisionMargen: number | null;
-  comisionDescuento: number | null;
+  comisionDescuentoId: number | null;
   items: CotizacionItem[];
   descuentos: CotizacionDescuento[];
   secciones?: CotizacionVersionSeccion[];
