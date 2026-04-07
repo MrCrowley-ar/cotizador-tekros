@@ -273,9 +273,9 @@ export class CotizacionesService {
     const precioBase = Number(precioActual.precio);
     const subtotal = precioBase;
 
-    // Set default commission if active on version
+    // Set default commission descuento (0) if commission is active on version
     const comisionPct = version.comisionMargen != null && version.comisionDescuento != null
-      ? Number(version.comisionMargen) - Number(version.comisionDescuento)
+      ? 0
       : null;
 
     const item = await this.itemRepo.save(
@@ -492,12 +492,11 @@ export class CotizacionesService {
       version.comisionMargen = dto.margen;
       version.comisionDescuento = dto.descuento;
       await this.versionRepo.save(version);
-      // Set default comisionPct on all items that don't have one yet
-      const efectivo = dto.margen - dto.descuento;
+      // Set default comisionPct (descuento per item) on items that don't have one yet
       const items = await this.itemRepo.find({ where: { versionId } });
       for (const item of items) {
         if (item.comisionPct == null) {
-          item.comisionPct = efectivo;
+          item.comisionPct = 0;
           await this.itemRepo.save(item);
         }
       }
@@ -787,17 +786,20 @@ export class CotizacionesService {
       descuentosGlobales += subtotalNeto * (Number(d.valorPorcentaje) / 100);
     }
 
-    // Per-item commission: sum each item's (neto * comisionPct / 100)
+    // Per-item commission: effective = margen_global - item.comisionPct (descuento)
     let comision = 0;
-    for (const item of items) {
-      if (item.comisionPct != null) {
-        const subtotalItem = Number(item.precioBase);
-        let descuentoItemTotal = 0;
-        for (const d of descByItem.get(item.id) ?? []) {
-          descuentoItemTotal += subtotalItem * (Number(d.valorPorcentaje) / 100);
+    if (comisionMargen != null) {
+      for (const item of items) {
+        if (item.comisionPct != null) {
+          const efectivo = Number(comisionMargen) - Number(item.comisionPct);
+          const subtotalItem = Number(item.precioBase);
+          let descuentoItemTotal = 0;
+          for (const d of descByItem.get(item.id) ?? []) {
+            descuentoItemTotal += subtotalItem * (Number(d.valorPorcentaje) / 100);
+          }
+          const netoItem = subtotalItem - descuentoItemTotal;
+          comision += netoItem * (efectivo / 100);
         }
-        const netoItem = subtotalItem - descuentoItemTotal;
-        comision += netoItem * (Number(item.comisionPct) / 100);
       }
     }
 
