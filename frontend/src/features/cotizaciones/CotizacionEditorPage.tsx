@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cotizacionesApi } from '../../api/cotizaciones';
@@ -538,6 +538,57 @@ function CultivoStatsPanel({ version, cultivos }: { version: CotizacionVersion; 
   );
 }
 
+// ─── Discount Ordering (localStorage) ─────────────────────────────────────────
+
+function useDiscountOrder(storageKey: string, items: { id: number }[]) {
+  const [order, setOrder] = useState<number[]>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const sorted = useMemo(() => {
+    const posMap = new Map(order.map((id, i) => [id, i]));
+    return [...items].sort((a, b) => {
+      const pa = posMap.get(a.id) ?? Infinity;
+      const pb = posMap.get(b.id) ?? Infinity;
+      if (pa === Infinity && pb === Infinity) return 0;
+      return pa - pb;
+    });
+  }, [items, order]);
+
+  const persist = useCallback((ids: number[]) => {
+    setOrder(ids);
+    localStorage.setItem(storageKey, JSON.stringify(ids));
+  }, [storageKey]);
+
+  const dragRef = useRef<{ dragId: number | null; overId: number | null }>({ dragId: null, overId: null });
+
+  const onDragStart = useCallback((id: number) => {
+    dragRef.current.dragId = id;
+  }, []);
+
+  const onDragOver = useCallback((id: number) => {
+    dragRef.current.overId = id;
+  }, []);
+
+  const onDragEnd = useCallback(() => {
+    const { dragId, overId } = dragRef.current;
+    dragRef.current = { dragId: null, overId: null };
+    if (dragId == null || overId == null || dragId === overId) return;
+    const currentIds = sorted.map((d) => d.id);
+    const fromIdx = currentIds.indexOf(dragId);
+    const toIdx = currentIds.indexOf(overId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    currentIds.splice(fromIdx, 1);
+    currentIds.splice(toIdx, 0, dragId);
+    persist(currentIds);
+  }, [sorted, persist]);
+
+  return { sorted, onDragStart, onDragOver, onDragEnd };
+}
+
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
 function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds }: {
@@ -555,6 +606,7 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
     (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual')
     && !(excludeIds?.has(d.id)),
   );
+  const { sorted: sortedNonGlobal, onDragStart, onDragOver, onDragEnd } = useDiscountOrder('desc-order-item', nonGlobal);
   if (nonGlobal.length === 0) return null;
 
   // Find currently applied pct for selector discounts
@@ -571,7 +623,7 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
     <div className="bg-white rounded-xl border p-4">
       <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos</h3>
       <div className="space-y-2">
-        {nonGlobal.map((desc) => {
+        {sortedNonGlobal.map((desc) => {
           const applied = activeIds.has(desc.id);
           const pending = pendingIds.has(desc.id);
           const isSelector = desc.modo === 'selector';
@@ -583,67 +635,89 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
 
           if (isSelector) {
             return (
-              <div key={desc.id} className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}>
-                <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
+              <div
+                key={desc.id}
+                draggable
+                onDragStart={() => onDragStart(desc.id)}
+                onDragOver={(e) => { e.preventDefault(); onDragOver(desc.id); }}
+                onDrop={onDragEnd}
+                onDragEnd={onDragEnd}
+                className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}
+              >
                 <div className="flex items-center gap-2">
-                  {pending ? (
-                    <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
-                  ) : (
-                    <select
-                      disabled={!isEditable}
-                      value={currentReglaId}
-                      onChange={(e) => {
-                        const reglaId = Number(e.target.value);
-                        if (!reglaId) {
-                          onApplySelector(desc, null);
-                        } else {
-                          const regla = reglasSorted.find((r) => r.id === reglaId);
-                          if (regla) onApplySelector(desc, Number(regla.valor));
-                        }
-                      }}
-                      className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
-                    >
-                      <option value="">— Ninguno —</option>
-                      {reglasSorted.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
-                        </option>
-                      ))}
-                    </select>
-                  )}
+                  <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
+                  <div className="flex-1">
+                    <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
+                    <div className="flex items-center gap-2">
+                      {pending ? (
+                        <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
+                      ) : (
+                        <select
+                          disabled={!isEditable}
+                          value={currentReglaId}
+                          onChange={(e) => {
+                            const reglaId = Number(e.target.value);
+                            if (!reglaId) {
+                              onApplySelector(desc, null);
+                            } else {
+                              const regla = reglasSorted.find((r) => r.id === reglaId);
+                              if (regla) onApplySelector(desc, Number(regla.valor));
+                            }
+                          }}
+                          className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
+                        >
+                          <option value="">— Ninguno —</option>
+                          {reglasSorted.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             );
           }
 
           return (
-            <label
+            <div
               key={desc.id}
-              className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors select-none
-                ${applied ? 'bg-orange-50' : 'hover:bg-gray-50'}
-                ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+              draggable
+              onDragStart={() => onDragStart(desc.id)}
+              onDragOver={(e) => { e.preventDefault(); onDragOver(desc.id); }}
+              onDrop={onDragEnd}
+              onDragEnd={onDragEnd}
             >
-              {pending ? (
-                <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
-              ) : (
-                <input
-                  type="checkbox"
-                  checked={applied}
-                  disabled={!isEditable}
-                  onChange={() => onToggle(desc)}
-                  className="rounded text-orange-500 cursor-pointer"
-                />
-              )}
-              <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
-                {desc.nombre}
-              </span>
-              {desc.modo === 'basico' && desc.valorPorcentaje != null && (
-                <span className="text-xs text-gray-400">{desc.valorPorcentaje}%</span>
-              )}
-              {desc.modo === 'avanzado' && (
-                <span className="text-xs text-gray-400">{desc.reglas?.length ?? 0} reglas</span>
-              )}
-            </label>
+              <label
+                className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors select-none
+                  ${applied ? 'bg-orange-50' : 'hover:bg-gray-50'}
+                  ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+              >
+                <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
+                {pending ? (
+                  <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
+                ) : (
+                  <input
+                    type="checkbox"
+                    checked={applied}
+                    disabled={!isEditable}
+                    onChange={() => onToggle(desc)}
+                    className="rounded text-orange-500 cursor-pointer"
+                  />
+                )}
+                <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                  {desc.nombre}
+                </span>
+                {desc.modo === 'basico' && desc.valorPorcentaje != null && (
+                  <span className="text-xs text-gray-400">{desc.valorPorcentaje}%</span>
+                )}
+                {desc.modo === 'avanzado' && (
+                  <span className="text-xs text-gray-400">{desc.reglas?.length ?? 0} reglas</span>
+                )}
+              </label>
+            </div>
           );
         })}
       </div>
@@ -674,6 +748,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
     d.tipoAplicacion === 'global' && d.modo !== 'selector' && d.modo !== 'manual'
     && !(excludeIds?.has(d.id)),
   );
+  const { sorted: sortedDescuentos, onDragStart, onDragOver, onDragEnd } = useDiscountOrder('desc-order-global', descuentos);
   if (descuentos.length === 0) return null;
 
   function isApplied(desc: Descuento) {
@@ -742,7 +817,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
     <div className="bg-white rounded-xl border p-4">
       <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos globales</h3>
       <div className="space-y-2">
-        {descuentos.map((desc) => {
+        {sortedDescuentos.map((desc) => {
           const applied = isApplied(desc);
           const pct = getAppliedPct(desc);
           const pending = pendingIds.has(desc.id);
@@ -755,71 +830,93 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
 
           if (isSelector) {
             return (
-              <div key={desc.id} className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}>
-                <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
+              <div
+                key={desc.id}
+                draggable
+                onDragStart={() => onDragStart(desc.id)}
+                onDragOver={(e) => { e.preventDefault(); onDragOver(desc.id); }}
+                onDrop={onDragEnd}
+                onDragEnd={onDragEnd}
+                className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}
+              >
                 <div className="flex items-center gap-2">
-                  {pending ? (
-                    <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
-                  ) : (
-                    <select
-                      disabled={!isEditable}
-                      value={currentReglaId}
-                      onChange={async (e) => {
-                        const reglaId = Number(e.target.value);
-                        if (!reglaId) {
-                          await removeDescuento(desc);
-                        } else {
-                          const regla = reglasSorted.find((r) => r.id === reglaId);
-                          if (regla) await applyDescuento(desc, Number(regla.valor));
-                        }
-                      }}
-                      className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
-                    >
-                      <option value="">— Ninguno —</option>
-                      {reglasSorted.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {applied && pct != null && (
-                    <span className="text-xs font-semibold text-orange-600 shrink-0">−{pct}%</span>
-                  )}
+                  <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
+                  <div className="flex-1">
+                    <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
+                    <div className="flex items-center gap-2">
+                      {pending ? (
+                        <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
+                      ) : (
+                        <select
+                          disabled={!isEditable}
+                          value={currentReglaId}
+                          onChange={async (e) => {
+                            const reglaId = Number(e.target.value);
+                            if (!reglaId) {
+                              await removeDescuento(desc);
+                            } else {
+                              const regla = reglasSorted.find((r) => r.id === reglaId);
+                              if (regla) await applyDescuento(desc, Number(regla.valor));
+                            }
+                          }}
+                          className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
+                        >
+                          <option value="">— Ninguno —</option>
+                          {reglasSorted.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {applied && pct != null && (
+                        <span className="text-xs font-semibold text-orange-600 shrink-0">−{pct}%</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             );
           }
 
           return (
-            <label
+            <div
               key={desc.id}
-              className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors
-                ${applied ? 'bg-orange-50' : 'hover:bg-gray-50'}
-                ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+              draggable
+              onDragStart={() => onDragStart(desc.id)}
+              onDragOver={(e) => { e.preventDefault(); onDragOver(desc.id); }}
+              onDrop={onDragEnd}
+              onDragEnd={onDragEnd}
             >
-              {pending ? (
-                <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
-              ) : (
-                <input
-                  type="checkbox"
-                  checked={applied}
-                  disabled={!isEditable}
-                  onChange={() => toggle(desc)}
-                  className="rounded text-blue-600 cursor-pointer"
-                />
-              )}
-              <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
-                {desc.nombre}
-              </span>
-              {noAplica ? (
-                <span className="text-xs text-gray-400 italic">No aplica</span>
-              ) : applied && pct != null ? (
-                <span className="text-xs font-semibold text-orange-600">−{pct}%</span>
-              ) : (
-                <span className="text-xs text-gray-400">{desc.valorPorcentaje ?? '?'}%</span>
-              )}
-            </label>
+              <label
+                className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors
+                  ${applied ? 'bg-orange-50' : 'hover:bg-gray-50'}
+                  ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+              >
+                <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
+                {pending ? (
+                  <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
+                ) : (
+                  <input
+                    type="checkbox"
+                    checked={applied}
+                    disabled={!isEditable}
+                    onChange={() => toggle(desc)}
+                    className="rounded text-blue-600 cursor-pointer"
+                  />
+                )}
+                <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                  {desc.nombre}
+                </span>
+                {noAplica ? (
+                  <span className="text-xs text-gray-400 italic">No aplica</span>
+                ) : applied && pct != null ? (
+                  <span className="text-xs font-semibold text-orange-600">−{pct}%</span>
+                ) : (
+                  <span className="text-xs text-gray-400">{desc.valorPorcentaje ?? '?'}%</span>
+                )}
+              </label>
+            </div>
           );
         })}
       </div>
@@ -1037,12 +1134,12 @@ export function CotizacionEditorPage() {
           );
         } else {
           // Pre-compute global totals once (outside the per-item loop)
-          const subtotalItems = allItems.reduce((s, i) => s + Number(i.subtotal), 0);
-          const descuentosItemsVal = allItems.reduce((s, i) => {
+          const subtotalItems = Math.round(allItems.reduce((s, i) => s + Number(i.subtotal), 0) * 1e4) / 1e4;
+          const descuentosItemsVal = Math.round(allItems.reduce((s, i) => {
             const pct = (i.descuentos ?? []).reduce((dp, d) => dp + Number(d.valorPorcentaje), 0);
             return s + Number(i.subtotal) * pct / 100;
-          }, 0);
-          const totalCotizacion = Number(version.total ?? 0);
+          }, 0) * 1e4) / 1e4;
+          const totalCotizacion = Math.round(Number(version.total ?? 0) * 1e4) / 1e4;
 
           for (const item of allItems) {
             const stats = cultivoStats.get(item.cultivoId) ?? { bolsas: 0, monto: 0 };
@@ -1057,7 +1154,7 @@ export function CotizacionEditorPage() {
               subtotal: Number(item.subtotal),
               ratioCultivo: getRatioCultivo(item.cultivoId),
               volumen: stats.bolsas,
-              monto: stats.monto,
+              monto: Math.round(stats.monto * 1e4) / 1e4,
               ...(precioPonderado != null ? { precioPonderado } : {}),
               subtotalItems,
               descuentosItems: descuentosItemsVal,
