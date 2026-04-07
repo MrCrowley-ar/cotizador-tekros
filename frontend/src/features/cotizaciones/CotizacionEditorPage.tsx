@@ -45,7 +45,7 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
 
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version, comisionPct }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
   discountCount: number;
   activeDescuentos: Descuento[];
@@ -53,6 +53,7 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
   cultivoMonto: number;
   totalBolsas: number;
   version: CotizacionVersion;
+  comisionPct: number | null;
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -159,6 +160,7 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
       </td>
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
       {Array.from({ length: discountCount }).map((_, i) => <td key={i} />)}
+      {comisionPct != null && <td />}
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
       <td className="px-3 py-2">
         {error && <span className="text-xs text-red-600 block mb-1">{error}</span>}
@@ -181,12 +183,13 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
 
 // ─── Item Row ─────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: {
+function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, comisionPct }: {
   item: CotizacionItem;
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
   activeDescuentos: Descuento[];
+  comisionPct: number | null;
 }) {
   const qc = useQueryClient();
   const [deleteError, setDeleteError] = useState('');
@@ -225,13 +228,14 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
     invalidate();
   }
 
-  // Subtotal = precioBase (no se multiplica por bolsas) × descuentos aplicados
+  // Subtotal = precioBase (no se multiplica por bolsas) × descuentos aplicados × comisión
   const bruto = Number(item.precioBase);
-  const subtotal = activeDescuentos.reduce((acc, d) => {
+  const afterDiscounts = activeDescuentos.reduce((acc, d) => {
     const applied = item.descuentos.find((x) => x.descuentoId === d.id);
     if (!applied) return acc;
     return acc * (1 - Number(applied.valorPorcentaje) / 100);
   }, bruto);
+  const subtotal = comisionPct != null ? afterDiscounts * (1 - comisionPct / 100) : afterDiscounts;
 
   return (
     <tr className="hover:bg-gray-50">
@@ -301,6 +305,11 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
           </td>
         );
       })}
+      {comisionPct != null && (
+        <td className="px-4 py-2 text-sm text-right whitespace-nowrap">
+          <span className="text-blue-600 text-xs font-medium">−{comisionPct}%</span>
+        </td>
+      )}
       <td className="px-4 py-2 text-sm text-right font-semibold text-gray-900 whitespace-nowrap">
         ${fmt(subtotal)}
       </td>
@@ -322,7 +331,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
 
 // ─── Cultivo Section ──────────────────────────────────────────────────────────
 
-function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas }: {
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, comisionPct }: {
   cultivo: Cultivo;
   items: CotizacionItem[];
   cotizacionId: number;
@@ -332,10 +341,11 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
   cultivoVolumen: number;
   cultivoMonto: number;
   totalBolsas: number;
+  comisionPct: number | null;
 }) {
   const [showNewItem, setShowNewItem] = useState(false);
 
-  const totalCols = 6 + activeDescuentos.length;
+  const totalCols = 6 + activeDescuentos.length + (comisionPct != null ? 1 : 0);
 
   const fmt = (n: number) =>
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -343,11 +353,12 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
   // Compute totals for the footer row
   const totalBolsasCultivo = items.reduce((s, i) => s + Math.round(Number(i.bolsas)), 0);
   const totalMontoUSD = items.reduce((s, item) => {
-    const subtUnit = activeDescuentos.reduce((acc, d) => {
+    const afterDisc = activeDescuentos.reduce((acc, d) => {
       const applied = item.descuentos.find((x) => x.descuentoId === d.id);
       if (!applied) return acc;
       return acc * (1 - Number(applied.valorPorcentaje) / 100);
     }, Number(item.precioBase));
+    const subtUnit = comisionPct != null ? afterDisc * (1 - comisionPct / 100) : afterDisc;
     return s + subtUnit * Number(item.bolsas);
   }, 0);
   const precioPonderado = totalBolsasCultivo > 0 ? totalMontoUSD / totalBolsasCultivo : 0;
@@ -379,6 +390,11 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                   {d.nombre}
                 </th>
               ))}
+              {comisionPct != null && (
+                <th className="px-4 py-2 text-right whitespace-nowrap normal-case tracking-normal text-blue-500 font-medium">
+                  Comisión
+                </th>
+              )}
               <th className="text-right px-4 py-2 whitespace-nowrap normal-case tracking-normal text-gray-700 font-semibold">
                 Subtotal
               </th>
@@ -394,6 +410,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 version={version}
                 isEditable={isEditable}
                 activeDescuentos={activeDescuentos}
+                comisionPct={comisionPct}
               />
             ))}
             {showNewItem && (
@@ -408,6 +425,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 cultivoMonto={cultivoMonto}
                 totalBolsas={totalBolsas}
                 version={version}
+                comisionPct={comisionPct}
               />
             )}
             {!showNewItem && items.length === 0 && (
@@ -428,6 +446,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 {activeDescuentos.map((d) => (
                   <td key={d.id} className="px-4 py-2"></td>
                 ))}
+                {comisionPct != null && <td className="px-4 py-2"></td>}
                 <td className="px-4 py-2 text-right text-gray-700">${fmt(precioPonderado)}</td>
                 <td className="px-4 py-2"></td>
               </tr>
@@ -1171,6 +1190,11 @@ export function CotizacionEditorPage() {
     [allDescuentos, activeDiscountIds],
   );
 
+  // Commission effective percentage (margen - descuento), null when inactive
+  const comisionPct = version?.comisionMargen != null && version?.comisionDescuento != null
+    ? Number(version.comisionMargen) - Number(version.comisionDescuento)
+    : null;
+
   // PNG export
   const pngExport = useCotizacionExportPng({
     cotizacion: cotizacion ?? undefined,
@@ -1661,6 +1685,7 @@ export function CotizacionEditorPage() {
                               cultivoVolumen={stats.bolsas}
                               cultivoMonto={stats.monto}
                               totalBolsas={totalBolsas}
+                              comisionPct={comisionPct}
                             />
                           );
                         })}
@@ -1685,6 +1710,7 @@ export function CotizacionEditorPage() {
                     cultivoVolumen={stats.bolsas}
                     cultivoMonto={stats.monto}
                     totalBolsas={totalBolsas}
+                    comisionPct={comisionPct}
                   />
                 );
               })
