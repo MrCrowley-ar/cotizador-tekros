@@ -38,6 +38,9 @@ export class CotizacionItem {
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   subtotal: number;
 
+  @Column({ name: 'comision_pct', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  comisionPct: number | null;
+
   @ManyToOne(() => CotizacionVersion, (v) => v.items)
   @JoinColumn({ name: 'version_id' })
   version: CotizacionVersion;
