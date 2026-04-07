@@ -656,17 +656,11 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                           disabled={!isEditable}
                           value={currentReglaId}
                           onChange={(e) => {
-                            const reglaId = Number(e.target.value);
-                            if (!reglaId) {
-                              onApplySelector(desc, null);
-                            } else {
-                              const regla = reglasSorted.find((r) => r.id === reglaId);
-                              if (regla) onApplySelector(desc, Number(regla.valor));
-                            }
+                            const regla = reglasSorted.find((r) => r.id === Number(e.target.value));
+                            if (regla) onApplySelector(desc, Number(regla.valor));
                           }}
                           className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
                         >
-                          <option value="">— Ninguno —</option>
                           {reglasSorted.map((r) => (
                             <option key={r.id} value={r.id}>
                               {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
@@ -851,17 +845,11 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
                           disabled={!isEditable}
                           value={currentReglaId}
                           onChange={async (e) => {
-                            const reglaId = Number(e.target.value);
-                            if (!reglaId) {
-                              await removeDescuento(desc);
-                            } else {
-                              const regla = reglasSorted.find((r) => r.id === reglaId);
-                              if (regla) await applyDescuento(desc, Number(regla.valor));
-                            }
+                            const regla = reglasSorted.find((r) => r.id === Number(e.target.value));
+                            if (regla) await applyDescuento(desc, Number(regla.valor));
                           }}
                           className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
                         >
-                          <option value="">— Ninguno —</option>
                           {reglasSorted.map((r) => (
                             <option key={r.id} value={r.id}>
                               {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
@@ -920,6 +908,134 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ─── Comisión Panel ──────────────────────────────────────────────────────────
+
+function ComisionPanel({ cotizacionId, version, isEditable }: {
+  cotizacionId: number;
+  version: CotizacionVersion;
+  isEditable: boolean;
+}) {
+  const qc = useQueryClient();
+  const [saving, setSaving] = useState(false);
+  const isActive = version.comisionMargen != null && version.comisionDescuento != null;
+
+  const [margen, setMargen] = useState(version.comisionMargen ?? 15);
+  const [descuento, setDescuento] = useState(version.comisionDescuento ?? 0);
+
+  // Sync from server
+  useEffect(() => {
+    setMargen(version.comisionMargen ?? 15);
+    setDescuento(version.comisionDescuento ?? 0);
+  }, [version.comisionMargen, version.comisionDescuento]);
+
+  function invalidate() {
+    qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
+    qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
+  }
+
+  async function save(m: number, d: number) {
+    setSaving(true);
+    try {
+      await cotizacionesApi.updateComision(cotizacionId, version.id, { margen: m, descuento: d });
+      invalidate();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggle() {
+    if (!isEditable) return;
+    setSaving(true);
+    try {
+      if (isActive) {
+        await cotizacionesApi.deleteComision(cotizacionId, version.id);
+      } else {
+        await cotizacionesApi.updateComision(cotizacionId, version.id, { margen, descuento });
+      }
+      invalidate();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const efectivo = margen - descuento;
+  const subtotalNeto = (version.items ?? []).reduce((acc, item) => {
+    const base = Number(item.precioBase);
+    const descs = (item.descuentos ?? []).reduce(
+      (s, d) => s + base * (Number(d.valorPorcentaje) / 100), 0,
+    );
+    return acc + (base - descs);
+  }, 0);
+  const montoComision = subtotalNeto * efectivo / 100;
+
+  const fmt = (n: number) =>
+    n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <div className="bg-white rounded-xl border p-4">
+      <div className="flex items-center gap-2 mb-3">
+        {saving ? (
+          <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
+        ) : (
+          <input
+            type="checkbox"
+            checked={isActive}
+            disabled={!isEditable}
+            onChange={toggle}
+            className="rounded text-blue-600 cursor-pointer"
+          />
+        )}
+        <h3 className="text-sm font-semibold text-gray-700">Comisión</h3>
+      </div>
+
+      {isActive && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 w-20">Margen %</label>
+            <input
+              type="number"
+              disabled={!isEditable || saving}
+              value={margen}
+              min={0} max={100} step={0.5}
+              onChange={(e) => setMargen(Number(e.target.value))}
+              onBlur={() => save(margen, descuento)}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              className="w-20 text-sm border rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 w-20">Descuento %</label>
+            <input
+              type="number"
+              disabled={!isEditable || saving}
+              value={descuento}
+              min={0} max={100} step={0.5}
+              onChange={(e) => setDescuento(Number(e.target.value))}
+              onBlur={() => save(margen, descuento)}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              className="w-20 text-sm border rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
+            />
+          </div>
+          <div className="pt-2 border-t text-xs text-gray-500 space-y-1">
+            <div className="flex justify-between">
+              <span>Efectivo ({margen}% − {descuento}%)</span>
+              <span className={`font-medium ${efectivo >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {efectivo}%
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Monto</span>
+              <span className={`font-semibold ${montoComision >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                ${fmt(montoComision)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1469,7 +1585,6 @@ export function CotizacionEditorPage() {
                               }}
                               className="text-xs border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
                             >
-                              <option value="">— Ninguno —</option>
                               {reglasSorted.map((r) => (
                                 <option key={r.id} value={r.id}>
                                   {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
@@ -1593,6 +1708,13 @@ export function CotizacionEditorPage() {
                 version={version}
                 isEditable={isEditable}
                 excludeIds={sectionVariableDescIds}
+              />
+            )}
+            {version && (
+              <ComisionPanel
+                cotizacionId={cotizacionId}
+                version={version}
+                isEditable={isEditable}
               />
             )}
             <FeedPanelInline />
