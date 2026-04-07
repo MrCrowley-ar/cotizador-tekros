@@ -656,17 +656,11 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                           disabled={!isEditable}
                           value={currentReglaId}
                           onChange={(e) => {
-                            const reglaId = Number(e.target.value);
-                            if (!reglaId) {
-                              onApplySelector(desc, null);
-                            } else {
-                              const regla = reglasSorted.find((r) => r.id === reglaId);
-                              if (regla) onApplySelector(desc, Number(regla.valor));
-                            }
+                            const regla = reglasSorted.find((r) => r.id === Number(e.target.value));
+                            if (regla) onApplySelector(desc, Number(regla.valor));
                           }}
                           className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
                         >
-                          <option value="">— Ninguno —</option>
                           {reglasSorted.map((r) => (
                             <option key={r.id} value={r.id}>
                               {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
@@ -851,17 +845,11 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
                           disabled={!isEditable}
                           value={currentReglaId}
                           onChange={async (e) => {
-                            const reglaId = Number(e.target.value);
-                            if (!reglaId) {
-                              await removeDescuento(desc);
-                            } else {
-                              const regla = reglasSorted.find((r) => r.id === reglaId);
-                              if (regla) await applyDescuento(desc, Number(regla.valor));
-                            }
+                            const regla = reglasSorted.find((r) => r.id === Number(e.target.value));
+                            if (regla) await applyDescuento(desc, Number(regla.valor));
                           }}
                           className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
                         >
-                          <option value="">— Ninguno —</option>
                           {reglasSorted.map((r) => (
                             <option key={r.id} value={r.id}>
                               {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
@@ -1597,7 +1585,6 @@ export function CotizacionEditorPage() {
                               }}
                               className="text-xs border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
                             >
-                              <option value="">— Ninguno —</option>
                               {reglasSorted.map((r) => (
                                 <option key={r.id} value={r.id}>
                                   {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
