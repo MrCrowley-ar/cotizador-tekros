@@ -141,6 +141,8 @@ export interface CotizacionVersion {
   fecha: string;
   usuarioId: number | null;
   total: number;
+  comisionMargen: number | null;
+  comisionDescuento: number | null;
   items: CotizacionItem[];
   descuentos: CotizacionDescuento[];
   secciones?: CotizacionVersionSeccion[];
@@ -164,6 +166,7 @@ export interface SeccionTotalDesglose {
   descuentosItems: number;
   subtotalNeto: number;
   descuentosGlobales: number;
+  comision: number;
   total: number;
   desglose: object[];
 }
@@ -173,6 +176,7 @@ export interface TotalDesglose {
   descuentosItems: number;
   subtotalNeto: number;
   descuentosGlobales: number;
+  comision: number;
   total: number;
   desglose: object[];
   secciones?: SeccionTotalDesglose[];

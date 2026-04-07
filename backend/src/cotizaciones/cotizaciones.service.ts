@@ -21,6 +21,7 @@ import { CotizacionVersion } from './cotizacion-version.entity';
 import { CotizacionVersionSeccion } from './cotizacion-version-seccion.entity';
 import { Cotizacion, EstadoCotizacion } from './cotizacion.entity';
 import { CreateSeccionDto } from './dto/create-seccion.dto';
+import { UpdateComisionDto } from './dto/update-comision.dto';
 import { UpdateSeccionDescuentoDto } from './dto/update-seccion-descuento.dto';
 
 @Injectable()
@@ -205,6 +206,8 @@ export class CotizacionesService {
         nombre: nombre ?? null,
         usuarioId,
         total: ultima.total,
+        comisionMargen: ultima.comisionMargen,
+        comisionDescuento: ultima.comisionDescuento,
       });
       const savedVersion = await em.save(nueva);
 
@@ -456,6 +459,39 @@ export class CotizacionesService {
     });
   }
 
+  // ─── COMISIÓN ──────────────────────────────────────────────────────────────
+
+  async actualizarComision(
+    versionId: number,
+    dto: UpdateComisionDto | null,
+    usuarioId?: number,
+  ): Promise<void> {
+    const version = await this.versionRepo.findOneBy({ id: versionId });
+    if (!version) throw new NotFoundException(`Versión ${versionId} no encontrada`);
+
+    if (dto) {
+      version.comisionMargen = dto.margen;
+      version.comisionDescuento = dto.descuento;
+    } else {
+      version.comisionMargen = null;
+      version.comisionDescuento = null;
+    }
+
+    await this.versionRepo.save(version);
+    await this.recalcularTotal(versionId);
+
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      cotizacionId: version.cotizacionId,
+      tipoEntidad: TipoEntidad.COTIZACION_VERSION,
+      tipoAccion: TipoAccion.EDITAR,
+      entidadId: versionId,
+      descripcion: dto
+        ? `Comisión actualizada: margen ${dto.margen}%, descuento ${dto.descuento}%`
+        : 'Comisión eliminada',
+    });
+  }
+
   // ─── SECCIONES ─────────────────────────────────────────────────────────────
 
   async getSecciones(versionId: number): Promise<CotizacionVersionSeccion[]> {
@@ -674,6 +710,8 @@ export class CotizacionesService {
     items: CotizacionItem[],
     itemDescuentos: CotizacionItemDescuento[],
     globalDescuentos: CotizacionDescuento[],
+    comisionMargen?: number | null,
+    comisionDescuento?: number | null,
   ) {
     let subtotalItems = 0;
     let descuentosItems = 0;
@@ -718,8 +756,13 @@ export class CotizacionesService {
       descuentosGlobales += subtotalNeto * (Number(d.valorPorcentaje) / 100);
     }
 
-    const total = subtotalNeto - descuentosGlobales;
-    return { subtotalItems, descuentosItems, subtotalNeto, descuentosGlobales, total, desglose };
+    let comision = 0;
+    if (comisionMargen != null && comisionDescuento != null) {
+      comision = subtotalNeto * (Number(comisionMargen) - Number(comisionDescuento)) / 100;
+    }
+
+    const total = subtotalNeto - descuentosGlobales - comision;
+    return { subtotalItems, descuentosItems, subtotalNeto, descuentosGlobales, comision, total, desglose };
   }
 
   async calcularTotal(versionId: number): Promise<{
@@ -727,6 +770,7 @@ export class CotizacionesService {
     descuentosItems: number;
     subtotalNeto: number;
     descuentosGlobales: number;
+    comision: number;
     total: number;
     desglose: object[];
     secciones?: Array<{
@@ -736,6 +780,7 @@ export class CotizacionesService {
       descuentosItems: number;
       subtotalNeto: number;
       descuentosGlobales: number;
+      comision: number;
       total: number;
       desglose: object[];
     }>;
@@ -754,6 +799,8 @@ export class CotizacionesService {
         version.items,
         version.items.flatMap((i) => i.descuentos),
         version.descuentos,
+        version.comisionMargen,
+        version.comisionDescuento,
       );
     }
 
@@ -776,6 +823,8 @@ export class CotizacionesService {
           version.items,
           [...sharedItemDescs, ...secItemDescs],
           [...sharedGlobalDescs, ...secGlobalDescs],
+          version.comisionMargen,
+          version.comisionDescuento,
         );
 
         return {
@@ -786,7 +835,7 @@ export class CotizacionesService {
       });
 
     // El total general es la suma o el de la primera sección (usamos primera como principal)
-    const principal = seccionResults[0] ?? this.calcularTotalParaDescuentos(version.items, [], []);
+    const principal = seccionResults[0] ?? this.calcularTotalParaDescuentos(version.items, [], [], version.comisionMargen, version.comisionDescuento);
 
     return {
       ...principal,
