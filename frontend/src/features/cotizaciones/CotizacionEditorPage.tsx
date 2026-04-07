@@ -236,7 +236,8 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, sh
     if (!applied) return acc;
     return acc * (1 - Number(applied.valorPorcentaje) / 100);
   }, bruto);
-  const subtotal = comisionEfectiva != null ? afterDiscounts * (1 - comisionEfectiva / 100) : afterDiscounts;
+  const comisionValor = comisionEfectiva != null ? afterDiscounts * comisionEfectiva / 100 : null;
+  const subtotal = comisionValor != null ? afterDiscounts - comisionValor : afterDiscounts;
 
   return (
     <tr className="hover:bg-gray-50">
@@ -309,7 +310,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, sh
       {showComision && (
         <td className="px-4 py-2 text-sm text-right whitespace-nowrap">
           <span className="text-blue-600 text-xs font-medium">
-            {comisionEfectiva != null ? `−${comisionEfectiva.toFixed(2)}%` : '—'}
+            {comisionValor != null ? `$${fmt(comisionValor)}` : '—'}
           </span>
         </td>
       )}
@@ -362,7 +363,8 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
       if (!applied) return acc;
       return acc * (1 - Number(applied.valorPorcentaje) / 100);
     }, Number(item.precioBase));
-    const subtUnit = comisionEfectiva != null ? afterDisc * (1 - comisionEfectiva / 100) : afterDisc;
+    const comVal = comisionEfectiva != null ? afterDisc * comisionEfectiva / 100 : 0;
+    const subtUnit = afterDisc - comVal;
     return s + subtUnit * Number(item.bolsas);
   }, 0);
   const precioPonderado = totalBolsasCultivo > 0 ? totalMontoUSD / totalBolsasCultivo : 0;
