@@ -484,7 +484,7 @@ export class CotizacionesService {
       usuarioId: usuarioId ?? null,
       cotizacionId: version.cotizacionId,
       tipoEntidad: TipoEntidad.COTIZACION_VERSION,
-      tipoAccion: TipoAccion.EDITAR,
+      tipoAccion: TipoAccion.ACTUALIZAR,
       entidadId: versionId,
       descripcion: dto
         ? `Comisión actualizada: margen ${dto.margen}%, descuento ${dto.descuento}%`
