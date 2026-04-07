@@ -589,6 +589,44 @@ function useDiscountOrder(storageKey: string, items: { id: number }[]) {
   return { sorted, onDragStart, onDragOver, onDragEnd };
 }
 
+// ─── Selector Dropdown (shared by all selector-mode discounts) ───────────────
+
+function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, className }: {
+  reglasSorted: { id: number; nombre?: string | null; prioridad: number; valor: string }[];
+  appliedPct: number | null;
+  isEditable: boolean;
+  onApply: (pct: number) => void;
+  className?: string;
+}) {
+  const currentReglaId = appliedPct != null
+    ? (reglasSorted.find((r) => Number(r.valor) === appliedPct)?.id ?? reglasSorted[0]?.id ?? '')
+    : (reglasSorted[0]?.id ?? '');
+
+  useEffect(() => {
+    if (appliedPct == null && reglasSorted.length > 0 && isEditable) {
+      onApply(Number(reglasSorted[0].valor));
+    }
+  }, [appliedPct]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <select
+      disabled={!isEditable}
+      value={currentReglaId}
+      onChange={(e) => {
+        const regla = reglasSorted.find((r) => r.id === Number(e.target.value));
+        if (regla) onApply(Number(regla.valor));
+      }}
+      className={className}
+    >
+      {reglasSorted.map((r) => (
+        <option key={r.id} value={r.id}>
+          {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
+        </option>
+      ))}
+    </select>
+  );
+}
+
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
 function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds }: {
@@ -629,9 +667,6 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
           const isSelector = desc.modo === 'selector';
           const reglasSorted = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
           const appliedPct = isSelector ? getAppliedSelectorPct(desc.id) : null;
-          const currentReglaId = isSelector && appliedPct != null
-            ? (reglasSorted.find((r) => Number(r.valor) === appliedPct)?.id ?? '')
-            : '';
 
           if (isSelector) {
             return (
@@ -652,21 +687,13 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                       {pending ? (
                         <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
                       ) : (
-                        <select
-                          disabled={!isEditable}
-                          value={currentReglaId}
-                          onChange={(e) => {
-                            const regla = reglasSorted.find((r) => r.id === Number(e.target.value));
-                            if (regla) onApplySelector(desc, Number(regla.valor));
-                          }}
+                        <SelectorDropdown
+                          reglasSorted={reglasSorted}
+                          appliedPct={appliedPct}
+                          isEditable={isEditable}
+                          onApply={(pct) => onApplySelector(desc, pct)}
                           className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
-                        >
-                          {reglasSorted.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
-                            </option>
-                          ))}
-                        </select>
+                        />
                       )}
                     </div>
                   </div>
@@ -818,10 +845,6 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
           const noAplica = noAplicaId === desc.id;
           const isSelector = desc.modo === 'selector';
           const reglasSorted = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
-          const currentReglaId = isSelector && pct != null
-            ? (reglasSorted.find((r) => Number(r.valor) === Number(pct))?.id ?? '')
-            : '';
-
           if (isSelector) {
             return (
               <div
@@ -841,21 +864,13 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
                       {pending ? (
                         <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
                       ) : (
-                        <select
-                          disabled={!isEditable}
-                          value={currentReglaId}
-                          onChange={async (e) => {
-                            const regla = reglasSorted.find((r) => r.id === Number(e.target.value));
-                            if (regla) await applyDescuento(desc, Number(regla.valor));
-                          }}
+                        <SelectorDropdown
+                          reglasSorted={reglasSorted}
+                          appliedPct={pct != null ? Number(pct) : null}
+                          isEditable={isEditable}
+                          onApply={(val) => applyDescuento(desc, val)}
                           className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
-                        >
-                          {reglasSorted.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
-                            </option>
-                          ))}
-                        </select>
+                        />
                       )}
                       {applied && pct != null && (
                         <span className="text-xs font-semibold text-orange-600 shrink-0">−{pct}%</span>
@@ -1561,10 +1576,6 @@ export function CotizacionEditorPage() {
                       const appliedPct = getSeccionPct(desc.id);
                       const isSelMode = desc.modo === 'selector';
                       const reglasSorted = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
-                      const currentReglaId = isSelMode && appliedPct != null
-                        ? (reglasSorted.find((r) => Number(r.valor) === appliedPct)?.id ?? '')
-                        : '';
-
                       const updatePct = async (pct: number) => {
                         await cotizacionesApi.updateSeccionDescuento(
                           cotizacionId, version!.id, seccion.id, desc.id, pct,
@@ -1576,21 +1587,13 @@ export function CotizacionEditorPage() {
                         <span key={desc.id} className="inline-flex items-center gap-1.5 bg-orange-50 rounded px-2 py-0.5">
                           <span className="text-xs font-medium text-gray-600">{desc.nombre}:</span>
                           {isSelMode ? (
-                            <select
-                              disabled={!isEditable}
-                              value={currentReglaId}
-                              onChange={(e) => {
-                                const regla = reglasSorted.find((r) => r.id === Number(e.target.value));
-                                updatePct(regla ? Number(regla.valor) : 0);
-                              }}
+                            <SelectorDropdown
+                              reglasSorted={reglasSorted}
+                              appliedPct={appliedPct}
+                              isEditable={isEditable}
+                              onApply={updatePct}
                               className="text-xs border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
-                            >
-                              {reglasSorted.map((r) => (
-                                <option key={r.id} value={r.id}>
-                                  {r.nombre ?? `Opción ${r.prioridad}`} — {r.valor}%
-                                </option>
-                              ))}
-                            </select>
+                            />
                           ) : (
                             <>
                               <input
