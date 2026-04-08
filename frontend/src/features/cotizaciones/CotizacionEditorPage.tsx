@@ -759,18 +759,15 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                   <div className="flex-1">
                     <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
                     <div className="flex items-center gap-2">
-                      {pending ? (
-                        <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
-                      ) : (
-                        <SelectorDropdown
-                          key={version?.id}
-                          reglasSorted={reglasSorted}
-                          appliedPct={appliedPct}
-                          isEditable={isEditable}
-                          onApply={(pct) => onApplySelector(desc, pct)}
-                          className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
-                        />
-                      )}
+                      <SelectorDropdown
+                        key={version?.id}
+                        reglasSorted={reglasSorted}
+                        appliedPct={appliedPct}
+                        isEditable={isEditable && !pending}
+                        onApply={(pct) => onApplySelector(desc, pct)}
+                        className={`flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default ${pending ? 'opacity-50' : ''}`}
+                      />
+                      {pending && <Spinner className="w-4 h-4 shrink-0 text-orange-500" />}
                     </div>
                   </div>
                 </div>
@@ -972,17 +969,14 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
                   <div className="flex-1">
                     <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
                     <div className="flex items-center gap-2">
-                      {pending ? (
-                        <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
-                      ) : (
-                        <SelectorDropdown
-                          reglasSorted={reglasSorted}
-                          appliedPct={pct != null ? Number(pct) : null}
-                          isEditable={isEditable}
-                          onApply={(val) => applyDescuento(desc, val)}
-                          className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
-                        />
-                      )}
+                      <SelectorDropdown
+                        reglasSorted={reglasSorted}
+                        appliedPct={pct != null ? Number(pct) : null}
+                        isEditable={isEditable && !pending}
+                        onApply={(val) => applyDescuento(desc, val)}
+                        className={`flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default ${pending ? 'opacity-50' : ''}`}
+                      />
+                      {pending && <Spinner className="w-4 h-4 shrink-0 text-blue-500" />}
                       {applied && pct != null && (
                         <span className="text-xs font-semibold text-orange-600 shrink-0">−{pct}%</span>
                       )}
@@ -1351,7 +1345,9 @@ export function CotizacionEditorPage() {
         setActiveDiscountIds((prev) => { const n = new Set(prev); n.delete(desc.id); return n; });
       }
       await invalidateVersion();
-    } catch { /* silent */ } finally {
+    } catch (e) {
+      console.error('applySelector failed:', e);
+    } finally {
       markDiscPending(desc.id, false);
     }
   }
