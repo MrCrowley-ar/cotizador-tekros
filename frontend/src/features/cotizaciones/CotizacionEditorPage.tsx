@@ -211,8 +211,10 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   function invalidate() {
-    qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
-    qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
+    return Promise.all([
+      qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] }),
+      qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] }),
+    ]);
   }
 
   async function saveManualPct(descId: number, pctStr: string) {
@@ -228,7 +230,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
       porcentaje: pct,
     });
     setEditingManual((prev) => { const n = { ...prev }; delete n[descId]; return n; });
-    invalidate();
+    await invalidate();
   }
 
   // Subtotal = precioBase × descuentos aplicados (incluyendo comisión dinámica)
@@ -886,8 +888,10 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
     return version.descuentos.find((d) => d.descuentoId === desc.id)?.valorPorcentaje ?? null;
   }
   function invalidate() {
-    qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
-    qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
+    return Promise.all([
+      qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] }),
+      qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] }),
+    ]);
   }
   function showNoAplica(id: number) {
     setNoAplicaId(id);
@@ -916,7 +920,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
         descuentoId: desc.id,
         porcentaje,
       });
-      invalidate();
+      await invalidate();
     } catch { /* silently fail */ } finally {
       markPending(desc.id, false);
     }
@@ -929,7 +933,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
       if (applied) {
         await cotizacionesApi.deleteGlobalDescuento(cotizacionId, version.id, applied.id);
       }
-      invalidate();
+      await invalidate();
     } finally {
       markPending(desc.id, false);
     }
@@ -1206,8 +1210,10 @@ export function CotizacionEditorPage() {
   }
 
   function invalidateVersion() {
-    qc.refetchQueries({ queryKey: ['version', cotizacionId, selectedVersionId] });
-    qc.refetchQueries({ queryKey: ['total', cotizacionId, selectedVersionId] });
+    return Promise.all([
+      qc.refetchQueries({ queryKey: ['version', cotizacionId, selectedVersionId] }),
+      qc.refetchQueries({ queryKey: ['total', cotizacionId, selectedVersionId] }),
+    ]);
   }
 
   async function toggleDiscount(desc: Descuento) {
@@ -1306,7 +1312,7 @@ export function CotizacionEditorPage() {
           }
         }
       }
-      invalidateVersion();
+      await invalidateVersion();
     } catch {
       // Revert optimistic update on error
       setActiveDiscountIds((prev) => {
@@ -1346,7 +1352,7 @@ export function CotizacionEditorPage() {
       } else {
         setActiveDiscountIds((prev) => { const n = new Set(prev); n.delete(desc.id); return n; });
       }
-      invalidateVersion();
+      await invalidateVersion();
     } catch { /* silent */ } finally {
       markDiscPending(desc.id, false);
     }
@@ -1585,7 +1591,7 @@ export function CotizacionEditorPage() {
                         await cotizacionesApi.updateSeccionDescuento(
                           cotizacionId, version!.id, seccion.id, desc.id, pct,
                         );
-                        invalidateVersion();
+                        await invalidateVersion();
                       };
 
                       return (
