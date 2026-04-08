@@ -704,23 +704,22 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
 
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
-function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds }: {
+function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, sortedDescuentos, onToggle, onApplySelector, version, excludeIds,
+  onDragStart, onDragOver, onDragEnd }: {
   isEditable: boolean;
   activeIds: Set<number>;
   pendingIds: Set<number>;
-  allDescuentos: Descuento[];
+  sortedDescuentos: Descuento[];
   onToggle: (desc: Descuento) => void;
   onApplySelector: (desc: Descuento, pct: number | null) => void;
   version: CotizacionVersion | undefined;
   excludeIds?: Set<number>;
+  onDragStart: (id: number) => void;
+  onDragOver: (id: number) => void;
+  onDragEnd: () => void;
 }) {
-  // Show non-global discounts + global selectors/manual/comision (apply per-item)
-  const nonGlobal = allDescuentos.filter((d) =>
-    (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision')
-    && !(excludeIds?.has(d.id)),
-  );
-  const { sorted: sortedNonGlobal, onDragStart, onDragOver, onDragEnd } = useDiscountOrder('desc-order-item', nonGlobal);
-  if (nonGlobal.length === 0) return null;
+  const visibleDescuentos = sortedDescuentos.filter(d => !(excludeIds?.has(d.id)));
+  if (visibleDescuentos.length === 0) return null;
 
   // Find currently applied pct for selector discounts
   function getAppliedSelectorPct(descId: number): number | null {
@@ -736,7 +735,7 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
     <div className="bg-white rounded-xl border p-4">
       <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos</h3>
       <div className="space-y-2">
-        {sortedNonGlobal.map((desc) => {
+        {visibleDescuentos.map((desc) => {
           const applied = activeIds.has(desc.id);
           const pending = pendingIds.has(desc.id);
           const isSelector = desc.modo === 'selector';
@@ -775,10 +774,8 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
             );
           }
 
-          // Comision: show as checkbox with formula info
+          // Comision: show as checkbox
           if (desc.modo === 'comision') {
-            const refDesc = allDescuentos.find((d) => d.id === desc.comisionDescuentoId);
-            const refName = refDesc?.nombre ?? `#${desc.comisionDescuentoId}`;
             return (
               <div
                 key={desc.id}
@@ -1145,19 +1142,26 @@ export function CotizacionEditorPage() {
 
   // Active discounts as full objects (for passing to CultivoSection)
   // Include global selectors and manual discounts alongside non-global discounts
-  const activeDescuentos = useMemo(
-    () => allDescuentos
-      .filter((d) =>
-        (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision') && activeDiscountIds.has(d.id)
-      )
-      .sort((a, b) => {
-        // Comision columns always last (before subtotal)
-        if (a.modo === 'comision' && b.modo !== 'comision') return 1;
-        if (a.modo !== 'comision' && b.modo === 'comision') return -1;
-        return 0;
-      }),
-    [allDescuentos, activeDiscountIds],
+  // Sorted by sidebar drag order (persisted in localStorage), comision always last
+  const itemPanelDescuentos = useMemo(
+    () => allDescuentos.filter((d) =>
+      d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision'
+    ),
+    [allDescuentos],
   );
+  const {
+    sorted: sortedItemDesc,
+    onDragStart: itemDescDragStart,
+    onDragOver: itemDescDragOver,
+    onDragEnd: itemDescDragEnd,
+  } = useDiscountOrder('desc-order-item', itemPanelDescuentos);
+
+  const activeDescuentos = useMemo(() => {
+    const active = sortedItemDesc.filter((d) => activeDiscountIds.has(d.id));
+    const nonComision = active.filter(d => d.modo !== 'comision');
+    const comision = active.filter(d => d.modo === 'comision');
+    return [...nonComision, ...comision];
+  }, [sortedItemDesc, activeDiscountIds]);
 
   // PNG export
   const pngExport = useCotizacionExportPng({
@@ -1704,11 +1708,14 @@ export function CotizacionEditorPage() {
               isEditable={isEditable}
               activeIds={activeDiscountIds}
               pendingIds={pendingDiscountIds}
-              allDescuentos={allDescuentos}
+              sortedDescuentos={sortedItemDesc}
               onToggle={toggleDiscount}
               onApplySelector={applySelector}
               version={version}
               excludeIds={sectionVariableDescIds}
+              onDragStart={itemDescDragStart}
+              onDragOver={itemDescDragOver}
+              onDragEnd={itemDescDragEnd}
             />
             {version && (
               <DescuentosGlobalesPanel
