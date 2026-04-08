@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsNotEmpty,
@@ -28,8 +29,8 @@ export class CreateDescuentoDto {
   @IsOptional()
   modo?: ModoDescuento;
 
-  // Requerido solo si modo = BASICO
-  @ValidateIf((o) => !o.modo || o.modo === ModoDescuento.BASICO)
+  // Requerido si modo = BASICO o si esComision = true (margen base)
+  @ValidateIf((o) => !o.modo || o.modo === ModoDescuento.BASICO || o.esComision)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100)
@@ -44,4 +45,8 @@ export class CreateDescuentoDto {
   @ValidateNested({ each: true })
   @Type(() => CreateDescuentoReglaDto)
   reglas?: CreateDescuentoReglaDto[];
+
+  @IsOptional()
+  @IsBoolean()
+  esComision?: boolean;
 }

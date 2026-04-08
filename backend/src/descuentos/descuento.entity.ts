@@ -57,6 +57,9 @@ export class Descuento {
   @Column({ name: 'fecha_vigencia', type: 'date' })
   fechaVigencia: Date;
 
+  @Column({ name: 'es_comision', default: false })
+  esComision: boolean;
+
   @Column({ default: true })
   activo: boolean;
 

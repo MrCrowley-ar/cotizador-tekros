@@ -86,6 +86,7 @@ export interface Descuento {
   valorPorcentaje: number | null;
   fechaVigencia: string;
   activo: boolean;
+  esComision: boolean;
   reglas: DescuentoRegla[];
 }
 export interface DescuentoAplicado {
@@ -110,6 +111,7 @@ export interface CotizacionItemDescuento {
   id: number;
   descuentoId: number;
   valorPorcentaje: number;
+  esComision: boolean;
   seccionId: number | null;
   descuento?: Descuento;
 }
@@ -130,6 +132,7 @@ export interface CotizacionDescuento {
   id: number;
   descuentoId: number;
   valorPorcentaje: number;
+  esComision: boolean;
   seccionId: number | null;
   descuento?: Descuento;
 }

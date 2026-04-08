@@ -57,13 +57,21 @@ export class DescuentosService {
       throw new BadRequestException('Se requiere al menos una regla para modo avanzado');
     }
 
+    const esComision = dto.esComision ?? false;
+
+    // Commission discounts always need valorPorcentaje (the base margin)
+    if (esComision && dto.valorPorcentaje == null) {
+      throw new BadRequestException('valorPorcentaje (margen base) es requerido para descuentos de comisión');
+    }
+
     const descuento = await this.repo.save(
       this.repo.create({
         nombre: dto.nombre,
         tipoAplicacion: dto.tipoAplicacion ?? TipoAplicacion.GLOBAL,
         modo,
-        valorPorcentaje: modo === ModoDescuento.BASICO ? dto.valorPorcentaje : null,
+        valorPorcentaje: (modo === ModoDescuento.BASICO || esComision) ? dto.valorPorcentaje : null,
         fechaVigencia: dto.fechaVigencia as any,
+        esComision,
       }),
     );
 
@@ -155,9 +163,11 @@ export class DescuentosService {
     if (dto.tipoAplicacion !== undefined) descuento.tipoAplicacion = dto.tipoAplicacion;
     if (dto.fechaVigencia !== undefined) descuento.fechaVigencia = dto.fechaVigencia as any;
     if (dto.valorPorcentaje !== undefined) descuento.valorPorcentaje = dto.valorPorcentaje;
+    if (dto.esComision !== undefined) descuento.esComision = dto.esComision;
     if (dto.modo !== undefined) {
       descuento.modo = dto.modo;
-      if (dto.modo !== ModoDescuento.BASICO) descuento.valorPorcentaje = null;
+      // For commission discounts, keep valorPorcentaje (it's the margin) even in non-BASICO modes
+      if (dto.modo !== ModoDescuento.BASICO && !descuento.esComision) descuento.valorPorcentaje = null;
     }
 
     await this.repo.save(descuento);

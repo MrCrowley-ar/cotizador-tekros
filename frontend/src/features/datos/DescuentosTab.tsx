@@ -171,6 +171,12 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   );
   const [error, setError] = useState('');
 
+  // ── Comisión ──
+  const [esComision, setEsComision] = useState(initial?.esComision ?? false);
+  const [margenBase, setMargenBase] = useState(
+    initial?.esComision && initial?.valorPorcentaje != null ? String(initial.valorPorcentaje) : '15',
+  );
+
   // ── Alcance y tipo de condición (independientes) ──
   const [alcance, setAlcance] = useState<import('../../api/types').TipoAplicacion>(
     initial ? inferirAlcance(initial) : 'global',
@@ -327,6 +333,9 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     mutationFn: () => {
       type CondOp = '>=' | '=';
 
+      // Common commission field
+      const comisionField = esComision ? { esComision: true as const, valorPorcentaje: Number(margenBase) } : { esComision: false as const };
+
       // fijo + cultivo → grilla por cultivo (avanzado con reglas cultivo_id)
       if (tipoCondicion === 'fijo' && alcance === 'cultivo') {
         const reglas = cultivos
@@ -339,6 +348,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         const payload = {
           nombre, tipoAplicacion: 'cultivo' as const,
           modo: 'avanzado' as const, fechaVigencia, reglas,
+          ...comisionField,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
@@ -348,8 +358,9 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         const payload = {
           nombre, tipoAplicacion: alcance,
           modo: 'basico' as const,
-          valorPorcentaje: Number(pctFijo),
+          valorPorcentaje: esComision ? Number(margenBase) : Number(pctFijo),
           fechaVigencia,
+          ...comisionField,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
@@ -373,7 +384,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
             allRules.push({ valor: Number(pctDefC), prioridad: prio++, condiciones: [{ campo: 'cultivo_id' as const, operador: '=' as CondOp, valor: cultivo.id }, { campo: driver as string, operador: '>=' as CondOp, valor: 0 }] });
           }
         }
-        const payload = { nombre, tipoAplicacion: 'cultivo' as const, modo: 'avanzado' as const, fechaVigencia, reglas: allRules };
+        const payload = { nombre, tipoAplicacion: 'cultivo' as const, modo: 'avanzado' as const, fechaVigencia, reglas: allRules, ...comisionField };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
@@ -398,6 +409,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         const payload = {
           nombre, tipoAplicacion: alcance,
           modo: 'avanzado' as const, fechaVigencia, reglas,
+          ...comisionField,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
@@ -424,7 +436,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
             });
           }
         }
-        const payload = { nombre, tipoAplicacion: 'cultivo' as const, modo: 'avanzado' as const, fechaVigencia, reglas: allRules };
+        const payload = { nombre, tipoAplicacion: 'cultivo' as const, modo: 'avanzado' as const, fechaVigencia, reglas: allRules, ...comisionField };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
@@ -444,6 +456,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         const payload = {
           nombre, tipoAplicacion: alcance,
           modo: 'avanzado' as const, fechaVigencia, reglas,
+          ...comisionField,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
@@ -453,6 +466,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         const payload = {
           nombre, tipoAplicacion: alcance,
           modo: 'manual' as const, fechaVigencia,
+          ...comisionField,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
@@ -469,6 +483,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
       const payload = {
         nombre, tipoAplicacion: alcance,
         modo: 'selector' as const, fechaVigencia, reglas,
+        ...comisionField,
       };
       return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
     },
@@ -479,9 +494,11 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   // ── Validación ──
   const canSave = (() => {
     if (!nombre.trim() || !fechaVigencia) return false;
+    if (esComision && (margenBase === '' || Number(margenBase) <= 0)) return false;
     if (tipoCondicion === 'fijo' && alcance === 'cultivo')
       return cultivos.some((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0);
-    if (tipoCondicion === 'fijo') return pctFijo !== '' && Number(pctFijo) >= 0;
+    if (tipoCondicion === 'fijo' && !esComision) return pctFijo !== '' && Number(pctFijo) >= 0;
+    if (tipoCondicion === 'fijo' && esComision) return true; // margen already validated above
     if (tipoCondicion === 'por_rango' && alcance === 'cultivo')
       return cultivos.some((c) => (tramosPorCultivo[c.id] ?? []).some((t) => t.pct !== '') || (pctDefaultPorCultivo[c.id] ?? '') !== '');
     if (tipoCondicion === 'por_rango')
@@ -538,6 +555,41 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
             />
           </div>
         </div>
+
+        {/* ── Es comisión ── */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={esComision}
+            onChange={(e) => setEsComision(e.target.checked)}
+            className="rounded text-blue-600 cursor-pointer"
+          />
+          <span className="text-sm font-medium text-gray-700">Es comisión</span>
+          <span className="text-xs text-gray-400">— El porcentaje se aplica como margen sobre el neto de cada ítem</span>
+        </label>
+
+        {/* ── Margen base (solo comisión) ── */}
+        {esComision && (
+          <div>
+            <label className={labelCls}>Margen base % *</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                value={margenBase}
+                onChange={(e) => setMargenBase(e.target.value)}
+                placeholder="ej: 15"
+                className={`${inputCls} w-32 text-right`}
+              />
+              <span className="text-sm text-gray-500">%</span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Para modo selector: Comisión efectiva = Margen base − Opción seleccionada
+            </p>
+          </div>
+        )}
 
         {/* ── Alcance ── */}
         <div>
@@ -1027,6 +1079,11 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
               {ALL_DRIVER_LABELS[inferirDriverRango(descuento)]}
             </span>
           )}
+          {descuento.esComision && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full border border-blue-200">
+              Comisión
+            </span>
+          )}
           <Badge label={descuento.activo ? 'activo' : 'inactivo'} />
         </div>
 
@@ -1034,6 +1091,17 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           <span className="text-gray-400">Vigencia:</span>{' '}
           <span className="font-medium">{new Date(descuento.fechaVigencia).toLocaleDateString('es-AR')}</span>
         </div>
+
+        {/* Margen comisión */}
+        {descuento.esComision && descuento.valorPorcentaje != null && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm flex items-center gap-2">
+            <span className="text-blue-700 font-medium">Margen base:</span>
+            <span className="font-bold text-blue-800 text-lg">{descuento.valorPorcentaje}%</span>
+            {descuento.modo === 'selector' && (
+              <span className="text-xs text-blue-500 ml-2">Comisión efectiva = Margen − Opción seleccionada</span>
+            )}
+          </div>
+        )}
 
         {/* Fijo básico */}
         {tipoV === 'fijo' && descuento.modo === 'basico' && (
@@ -1198,7 +1266,14 @@ export function DescuentosTab() {
                   onClick={() => setSelected(d)}
                   className="hover:bg-blue-50 cursor-pointer transition-colors"
                 >
-                  <td className="px-4 py-3 font-medium text-gray-900">{d.nombre}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    {d.nombre}
+                    {d.esComision && (
+                      <span className="ml-2 inline-flex items-center text-xs font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                        Comisión
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="inline-flex items-center text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
@@ -1215,13 +1290,16 @@ export function DescuentosTab() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-gray-700">
-                    {d.modo === 'basico'
+                    {d.esComision && d.valorPorcentaje != null
+                      ? `Margen ${d.valorPorcentaje}%`
+                      : d.modo === 'basico'
                       ? `${d.valorPorcentaje}%`
                       : d.modo === 'selector'
                       ? `${d.reglas?.length ?? 0} opción(es)`
                       : d.modo === 'manual'
                       ? '% por ítem'
                       : `${d.reglas?.length ?? 0} regla(s)`}
+                    {d.esComision && d.modo === 'selector' && ` · ${d.reglas?.length ?? 0} opción(es)`}
                   </td>
                   <td className="px-4 py-3 text-gray-500">
                     {new Date(d.fechaVigencia).toLocaleDateString('es-AR')}

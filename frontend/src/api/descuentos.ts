@@ -4,9 +4,10 @@ import type { Descuento, DescuentoAplicado, TipoAplicacion } from './types';
 export interface CreateDescuentoPayload {
   nombre: string;
   tipoAplicacion?: TipoAplicacion;
-  modo?: 'basico' | 'avanzado' | 'selector';
+  modo?: 'basico' | 'avanzado' | 'selector' | 'manual';
   valorPorcentaje?: number;
   fechaVigencia: string;
+  esComision?: boolean;
   reglas?: Array<{
     nombre?: string;
     valor: number;
@@ -16,6 +17,8 @@ export interface CreateDescuentoPayload {
       operador: string;
       valor: number;
       valor2?: number;
+      valorCampo?: string;
+      valorMultiplier?: number;
     }>;
   }>;
 }

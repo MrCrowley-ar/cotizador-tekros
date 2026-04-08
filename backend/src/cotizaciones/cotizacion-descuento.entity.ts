@@ -24,6 +24,9 @@ export class CotizacionDescuento {
   @Column({ name: 'valor_porcentaje', type: 'decimal', precision: 5, scale: 2 })
   valorPorcentaje: number;
 
+  @Column({ name: 'es_comision', default: false })
+  esComision: boolean;
+
   @ManyToOne(() => CotizacionVersion, (v) => v.descuentos)
   @JoinColumn({ name: 'version_id' })
   version: CotizacionVersion;

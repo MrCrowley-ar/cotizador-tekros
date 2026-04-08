@@ -359,6 +359,7 @@ export class CotizacionesService {
         cotizacionItemId: itemId,
         descuentoId: descuento.id,
         valorPorcentaje: porcentaje,
+        esComision: descuento.esComision,
       }),
     );
 
@@ -371,8 +372,8 @@ export class CotizacionesService {
       tipoEntidad: TipoEntidad.COTIZACION_ITEM,
       tipoAccion: TipoAccion.AGREGAR_DESCUENTO,
       entidadId: aplicado.id,
-      descripcion: `Descuento "${descuento.nombre}" (${porcentaje}%) aplicado al ítem ${itemId}`,
-      datosNuevos: { descuentoId: descuento.id, nombre: descuento.nombre, porcentaje },
+      descripcion: `${descuento.esComision ? 'Comisión' : 'Descuento'} "${descuento.nombre}" (${porcentaje}%) aplicado al ítem ${itemId}`,
+      datosNuevos: { descuentoId: descuento.id, nombre: descuento.nombre, porcentaje, esComision: descuento.esComision },
     });
 
     return aplicado;
@@ -423,6 +424,7 @@ export class CotizacionesService {
         versionId,
         descuentoId: descuento.id,
         valorPorcentaje: porcentaje,
+        esComision: descuento.esComision,
       }),
     );
 
@@ -434,8 +436,8 @@ export class CotizacionesService {
       tipoEntidad: TipoEntidad.COTIZACION_VERSION,
       tipoAccion: TipoAccion.AGREGAR_DESCUENTO,
       entidadId: aplicado.id,
-      descripcion: `Descuento global "${descuento.nombre}" (${porcentaje}%) aplicado a versión ${versionId}`,
-      datosNuevos: { descuentoId: descuento.id, nombre: descuento.nombre, porcentaje },
+      descripcion: `${descuento.esComision ? 'Comisión' : 'Descuento'} global "${descuento.nombre}" (${porcentaje}%) aplicado a versión ${versionId}`,
+      datosNuevos: { descuentoId: descuento.id, nombre: descuento.nombre, porcentaje, esComision: descuento.esComision },
     });
 
     return aplicado;
@@ -718,13 +720,33 @@ export class CotizacionesService {
     let descuentosItems = 0;
     const desglose: object[] = [];
 
-    // Index item discounts by item id
-    const descByItem = new Map<number, CotizacionItemDescuento[]>();
+    // Split item discounts into regular and commission
+    const regularItemDescs: CotizacionItemDescuento[] = [];
+    const comisionItemDescs: CotizacionItemDescuento[] = [];
     for (const d of itemDescuentos) {
+      if (d.esComision) comisionItemDescs.push(d);
+      else regularItemDescs.push(d);
+    }
+
+    // Index regular item discounts by item id
+    const descByItem = new Map<number, CotizacionItemDescuento[]>();
+    for (const d of regularItemDescs) {
       const arr = descByItem.get(d.cotizacionItemId) ?? [];
       arr.push(d);
       descByItem.set(d.cotizacionItemId, arr);
     }
+
+    // Index commission item discounts by item id
+    const comisionByItem = new Map<number, CotizacionItemDescuento[]>();
+    for (const d of comisionItemDescs) {
+      const arr = comisionByItem.get(d.cotizacionItemId) ?? [];
+      arr.push(d);
+      comisionByItem.set(d.cotizacionItemId, arr);
+    }
+
+    // New-style commission: from esComision=true records
+    let comision = 0;
+    const hasNewComision = comisionItemDescs.length > 0;
 
     for (const item of items) {
       const subtotalItem = Number(item.precioBase);
@@ -737,6 +759,13 @@ export class CotizacionesService {
       const netoItem = subtotalItem - descuentoItemTotal;
       subtotalItems += subtotalItem;
       descuentosItems += descuentoItemTotal;
+
+      // Commission applied to neto (after regular discounts)
+      let comisionItem = 0;
+      for (const d of comisionByItem.get(item.id) ?? []) {
+        comisionItem += netoItem * (Number(d.valorPorcentaje) / 100);
+      }
+      comision += comisionItem;
 
       desglose.push({
         itemId: item.id,
@@ -752,17 +781,21 @@ export class CotizacionesService {
 
     const subtotalNeto = subtotalItems - descuentosItems;
 
+    // Split global discounts into regular and commission
     let descuentosGlobales = 0;
     for (const d of globalDescuentos) {
-      descuentosGlobales += subtotalNeto * (Number(d.valorPorcentaje) / 100);
+      if (!d.esComision) {
+        descuentosGlobales += subtotalNeto * (Number(d.valorPorcentaje) / 100);
+      } else {
+        comision += subtotalNeto * (Number(d.valorPorcentaje) / 100);
+      }
     }
 
-    // Commission: effective = margen - selected discount pct (uniform for all items)
-    let comision = 0;
-    if (comisionMargen != null) {
+    // Old-style commission fallback: only if no new-style commission records exist
+    if (!hasNewComision && comisionMargen != null) {
       let selectedPct = 0;
       if (comisionDescuentoId != null) {
-        const found = itemDescuentos.find((d) => d.descuentoId === comisionDescuentoId);
+        const found = regularItemDescs.find((d) => d.descuentoId === comisionDescuentoId);
         selectedPct = found ? Number(found.valorPorcentaje) : 0;
       }
       const efectivo = Math.max(0, Number(comisionMargen) - selectedPct);

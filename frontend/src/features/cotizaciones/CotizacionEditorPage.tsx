@@ -668,7 +668,7 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
 
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
-function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds, comisionActive, comisionMargen, comisionDescuentoId, onToggleComision, onUpdateComisionMargen, onSaveComisionMargen, onUpdateComisionDescuentoId, savingComision }: {
+function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds, comisionActive, comisionMargen, comisionDescuentoId }: {
   isEditable: boolean;
   activeIds: Set<number>;
   pendingIds: Set<number>;
@@ -680,15 +680,10 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
   comisionActive: boolean;
   comisionMargen: number;
   comisionDescuentoId: number | null;
-  onToggleComision: () => void;
-  onUpdateComisionMargen: (margen: number) => void;
-  onSaveComisionMargen: () => void;
-  onUpdateComisionDescuentoId: (descuentoId: number | null) => void;
-  savingComision: boolean;
 }) {
-  // Show non-global discounts + global selectors/manual (apply per-item)
+  // Show non-global discounts + global selectors/manual + commission discounts (apply per-item)
   const nonGlobal = allDescuentos.filter((d) =>
-    (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual')
+    (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.esComision)
     && !(excludeIds?.has(d.id)),
   );
   const { sorted: sortedNonGlobal, onDragStart, onDragOver, onDragEnd } = useDiscountOrder('desc-order-item', nonGlobal);
@@ -716,6 +711,7 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
           const appliedPct = isSelector ? getAppliedSelectorPct(desc.id) : null;
 
           if (isSelector) {
+            const selectorBg = applied ? (desc.esComision ? 'bg-blue-50' : 'bg-orange-50') : '';
             return (
               <div
                 key={desc.id}
@@ -724,22 +720,27 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                 onDragOver={(e) => { e.preventDefault(); onDragOver(desc.id); }}
                 onDrop={onDragEnd}
                 onDragEnd={onDragEnd}
-                className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}
+                className={`rounded-lg px-2 py-1.5 ${selectorBg} ${!isEditable ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-center gap-2">
                   <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
                   <div className="flex-1">
-                    <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
+                    <div className="text-xs font-medium text-gray-600 mb-1">
+                      {desc.nombre}
+                      {desc.esComision && <span className="ml-1 text-blue-600 font-normal">(Margen {desc.valorPorcentaje}%)</span>}
+                    </div>
                     <div className="flex items-center gap-2">
                       {pending ? (
-                        <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
+                        <Spinner className={`w-4 h-4 shrink-0 ${desc.esComision ? 'text-blue-500' : 'text-orange-500'}`} />
                       ) : (
                         <SelectorDropdown
                           reglasSorted={reglasSorted}
-                          appliedPct={appliedPct}
+                          appliedPct={desc.esComision && appliedPct != null && desc.valorPorcentaje != null
+                            ? Math.round((Number(desc.valorPorcentaje) - appliedPct) * 100) / 100
+                            : appliedPct}
                           isEditable={isEditable}
                           onApply={(pct) => onApplySelector(desc, pct)}
-                          className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
+                          className={`flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 ${desc.esComision ? 'focus:ring-blue-400' : 'focus:ring-orange-400'} disabled:cursor-default`}
                         />
                       )}
                     </div>
@@ -749,6 +750,8 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
             );
           }
 
+          const checkboxColor = desc.esComision ? 'text-blue-600' : 'text-orange-500';
+          const checkboxBg = applied ? (desc.esComision ? 'bg-blue-50' : 'bg-orange-50') : 'hover:bg-gray-50';
           return (
             <div
               key={desc.id}
@@ -760,25 +763,26 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
             >
               <label
                 className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors select-none
-                  ${applied ? 'bg-orange-50' : 'hover:bg-gray-50'}
+                  ${checkboxBg}
                   ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
               >
                 <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
                 {pending ? (
-                  <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
+                  <Spinner className={`w-4 h-4 shrink-0 ${desc.esComision ? 'text-blue-500' : 'text-orange-500'}`} />
                 ) : (
                   <input
                     type="checkbox"
                     checked={applied}
                     disabled={!isEditable}
                     onChange={() => onToggle(desc)}
-                    className="rounded text-orange-500 cursor-pointer"
+                    className={`rounded ${checkboxColor} cursor-pointer`}
                   />
                 )}
                 <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
                   {desc.nombre}
+                  {desc.esComision && <span className="ml-1 text-xs text-blue-500 font-normal">(Margen {desc.valorPorcentaje}%)</span>}
                 </span>
-                {desc.modo === 'basico' && desc.valorPorcentaje != null && (
+                {desc.modo === 'basico' && desc.valorPorcentaje != null && !desc.esComision && (
                   <span className="text-xs text-gray-400">{desc.valorPorcentaje}%</span>
                 )}
                 {desc.modo === 'avanzado' && (
@@ -789,65 +793,20 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
           );
         })}
 
-        {/* ── Comisión ── */}
-        <div className="border-t pt-2 mt-2">
-          <label
-            className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors select-none
-              ${comisionActive ? 'bg-blue-50' : 'hover:bg-gray-50'}
-              ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
-          >
-            {savingComision ? (
-              <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
-            ) : (
-              <input
-                type="checkbox"
-                checked={comisionActive}
-                disabled={!isEditable}
-                onChange={onToggleComision}
-                className="rounded text-blue-600 cursor-pointer"
-              />
-            )}
-            <span className={`flex-1 leading-tight ${comisionActive ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
-              Comisión
-            </span>
-          </label>
-
-          {comisionActive && (
-            <div className="px-2 mt-2 space-y-2">
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500 w-20">Margen %</label>
-                <input
-                  type="number"
-                  disabled={!isEditable || savingComision}
-                  value={comisionMargen}
-                  min={0} max={100} step={0.5}
-                  onChange={(e) => onUpdateComisionMargen(Number(e.target.value))}
-                  onBlur={onSaveComisionMargen}
-                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                  className="w-20 text-sm border rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500 w-20">Descuento</label>
-                <select
-                  disabled={!isEditable || savingComision}
-                  value={comisionDescuentoId ?? ''}
-                  onChange={(e) => onUpdateComisionDescuentoId(e.target.value ? Number(e.target.value) : null)}
-                  className="flex-1 text-sm border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
-                >
-                  <option value="">— Ninguno —</option>
-                  {allDescuentos
-                    .filter((d) => activeIds.has(d.id))
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.nombre} {d.valorPorcentaje != null ? `(${d.valorPorcentaje}%)` : ''}
-                      </option>
-                    ))}
-                </select>
-              </div>
+        {/* ── Comisión legado (solo para cotizaciones existentes con comisionMargen) ── */}
+        {comisionActive && !nonGlobal.some((d) => d.esComision) && (
+          <div className="border-t pt-2 mt-2">
+            <div className="px-2 py-1.5 bg-blue-50 rounded-lg">
+              <div className="text-xs font-medium text-blue-700 mb-1">Comisión (legado)</div>
+              <div className="text-xs text-gray-500">Margen: {comisionMargen}%</div>
+              {comisionDescuentoId != null && (
+                <div className="text-xs text-gray-500">
+                  Desc: {allDescuentos.find((d) => d.id === comisionDescuentoId)?.nombre ?? comisionDescuentoId}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1143,26 +1102,45 @@ export function CotizacionEditorPage() {
 
   // Active discounts as full objects (for passing to CultivoSection)
   // Include global selectors and manual discounts alongside non-global discounts
+  // Exclude commission discounts — they show in the commission column, not as discount columns
   const activeDescuentos = useMemo(
     () => allDescuentos.filter((d) =>
-      (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual') && activeDiscountIds.has(d.id)
+      (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual') && activeDiscountIds.has(d.id) && !d.esComision
     ),
     [allDescuentos, activeDiscountIds],
   );
 
-  // Commission state
+  // Commission state — old system (legacy) + new system (esComision discounts)
   const [comisionMargenLocal, setComisionMargenLocal] = useState(15);
-  const [savingComision, setSavingComision] = useState(false);
 
   const comisionActive = version?.comisionMargen != null;
-  const showComision = comisionActive;
   const comisionDescuentoId = version?.comisionDescuentoId ?? null;
 
   useEffect(() => {
     if (version?.comisionMargen != null) setComisionMargenLocal(Number(version.comisionMargen));
   }, [version?.comisionMargen]);
 
+  // New-style commission: detect active esComision discounts
+  const hasNewComision = useMemo(
+    () => activeDescuentos.some((d) => d.esComision),
+    [activeDescuentos],
+  );
+  const showComision = comisionActive || hasNewComision;
+
   const comisionEfectiva = useMemo(() => {
+    // New system: sum esComision discount pcts from applied items
+    const comisionDescs = activeDescuentos.filter((d) => d.esComision);
+    if (comisionDescs.length > 0) {
+      const firstItem = version?.items?.[0];
+      if (!firstItem) return null;
+      let totalPct = 0;
+      for (const cd of comisionDescs) {
+        const applied = firstItem.descuentos.find((x) => x.descuentoId === cd.id);
+        if (applied) totalPct += Number(applied.valorPorcentaje);
+      }
+      return totalPct || null;
+    }
+    // Old system fallback
     if (!version || version.comisionMargen == null) return null;
     const margen = Number(version.comisionMargen);
     if (version.comisionDescuentoId == null) return margen;
@@ -1171,48 +1149,7 @@ export function CotizacionEditorPage() {
       if (found) return margen - Number(found.valorPorcentaje);
     }
     return margen;
-  }, [version]);
-
-  async function toggleComision() {
-    if (!isEditable || !version || savingComision) return;
-    setSavingComision(true);
-    try {
-      if (comisionActive) {
-        await cotizacionesApi.deleteComision(cotizacionId, version.id);
-      } else {
-        await cotizacionesApi.updateComision(cotizacionId, version.id, { margen: comisionMargenLocal, descuentoId: null });
-      }
-      invalidateVersion();
-    } finally {
-      setSavingComision(false);
-    }
-  }
-
-  async function updateComisionMargen(margen: number) {
-    setComisionMargenLocal(margen);
-  }
-
-  async function saveComisionMargen() {
-    if (!version || !comisionActive) return;
-    setSavingComision(true);
-    try {
-      await cotizacionesApi.updateComision(cotizacionId, version.id, { margen: comisionMargenLocal, descuentoId: comisionDescuentoId });
-      invalidateVersion();
-    } finally {
-      setSavingComision(false);
-    }
-  }
-
-  async function updateComisionDescuentoId(descuentoId: number | null) {
-    if (!version || !comisionActive) return;
-    setSavingComision(true);
-    try {
-      await cotizacionesApi.updateComision(cotizacionId, version.id, { margen: comisionMargenLocal, descuentoId });
-      invalidateVersion();
-    } finally {
-      setSavingComision(false);
-    }
-  }
+  }, [version, activeDescuentos]);
 
   // PNG export
   const pngExport = useCotizacionExportPng({
@@ -1372,11 +1309,15 @@ export function CotizacionEditorPage() {
         })
       );
       if (porcentaje !== null) {
+        // For commission selectors: effective = margin - selected option
+        const effectivePct = desc.esComision && desc.valorPorcentaje != null
+          ? Math.max(0, Number(desc.valorPorcentaje) - porcentaje)
+          : porcentaje;
         await Promise.all(
           allItems.map((item) =>
             cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
               descuentoId: desc.id,
-              porcentaje,
+              porcentaje: effectivePct,
             })
           )
         );
@@ -1754,11 +1695,6 @@ export function CotizacionEditorPage() {
               comisionActive={comisionActive}
               comisionMargen={comisionMargenLocal}
               comisionDescuentoId={comisionDescuentoId}
-              onToggleComision={toggleComision}
-              onUpdateComisionMargen={updateComisionMargen}
-              onSaveComisionMargen={saveComisionMargen}
-              onUpdateComisionDescuentoId={updateComisionDescuentoId}
-              savingComision={savingComision}
             />
             {version && (
               <DescuentosGlobalesPanel
