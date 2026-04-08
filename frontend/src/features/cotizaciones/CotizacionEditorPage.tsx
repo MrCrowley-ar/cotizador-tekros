@@ -657,6 +657,10 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
   // Optimistic local state so the select doesn't revert while the API call is in flight
   const [localReglaId, setLocalReglaId] = useState<number | string | null>(null);
 
+  // Keep a ref to onApply so the auto-apply effect always uses the latest callback
+  const onApplyRef = useRef(onApply);
+  onApplyRef.current = onApply;
+
   // Reset optimistic state when server data arrives
   useEffect(() => {
     setLocalReglaId(null);
@@ -668,11 +672,13 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
 
   const currentReglaId = localReglaId ?? serverReglaId;
 
+  // Auto-apply first rule when no value is applied yet
+  const firstRuleValue = reglasSorted[0]?.valor;
   useEffect(() => {
-    if (appliedPct == null && reglasSorted.length > 0 && isEditable) {
-      onApply(Number(reglasSorted[0].valor));
+    if (appliedPct == null && firstRuleValue != null && isEditable) {
+      onApplyRef.current(Number(firstRuleValue));
     }
-  }, [appliedPct]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [appliedPct, firstRuleValue, isEditable]);
 
   return (
     <select
@@ -757,6 +763,7 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                         <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
                       ) : (
                         <SelectorDropdown
+                          key={version?.id}
                           reglasSorted={reglasSorted}
                           appliedPct={appliedPct}
                           isEditable={isEditable}
