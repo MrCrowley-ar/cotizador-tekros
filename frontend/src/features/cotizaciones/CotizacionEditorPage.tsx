@@ -264,7 +264,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
           return (
             <td key={d.id} className="px-4 py-2 text-sm text-right whitespace-nowrap">
               {pct != null ? (
-                <span className="text-blue-600 text-xs font-medium">
+                <span className="text-green-600 text-xs font-medium">
                   −{pct.toFixed(2)}%
                 </span>
               ) : (
