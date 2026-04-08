@@ -1128,9 +1128,16 @@ export function CotizacionEditorPage() {
   // Active discounts as full objects (for passing to CultivoSection)
   // Include global selectors and manual discounts alongside non-global discounts
   const activeDescuentos = useMemo(
-    () => allDescuentos.filter((d) =>
-      (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision') && activeDiscountIds.has(d.id)
-    ),
+    () => allDescuentos
+      .filter((d) =>
+        (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision') && activeDiscountIds.has(d.id)
+      )
+      .sort((a, b) => {
+        // Comision columns always last (before subtotal)
+        if (a.modo === 'comision' && b.modo !== 'comision') return 1;
+        if (a.modo !== 'comision' && b.modo === 'comision') return -1;
+        return 0;
+      }),
     [allDescuentos, activeDiscountIds],
   );
 
