@@ -1118,12 +1118,75 @@ export function CotizacionEditorPage() {
   useEffect(() => {
     if (!version) return;
     const next = new Set(serverDiscountIds);
-    // Selector discounts are always active
+    // Selector, volumen and comision discounts are always active
     for (const d of allDescuentos) {
-      if (d.modo === 'selector') next.add(d.id);
+      if (d.modo === 'selector' || d.modo === 'volumen' || d.modo === 'comision') next.add(d.id);
     }
     setActiveDiscountIds(next);
   }, [serverDiscountIds, allDescuentos]);
+
+  // Auto-apply volumen & comision when active but not yet persisted
+  const autoAppliedRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    if (!version || !isEditable) return;
+    const allItems = version.items ?? [];
+    if (allItems.length === 0) return;
+
+    (async () => {
+      for (const desc of allDescuentos) {
+        if (autoAppliedRef.current.has(desc.id)) continue;
+        if (desc.modo === 'comision' && !serverDiscountIds.has(desc.id)) {
+          autoAppliedRef.current.add(desc.id);
+          try {
+            await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
+              descuentoId: desc.id,
+              porcentaje: 0,
+            });
+            invalidateVersion();
+          } catch { /* silent */ }
+        } else if (desc.modo === 'volumen' && !serverDiscountIds.has(desc.id)) {
+          autoAppliedRef.current.add(desc.id);
+          try {
+            const subtotalItems = Math.round(allItems.reduce((s, i) => s + Number(i.subtotal), 0) * 1e4) / 1e4;
+            const descuentosItemsVal = Math.round(allItems.reduce((s, i) => {
+              const pct = (i.descuentos ?? []).reduce((dp, d) => dp + Number(d.valorPorcentaje), 0);
+              return s + Number(i.subtotal) * pct / 100;
+            }, 0) * 1e4) / 1e4;
+            const totalCotizacion = Math.round(Number(version.total ?? 0) * 1e4) / 1e4;
+
+            for (const item of allItems) {
+              const stats = cultivoStats.get(item.cultivoId) ?? { bolsas: 0, monto: 0 };
+              const precioPonderado = stats.bolsas > 0 ? Math.round((stats.monto / stats.bolsas) * 1e4) / 1e4 : undefined;
+              const results = await descuentosApi.evaluar({
+                tipoAplicacion: desc.tipoAplicacion as 'global',
+                cultivoId: item.cultivoId,
+                hibridoId: item.hibridoId,
+                bandaId: item.bandaId,
+                cantidad: Number(item.bolsas),
+                precio: Number(item.precioBase),
+                subtotal: Number(item.subtotal),
+                ratioCultivo: totalBolsas > 0 ? Math.round(((cultivoStats.get(item.cultivoId)?.bolsas ?? 0) / totalBolsas) * 1e6) / 1e6 : 0,
+                volumen: stats.bolsas,
+                monto: Math.round(stats.monto * 1e4) / 1e4,
+                ...(precioPonderado != null ? { precioPonderado } : {}),
+                subtotalItems,
+                descuentosItems: descuentosItemsVal,
+                totalCotizacion,
+              });
+              const match = results.find((r) => r.descuentoId === desc.id);
+              if (match) {
+                await cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
+                  descuentoId: desc.id,
+                  porcentaje: match.porcentaje,
+                });
+              }
+            }
+            invalidateVersion();
+          } catch { /* silent */ }
+        }
+      }
+    })();
+  }, [version, allDescuentos, serverDiscountIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (selectedVersionId) {
@@ -1136,7 +1199,7 @@ export function CotizacionEditorPage() {
   const activeDescuentos = useMemo(
     () => allDescuentos
       .filter((d) =>
-        (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision') && activeDiscountIds.has(d.id)
+        (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision' || d.modo === 'volumen') && activeDiscountIds.has(d.id)
       )
       .sort((a, b) => {
         // Comision columns always last (before subtotal)
