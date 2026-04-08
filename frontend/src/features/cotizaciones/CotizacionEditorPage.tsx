@@ -246,6 +246,15 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
     return applied ? Number(applied.valorPorcentaje) : null;
   }
 
+  // Subtotal before comision (for computing comision USD display)
+  const subtotalBeforeComision = activeDescuentos
+    .filter(d => d.modo !== 'comision')
+    .reduce((acc, d) => {
+      const pct = getEffectivePct(d);
+      if (pct == null) return acc;
+      return acc * (1 - pct / 100);
+    }, bruto);
+
   const afterDiscounts = activeDescuentos.reduce((acc, d) => {
     const pct = getEffectivePct(d);
     if (pct == null) return acc;
@@ -264,14 +273,15 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
         const isManual = d.modo === 'manual';
         const isComision = d.modo === 'comision';
 
-        // Comision: show dynamic effective pct
+        // Comision: show as USD value (pct × subtotal before comision)
         if (isComision) {
           const pct = getEffectivePct(d);
+          const comisionUSD = pct != null ? subtotalBeforeComision * pct / 100 : null;
           return (
             <td key={d.id} className="px-4 py-2 text-sm text-right whitespace-nowrap">
-              {pct != null ? (
+              {comisionUSD != null ? (
                 <span className="text-blue-600 text-xs font-medium">
-                  −{pct.toFixed(2)}%
+                  ${fmt(comisionUSD)}
                 </span>
               ) : (
                 <span className="text-gray-300 text-xs">—</span>
