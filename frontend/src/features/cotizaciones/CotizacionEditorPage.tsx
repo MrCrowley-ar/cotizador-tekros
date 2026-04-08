@@ -87,7 +87,13 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
               porcentaje: Number(desc.valorPorcentaje),
             });
           } else if (desc.modo === 'selector') {
-            // selector discounts are applied via the dropdown, skip
+            const reglas = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
+            if (reglas.length > 0) {
+              await cotizacionesApi.applyItemDescuento(cotizacionId, versionId, newItem.id, {
+                descuentoId: desc.id,
+                porcentaje: Number(reglas[0].valor),
+              });
+            }
           } else {
             const newBolsas = Number(bolsas);
             const volumen = cultivoVolumen + newBolsas;
