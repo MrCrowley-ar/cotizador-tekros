@@ -21,7 +21,6 @@ import { CotizacionVersion } from './cotizacion-version.entity';
 import { CotizacionVersionSeccion } from './cotizacion-version-seccion.entity';
 import { Cotizacion, EstadoCotizacion } from './cotizacion.entity';
 import { CreateSeccionDto } from './dto/create-seccion.dto';
-import { UpdateComisionDto } from './dto/update-comision.dto';
 import { UpdateSeccionDescuentoDto } from './dto/update-seccion-descuento.dto';
 
 @Injectable()
@@ -459,40 +458,6 @@ export class CotizacionesService {
     });
   }
 
-  // ─── COMISIÓN ──────────────────────────────────────────────────────────────
-
-  async actualizarComision(
-    versionId: number,
-    dto: UpdateComisionDto | null,
-    usuarioId?: number,
-  ): Promise<void> {
-    const version = await this.versionRepo.findOneBy({ id: versionId });
-    if (!version) throw new NotFoundException(`Versión ${versionId} no encontrada`);
-
-    if (dto) {
-      version.comisionMargen = dto.margen;
-      version.comisionDescuentoId = dto.descuentoId ?? null;
-      await this.versionRepo.save(version);
-    } else {
-      version.comisionMargen = null;
-      version.comisionDescuentoId = null;
-      await this.versionRepo.save(version);
-    }
-
-    await this.recalcularTotal(versionId);
-
-    await this.historialService.registrar({
-      usuarioId: usuarioId ?? null,
-      cotizacionId: version.cotizacionId,
-      tipoEntidad: TipoEntidad.COTIZACION_VERSION,
-      tipoAccion: TipoAccion.ACTUALIZAR,
-      entidadId: versionId,
-      descripcion: dto
-        ? `Comisión actualizada: margen ${dto.margen}%${dto.descuentoId ? `, descuento #${dto.descuentoId}` : ''}`
-        : 'Comisión eliminada',
-    });
-  }
-
   // ─── SECCIONES ─────────────────────────────────────────────────────────────
 
   async getSecciones(versionId: number): Promise<CotizacionVersionSeccion[]> {
@@ -711,8 +676,6 @@ export class CotizacionesService {
     items: CotizacionItem[],
     itemDescuentos: CotizacionItemDescuento[],
     globalDescuentos: CotizacionDescuento[],
-    comisionMargen?: number | null,
-    comisionDescuentoId?: number | null,
   ) {
     let subtotalItems = 0;
     let descuentosItems = 0;
@@ -754,30 +717,13 @@ export class CotizacionesService {
 
     let descuentosGlobales = 0;
     for (const d of globalDescuentos) {
-      descuentosGlobales += subtotalNeto * (Number(d.valorPorcentaje) / 100);
+      const pct = Number(d.valorPorcentaje);
+      if (pct === 0) continue; // skip comision placeholders (effective % computed on frontend)
+      descuentosGlobales += subtotalNeto * (pct / 100);
     }
 
-    // Commission: effective = margen - selected discount pct (uniform for all items)
-    let comision = 0;
-    if (comisionMargen != null) {
-      let selectedPct = 0;
-      if (comisionDescuentoId != null) {
-        const found = itemDescuentos.find((d) => d.descuentoId === comisionDescuentoId);
-        selectedPct = found ? Number(found.valorPorcentaje) : 0;
-      }
-      const efectivo = Math.max(0, Number(comisionMargen) - selectedPct);
-      for (const item of items) {
-        const subtotalItem = Number(item.precioBase);
-        let descuentoItemTotal = 0;
-        for (const d of descByItem.get(item.id) ?? []) {
-          descuentoItemTotal += subtotalItem * (Number(d.valorPorcentaje) / 100);
-        }
-        const netoItem = subtotalItem - descuentoItemTotal;
-        comision += netoItem * (efectivo / 100);
-      }
-    }
-
-    const total = subtotalNeto - descuentosGlobales - comision;
+    const comision = 0;
+    const total = subtotalNeto - descuentosGlobales;
     return { subtotalItems, descuentosItems, subtotalNeto, descuentosGlobales, comision, total, desglose };
   }
 
@@ -815,8 +761,6 @@ export class CotizacionesService {
         version.items,
         version.items.flatMap((i) => i.descuentos),
         version.descuentos,
-        version.comisionMargen,
-        version.comisionDescuentoId,
       );
     }
 
@@ -839,8 +783,6 @@ export class CotizacionesService {
           version.items,
           [...sharedItemDescs, ...secItemDescs],
           [...sharedGlobalDescs, ...secGlobalDescs],
-          version.comisionMargen,
-          version.comisionDescuentoId,
         );
 
         return {
@@ -851,7 +793,7 @@ export class CotizacionesService {
       });
 
     // El total general es la suma o el de la primera sección (usamos primera como principal)
-    const principal = seccionResults[0] ?? this.calcularTotalParaDescuentos(version.items, [], [], version.comisionMargen, version.comisionDescuentoId);
+    const principal = seccionResults[0] ?? this.calcularTotalParaDescuentos(version.items, [], []);
 
     return {
       ...principal,

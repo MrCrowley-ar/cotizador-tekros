@@ -17,7 +17,6 @@ import { ApplyDescuentoDto } from './dto/apply-descuento.dto';
 import { CreateCotizacionDto } from './dto/create-cotizacion.dto';
 import { CreateSeccionDto } from './dto/create-seccion.dto';
 import { UpdateEstadoDto } from './dto/update-estado.dto';
-import { UpdateComisionDto } from './dto/update-comision.dto';
 import { UpdateSeccionDescuentoDto } from './dto/update-seccion-descuento.dto';
 import { CotizacionesService } from './cotizaciones.service';
 
@@ -154,26 +153,6 @@ export class CotizacionesController {
     @CurrentUser() user: Usuario,
   ) {
     return this.service.eliminarDescuentoGlobal(versionId, did, user.id);
-  }
-
-  // ─── COMISIÓN ─────────────────────────────────────────────────────────────
-
-  @Patch(':id/versiones/:versionId/comision')
-  actualizarComision(
-    @Param('versionId', ParseIntPipe) versionId: number,
-    @Body() dto: UpdateComisionDto,
-    @CurrentUser() user: Usuario,
-  ) {
-    return this.service.actualizarComision(versionId, dto, user.id);
-  }
-
-  @Delete(':id/versiones/:versionId/comision')
-  @HttpCode(204)
-  eliminarComision(
-    @Param('versionId', ParseIntPipe) versionId: number,
-    @CurrentUser() user: Usuario,
-  ) {
-    return this.service.actualizarComision(versionId, null, user.id);
   }
 
   // ─── SECCIONES ────────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ export enum ModoDescuento {
   AVANZADO = 'avanzado',
   SELECTOR = 'selector',
   MANUAL = 'manual',
+  COMISION = 'comision',
 }
 
 // El nombre puede repetirse en distintas fechas (historial de cambios).
@@ -59,6 +60,23 @@ export class Descuento {
 
   @Column({ default: true })
   activo: boolean;
+
+  // Solo para modo COMISION: margen % y descuento referenciado
+  @Column({
+    name: 'comision_margen',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
+  comisionMargen: number | null;
+
+  @Column({
+    name: 'comision_descuento_id',
+    type: 'integer',
+    nullable: true,
+  })
+  comisionDescuentoId: number | null;
 
   @OneToMany('DescuentoRegla', 'descuento', { cascade: true })
   reglas: any[];

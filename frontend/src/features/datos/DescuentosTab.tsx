@@ -12,7 +12,7 @@ import type { Descuento } from '../../api/types';
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
-type TipoCondicion = 'fijo' | 'por_rango' | 'por_selector' | 'manual' | 'personalizado';
+type TipoCondicion = 'fijo' | 'por_rango' | 'por_selector' | 'manual' | 'personalizado' | 'comision';
 type DriverRango = 'cantidad' | 'precio' | 'subtotal' | 'ratio_cultivo' | 'volumen' | 'monto' | 'precio_ponderado' | 'subtotal_items' | 'desc_items' | 'total';
 
 // hasta es opcional: si se define, el tramo usa operador ENTRE (desde-hasta)
@@ -29,6 +29,7 @@ function inferirAlcance(d: Descuento): import('../../api/types').TipoAplicacion 
 }
 
 function inferirTipoCondicion(d: Descuento): TipoCondicion {
+  if (d.modo === 'comision') return 'comision';
   if (d.modo === 'selector') return 'por_selector';
   if (d.modo === 'manual') return 'manual';
   if (d.modo === 'basico') return 'fijo';
@@ -100,6 +101,7 @@ const TIPO_LABEL: Record<TipoCondicion, string> = {
   por_selector: 'Por selector',
   manual: 'Manual',
   personalizado: 'Personalizado',
+  comision: 'Comisión',
 };
 
 const ALCANCE_LABEL: Record<import('../../api/types').TipoAplicacion, string> = {
@@ -242,6 +244,23 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           valorMultiplier: c.valorMultiplier ?? undefined,
         })),
       }));
+  });
+
+  // Comisión
+  const [comisionMargenStr, setComisionMargenStr] = useState(() => {
+    if (initial?.modo === 'comision' && initial.comisionMargen != null) return String(initial.comisionMargen);
+    return '15';
+  });
+  const [comisionDescuentoRefId, setComisionDescuentoRefId] = useState<number | null>(() => {
+    if (initial?.modo === 'comision') return initial.comisionDescuentoId ?? null;
+    return null;
+  });
+
+  // Query para obtener los descuentos activos (para el selector de comisión)
+  const { data: allDescuentosActivos = [] } = useQuery({
+    queryKey: ['descuentos', 'activos'],
+    queryFn: () => descuentosApi.getAll(true),
+    enabled: tipoCondicion === 'comision',
   });
 
   // Por selector
@@ -457,6 +476,17 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
+      // comision: margen - descuento referenciado
+      if (tipoCondicion === 'comision') {
+        const payload = {
+          nombre, tipoAplicacion: 'global' as const,
+          modo: 'comision' as const, fechaVigencia,
+          comisionMargen: Number(comisionMargenStr),
+          comisionDescuentoId: comisionDescuentoRefId!,
+        };
+        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
+      }
+
       // por_selector
       const reglas = opciones
         .filter((o) => o.nombre.trim() !== '' && o.pct !== '')
@@ -490,6 +520,8 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
       return cultivos.some((c) => (customRulesPorCultivo[c.id] ?? []).length > 0);
     if (tipoCondicion === 'personalizado') return customRules.length > 0;
     if (tipoCondicion === 'manual') return true; // solo necesita nombre y fecha
+    if (tipoCondicion === 'comision')
+      return comisionMargenStr !== '' && Number(comisionMargenStr) > 0 && comisionDescuentoRefId != null;
     // por_selector
     return opciones.some((o) => o.nombre.trim() !== '' && o.pct !== '');
   })();
@@ -509,6 +541,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     { value: 'por_selector', label: 'Por selector',  desc: 'El usuario elige la opción al cotizar' },
     { value: 'manual',       label: 'Manual',        desc: 'El % se ingresa por híbrido en la cotización' },
     { value: 'personalizado', label: 'Personalizado', desc: 'Condiciones libres: variable op valor/fracción' },
+    { value: 'comision',     label: 'Comisión',      desc: 'Margen % menos un descuento existente' },
   ];
 
   return (
@@ -542,11 +575,17 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         {/* ── Alcance ── */}
         <div>
           <label className={labelCls}>Alcance del descuento</label>
+          {tipoCondicion === 'comision' && (
+            <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mb-2">
+              Comisión solo puede ser global.
+            </p>
+          )}
           <div className="grid grid-cols-3 gap-2">
             {alcanceCards.map((a) => (
               <button
                 key={a.value}
                 type="button"
+                disabled={tipoCondicion === 'comision' && a.value !== 'global'}
                 onClick={() => {
                   setAlcance(a.value);
                   // resetear driver al default del nuevo alcance
@@ -556,7 +595,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
                   alcance === a.value
                     ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
                     : 'border-gray-200 hover:border-gray-300 bg-white'
-                }`}
+                } ${tipoCondicion === 'comision' && a.value !== 'global' ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
                 <div className={`text-sm font-medium ${alcance === a.value ? 'text-blue-700' : 'text-gray-800'}`}>
                   {a.label}
@@ -575,7 +614,10 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
               <button
                 key={t.value}
                 type="button"
-                onClick={() => setTipoCondicion(t.value)}
+                onClick={() => {
+                  setTipoCondicion(t.value);
+                  if (t.value === 'comision') setAlcance('global');
+                }}
                 className={`text-left px-3 py-2.5 rounded-lg border transition-colors ${
                   tipoCondicion === t.value
                     ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
@@ -829,6 +871,60 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
             ) : alcance !== 'cultivo' ? (
               <RuleBuilder rules={customRules} onChange={setCustomRules} />
             ) : null}
+          </div>
+        )}
+
+        {/* ── Comisión ── */}
+        {tipoCondicion === 'comision' && (
+          <div className="space-y-3">
+            <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700">
+              Fórmula: <strong>Margen %</strong> − <strong>Descuento aplicado %</strong> = % efectivo que se muestra en la columna.
+              Solo aplica cuando el descuento referenciado está aplicado al ítem.
+            </div>
+            <div>
+              <label className={labelCls}>Margen % *</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={comisionMargenStr}
+                  onChange={(e) => setComisionMargenStr(e.target.value)}
+                  placeholder="ej: 15"
+                  className={`${inputCls} w-32 text-right`}
+                />
+                <span className="text-sm text-gray-500">%</span>
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Descuento a restar *</label>
+              <select
+                value={comisionDescuentoRefId ?? ''}
+                onChange={(e) => setComisionDescuentoRefId(e.target.value ? Number(e.target.value) : null)}
+                className={`w-full ${inputCls}`}
+              >
+                <option value="">— Seleccionar descuento —</option>
+                {allDescuentosActivos
+                  .filter((d) => d.id !== initial?.id)
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.nombre} {d.valorPorcentaje != null ? `(${d.valorPorcentaje}%)` : `(${d.modo})`}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            {comisionMargenStr && comisionDescuentoRefId != null && (() => {
+              const ref = allDescuentosActivos.find((d) => d.id === comisionDescuentoRefId);
+              const refPct = ref?.valorPorcentaje;
+              if (refPct == null) return null;
+              const efectivo = Number(comisionMargenStr) - Number(refPct);
+              return (
+                <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2 text-sm text-green-800">
+                  Ejemplo: {comisionMargenStr}% − {refPct}% = <strong>{efectivo.toFixed(2)}%</strong> efectivo
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1117,6 +1213,20 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
                   <span className="font-semibold text-blue-700">{r.valor}%</span>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Comisión */}
+        {tipoV === 'comision' && (
+          <div className="text-sm space-y-2">
+            <div className="bg-blue-50 rounded-lg p-3 flex items-center gap-2">
+              <span className="text-gray-600">Margen:</span>
+              <span className="font-bold text-blue-700 text-lg">{descuento.comisionMargen}%</span>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 flex items-center gap-2">
+              <span className="text-gray-600">Descuento a restar:</span>
+              <span className="font-medium text-gray-800">ID #{descuento.comisionDescuentoId}</span>
             </div>
           </div>
         )}

@@ -42,12 +42,6 @@ export const cotizacionesApi = {
   deleteGlobalDescuento: (id: number, vid: number, did: number) =>
     api.delete(`${ver(id, vid)}/descuentos/${did}`),
 
-  // Comisión
-  updateComision: (id: number, vid: number, body: { margen: number; descuentoId: number | null }) =>
-    api.patch(`${ver(id, vid)}/comision`, body),
-  deleteComision: (id: number, vid: number) =>
-    api.delete(`${ver(id, vid)}/comision`),
-
   // Secciones
   getSecciones: (id: number, vid: number) =>
     api.get<CotizacionVersionSeccion[]>(`${ver(id, vid)}/secciones`),

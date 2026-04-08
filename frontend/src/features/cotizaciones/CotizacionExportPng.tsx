@@ -70,6 +70,13 @@ export function useCotizacionExportPng({
       ? item.descuentos.filter((d) => !d.seccionId || d.seccionId === seccionId)
       : item.descuentos;
     return activeDescuentos.reduce((acc, d) => {
+      if (d.modo === 'comision') {
+        if (d.comisionMargen == null || d.comisionDescuentoId == null) return acc;
+        const refApplied = descs.find((x) => x.descuentoId === d.comisionDescuentoId);
+        if (!refApplied) return acc;
+        const pct = Math.max(0, Number(d.comisionMargen) - Number(refApplied.valorPorcentaje));
+        return acc * (1 - pct / 100);
+      }
       const applied = descs.find((x) => x.descuentoId === d.id);
       if (!applied) return acc;
       return acc * (1 - Number(applied.valorPorcentaje) / 100);
