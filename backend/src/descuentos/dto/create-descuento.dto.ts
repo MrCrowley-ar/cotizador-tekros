@@ -44,4 +44,15 @@ export class CreateDescuentoDto {
   @ValidateNested({ each: true })
   @Type(() => CreateDescuentoReglaDto)
   reglas?: CreateDescuentoReglaDto[];
+
+  // Requerido en modo COMISION
+  @ValidateIf((o) => o.modo === ModoDescuento.COMISION)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  comisionMargen?: number;
+
+  @ValidateIf((o) => o.modo === ModoDescuento.COMISION)
+  @IsNumber()
+  comisionDescuentoId?: number;
 }

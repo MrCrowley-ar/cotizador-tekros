@@ -57,7 +57,7 @@ export interface Precio {
 
 // ─── Descuentos ───────────────────────────────────────────────────────────────
 export type TipoAplicacion = 'global' | 'cultivo' | 'hibrido';
-export type ModoDescuento = 'basico' | 'avanzado' | 'selector' | 'manual';
+export type ModoDescuento = 'basico' | 'avanzado' | 'selector' | 'manual' | 'comision';
 export type CampoCondicion = 'cantidad' | 'cultivo_id' | 'hibrido_id' | 'banda_id' | 'precio' | 'subtotal' | 'ratio_cultivo' | 'volumen' | 'monto' | 'precio_ponderado' | 'subtotal_items' | 'desc_items' | 'total';
 export type OperadorCondicion = '=' | '!=' | '>' | '<' | '>=' | '<=' | 'entre';
 
@@ -84,6 +84,8 @@ export interface Descuento {
   tipoAplicacion: TipoAplicacion;
   modo: ModoDescuento;
   valorPorcentaje: number | null;
+  comisionMargen: number | null;
+  comisionDescuentoId: number | null;
   fechaVigencia: string;
   activo: boolean;
   reglas: DescuentoRegla[];

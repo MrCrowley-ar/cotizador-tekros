@@ -56,13 +56,20 @@ export class DescuentosService {
     if (modo === ModoDescuento.AVANZADO && (!dto.reglas || dto.reglas.length === 0)) {
       throw new BadRequestException('Se requiere al menos una regla para modo avanzado');
     }
+    if (modo === ModoDescuento.COMISION) {
+      if (dto.comisionMargen == null || dto.comisionDescuentoId == null) {
+        throw new BadRequestException('comisionMargen y comisionDescuentoId son requeridos para modo comisión');
+      }
+    }
 
     const descuento = await this.repo.save(
       this.repo.create({
         nombre: dto.nombre,
-        tipoAplicacion: dto.tipoAplicacion ?? TipoAplicacion.GLOBAL,
+        tipoAplicacion: modo === ModoDescuento.COMISION ? TipoAplicacion.GLOBAL : (dto.tipoAplicacion ?? TipoAplicacion.GLOBAL),
         modo,
         valorPorcentaje: modo === ModoDescuento.BASICO ? dto.valorPorcentaje : null,
+        comisionMargen: modo === ModoDescuento.COMISION ? dto.comisionMargen : null,
+        comisionDescuentoId: modo === ModoDescuento.COMISION ? dto.comisionDescuentoId : null,
         fechaVigencia: dto.fechaVigencia as any,
       }),
     );
@@ -158,14 +165,23 @@ export class DescuentosService {
     if (dto.modo !== undefined) {
       descuento.modo = dto.modo;
       if (dto.modo !== ModoDescuento.BASICO) descuento.valorPorcentaje = null;
+      if (dto.modo === ModoDescuento.COMISION) {
+        descuento.tipoAplicacion = TipoAplicacion.GLOBAL;
+      }
+      if (dto.modo !== ModoDescuento.COMISION) {
+        descuento.comisionMargen = null;
+        descuento.comisionDescuentoId = null;
+      }
     }
+    if (dto.comisionMargen !== undefined) descuento.comisionMargen = dto.comisionMargen;
+    if (dto.comisionDescuentoId !== undefined) descuento.comisionDescuentoId = dto.comisionDescuentoId;
 
     await this.repo.save(descuento);
 
     const modoEfectivo = dto.modo ?? descuento.modo;
 
-    // Si cambia a basico, limpiar reglas huérfanas
-    if (modoEfectivo === ModoDescuento.BASICO) {
+    // Si cambia a basico o comision, limpiar reglas huérfanas
+    if (modoEfectivo === ModoDescuento.BASICO || modoEfectivo === ModoDescuento.COMISION) {
       await this.reglaRepo.delete({ descuentoId: id });
     }
 

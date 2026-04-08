@@ -45,7 +45,7 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
 
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version, showComision }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
   discountCount: number;
   activeDescuentos: Descuento[];
@@ -53,7 +53,6 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
   cultivoMonto: number;
   totalBolsas: number;
   version: CotizacionVersion;
-  showComision: boolean;
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -160,7 +159,6 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
       </td>
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
       {Array.from({ length: discountCount }).map((_, i) => <td key={i} />)}
-      {showComision && <td />}
       <td className="px-3 py-2 text-gray-400 text-sm">—</td>
       <td className="px-3 py-2">
         {error && <span className="text-xs text-red-600 block mb-1">{error}</span>}
@@ -183,14 +181,12 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
 
 // ─── Item Row ─────────────────────────────────────────────────────────────────
 
-function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, showComision, comisionEfectiva }: {
+function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: {
   item: CotizacionItem;
   cotizacionId: number;
   version: CotizacionVersion;
   isEditable: boolean;
   activeDescuentos: Descuento[];
-  showComision: boolean;
-  comisionEfectiva: number | null;
 }) {
   const qc = useQueryClient();
   const [deleteError, setDeleteError] = useState('');
@@ -229,15 +225,27 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, sh
     invalidate();
   }
 
-  // Subtotal = precioBase (no se multiplica por bolsas) × descuentos aplicados × comisión
+  // Subtotal = precioBase × descuentos aplicados (incluyendo comisión dinámica)
   const bruto = Number(item.precioBase);
-  const afterDiscounts = activeDescuentos.reduce((acc, d) => {
+
+  // Compute effective pct for comision discounts dynamically
+  function getEffectivePct(d: Descuento): number | null {
+    if (d.modo === 'comision') {
+      if (d.comisionMargen == null || d.comisionDescuentoId == null) return null;
+      const refApplied = item.descuentos.find((x) => x.descuentoId === d.comisionDescuentoId);
+      if (!refApplied) return null;
+      return Math.max(0, Number(d.comisionMargen) - Number(refApplied.valorPorcentaje));
+    }
     const applied = item.descuentos.find((x) => x.descuentoId === d.id);
-    if (!applied) return acc;
-    return acc * (1 - Number(applied.valorPorcentaje) / 100);
+    return applied ? Number(applied.valorPorcentaje) : null;
+  }
+
+  const afterDiscounts = activeDescuentos.reduce((acc, d) => {
+    const pct = getEffectivePct(d);
+    if (pct == null) return acc;
+    return acc * (1 - pct / 100);
   }, bruto);
-  const comisionValor = comisionEfectiva != null ? afterDiscounts * comisionEfectiva / 100 : null;
-  const subtotal = comisionValor != null ? afterDiscounts - comisionValor : afterDiscounts;
+  const subtotal = afterDiscounts;
 
   return (
     <tr className="hover:bg-gray-50">
@@ -248,6 +256,23 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, sh
       {activeDescuentos.map((d) => {
         const applied = item.descuentos.find((x) => x.descuentoId === d.id);
         const isManual = d.modo === 'manual';
+        const isComision = d.modo === 'comision';
+
+        // Comision: show dynamic effective pct
+        if (isComision) {
+          const pct = getEffectivePct(d);
+          return (
+            <td key={d.id} className="px-4 py-2 text-sm text-right whitespace-nowrap">
+              {pct != null ? (
+                <span className="text-blue-600 text-xs font-medium">
+                  −{pct.toFixed(2)}%
+                </span>
+              ) : (
+                <span className="text-gray-300 text-xs">—</span>
+              )}
+            </td>
+          );
+        }
 
         if (isManual && isEditable) {
           const currentPct = applied ? String(Number(applied.valorPorcentaje)) : '0';
@@ -307,13 +332,6 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, sh
           </td>
         );
       })}
-      {showComision && (
-        <td className="px-4 py-2 text-sm text-right whitespace-nowrap">
-          <span className="text-blue-600 text-xs font-medium">
-            {comisionValor != null ? `$${fmt(comisionValor)}` : '—'}
-          </span>
-        </td>
-      )}
       <td className="px-4 py-2 text-sm text-right font-semibold text-gray-900 whitespace-nowrap">
         ${fmt(subtotal)}
       </td>
@@ -335,7 +353,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos, sh
 
 // ─── Cultivo Section ──────────────────────────────────────────────────────────
 
-function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, showComision, comisionEfectiva }: {
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas }: {
   cultivo: Cultivo;
   items: CotizacionItem[];
   cotizacionId: number;
@@ -345,12 +363,10 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
   cultivoVolumen: number;
   cultivoMonto: number;
   totalBolsas: number;
-  showComision: boolean;
-  comisionEfectiva: number | null;
 }) {
   const [showNewItem, setShowNewItem] = useState(false);
 
-  const totalCols = 6 + activeDescuentos.length + (showComision ? 1 : 0);
+  const totalCols = 6 + activeDescuentos.length;
 
   const fmt = (n: number) =>
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -359,13 +375,18 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
   const totalBolsasCultivo = items.reduce((s, i) => s + Math.round(Number(i.bolsas)), 0);
   const totalMontoUSD = items.reduce((s, item) => {
     const afterDisc = activeDescuentos.reduce((acc, d) => {
+      if (d.modo === 'comision') {
+        if (d.comisionMargen == null || d.comisionDescuentoId == null) return acc;
+        const refApplied = item.descuentos.find((x) => x.descuentoId === d.comisionDescuentoId);
+        if (!refApplied) return acc;
+        const pct = Math.max(0, Number(d.comisionMargen) - Number(refApplied.valorPorcentaje));
+        return acc * (1 - pct / 100);
+      }
       const applied = item.descuentos.find((x) => x.descuentoId === d.id);
       if (!applied) return acc;
       return acc * (1 - Number(applied.valorPorcentaje) / 100);
     }, Number(item.precioBase));
-    const comVal = comisionEfectiva != null ? afterDisc * comisionEfectiva / 100 : 0;
-    const subtUnit = afterDisc - comVal;
-    return s + subtUnit * Number(item.bolsas);
+    return s + afterDisc * Number(item.bolsas);
   }, 0);
   const precioPonderado = totalBolsasCultivo > 0 ? totalMontoUSD / totalBolsasCultivo : 0;
 
@@ -392,15 +413,10 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
               <th className="text-right px-4 py-2">Bolsas</th>
               <th className="text-right px-4 py-2 whitespace-nowrap">P. Base</th>
               {activeDescuentos.map((d) => (
-                <th key={d.id} className="px-4 py-2 text-right whitespace-nowrap normal-case tracking-normal text-orange-500 font-medium">
+                <th key={d.id} className={`px-4 py-2 text-right whitespace-nowrap normal-case tracking-normal font-medium ${d.modo === 'comision' ? 'text-blue-500' : 'text-orange-500'}`}>
                   {d.nombre}
                 </th>
               ))}
-              {showComision && (
-                <th className="px-4 py-2 text-right whitespace-nowrap normal-case tracking-normal text-blue-500 font-medium">
-                  Comisión
-                </th>
-              )}
               <th className="text-right px-4 py-2 whitespace-nowrap normal-case tracking-normal text-gray-700 font-semibold">
                 Subtotal
               </th>
@@ -416,8 +432,6 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 version={version}
                 isEditable={isEditable}
                 activeDescuentos={activeDescuentos}
-                showComision={showComision}
-                comisionEfectiva={comisionEfectiva}
               />
             ))}
             {showNewItem && (
@@ -432,7 +446,6 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 cultivoMonto={cultivoMonto}
                 totalBolsas={totalBolsas}
                 version={version}
-                showComision={showComision}
               />
             )}
             {!showNewItem && items.length === 0 && (
@@ -453,7 +466,6 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 {activeDescuentos.map((d) => (
                   <td key={d.id} className="px-4 py-2"></td>
                 ))}
-                {showComision && <td className="px-4 py-2"></td>}
                 <td className="px-4 py-2 text-right text-gray-700">${fmt(precioPonderado)}</td>
                 <td className="px-4 py-2"></td>
               </tr>
@@ -668,7 +680,7 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
 
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
-function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds, comisionActive, comisionMargen, comisionDescuentoId, onToggleComision, onUpdateComisionMargen, onSaveComisionMargen, onUpdateComisionDescuentoId, savingComision }: {
+function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds }: {
   isEditable: boolean;
   activeIds: Set<number>;
   pendingIds: Set<number>;
@@ -677,18 +689,10 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
   onApplySelector: (desc: Descuento, pct: number | null) => void;
   version: CotizacionVersion | undefined;
   excludeIds?: Set<number>;
-  comisionActive: boolean;
-  comisionMargen: number;
-  comisionDescuentoId: number | null;
-  onToggleComision: () => void;
-  onUpdateComisionMargen: (margen: number) => void;
-  onSaveComisionMargen: () => void;
-  onUpdateComisionDescuentoId: (descuentoId: number | null) => void;
-  savingComision: boolean;
 }) {
-  // Show non-global discounts + global selectors/manual (apply per-item)
+  // Show non-global discounts + global selectors/manual/comision (apply per-item)
   const nonGlobal = allDescuentos.filter((d) =>
-    (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual')
+    (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision')
     && !(excludeIds?.has(d.id)),
   );
   const { sorted: sortedNonGlobal, onDragStart, onDragOver, onDragEnd } = useDiscountOrder('desc-order-item', nonGlobal);
@@ -749,6 +753,45 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
             );
           }
 
+          // Comision: show as checkbox with formula info
+          if (desc.modo === 'comision') {
+            const refDesc = allDescuentos.find((d) => d.id === desc.comisionDescuentoId);
+            const refName = refDesc?.nombre ?? `#${desc.comisionDescuentoId}`;
+            return (
+              <div
+                key={desc.id}
+                draggable
+                onDragStart={() => onDragStart(desc.id)}
+                onDragOver={(e) => { e.preventDefault(); onDragOver(desc.id); }}
+                onDrop={onDragEnd}
+                onDragEnd={onDragEnd}
+              >
+                <label
+                  className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors select-none
+                    ${applied ? 'bg-blue-50' : 'hover:bg-gray-50'}
+                    ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+                >
+                  <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
+                  {pending ? (
+                    <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={applied}
+                      disabled={!isEditable}
+                      onChange={() => onToggle(desc)}
+                      className="rounded text-blue-600 cursor-pointer"
+                    />
+                  )}
+                  <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                    {desc.nombre}
+                  </span>
+                  <span className="text-xs text-gray-400">{desc.comisionMargen}% − {refName}</span>
+                </label>
+              </div>
+            );
+          }
+
           return (
             <div
               key={desc.id}
@@ -789,65 +832,6 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
           );
         })}
 
-        {/* ── Comisión ── */}
-        <div className="border-t pt-2 mt-2">
-          <label
-            className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 transition-colors select-none
-              ${comisionActive ? 'bg-blue-50' : 'hover:bg-gray-50'}
-              ${isEditable ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
-          >
-            {savingComision ? (
-              <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
-            ) : (
-              <input
-                type="checkbox"
-                checked={comisionActive}
-                disabled={!isEditable}
-                onChange={onToggleComision}
-                className="rounded text-blue-600 cursor-pointer"
-              />
-            )}
-            <span className={`flex-1 leading-tight ${comisionActive ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
-              Comisión
-            </span>
-          </label>
-
-          {comisionActive && (
-            <div className="px-2 mt-2 space-y-2">
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500 w-20">Margen %</label>
-                <input
-                  type="number"
-                  disabled={!isEditable || savingComision}
-                  value={comisionMargen}
-                  min={0} max={100} step={0.5}
-                  onChange={(e) => onUpdateComisionMargen(Number(e.target.value))}
-                  onBlur={onSaveComisionMargen}
-                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                  className="w-20 text-sm border rounded px-2 py-1 text-right focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500 w-20">Descuento</label>
-                <select
-                  disabled={!isEditable || savingComision}
-                  value={comisionDescuentoId ?? ''}
-                  onChange={(e) => onUpdateComisionDescuentoId(e.target.value ? Number(e.target.value) : null)}
-                  className="flex-1 text-sm border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
-                >
-                  <option value="">— Ninguno —</option>
-                  {allDescuentos
-                    .filter((d) => activeIds.has(d.id))
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.nombre} {d.valorPorcentaje != null ? `(${d.valorPorcentaje}%)` : ''}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
@@ -870,10 +854,10 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
     queryFn: () => descuentosApi.getAll(true),
   });
 
-  // Exclude selectors/manual — they're handled in ItemDescuentosPanel and shown as table columns
+  // Exclude selectors/manual/comision — they're handled in ItemDescuentosPanel and shown as table columns
   // Also exclude section-variable discounts
   const descuentos = allDescuentos.filter((d) =>
-    d.tipoAplicacion === 'global' && d.modo !== 'selector' && d.modo !== 'manual'
+    d.tipoAplicacion === 'global' && d.modo !== 'selector' && d.modo !== 'manual' && d.modo !== 'comision'
     && !(excludeIds?.has(d.id)),
   );
   const { sorted: sortedDescuentos, onDragStart, onDragOver, onDragEnd } = useDiscountOrder('desc-order-global', descuentos);
@@ -1145,74 +1129,10 @@ export function CotizacionEditorPage() {
   // Include global selectors and manual discounts alongside non-global discounts
   const activeDescuentos = useMemo(
     () => allDescuentos.filter((d) =>
-      (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual') && activeDiscountIds.has(d.id)
+      (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision') && activeDiscountIds.has(d.id)
     ),
     [allDescuentos, activeDiscountIds],
   );
-
-  // Commission state
-  const [comisionMargenLocal, setComisionMargenLocal] = useState(15);
-  const [savingComision, setSavingComision] = useState(false);
-
-  const comisionActive = version?.comisionMargen != null;
-  const showComision = comisionActive;
-  const comisionDescuentoId = version?.comisionDescuentoId ?? null;
-
-  useEffect(() => {
-    if (version?.comisionMargen != null) setComisionMargenLocal(Number(version.comisionMargen));
-  }, [version?.comisionMargen]);
-
-  const comisionEfectiva = useMemo(() => {
-    if (!version || version.comisionMargen == null) return null;
-    const margen = Number(version.comisionMargen);
-    if (version.comisionDescuentoId == null) return margen;
-    for (const item of version.items ?? []) {
-      const found = item.descuentos.find((d) => d.descuentoId === version.comisionDescuentoId);
-      if (found) return margen - Number(found.valorPorcentaje);
-    }
-    return margen;
-  }, [version]);
-
-  async function toggleComision() {
-    if (!isEditable || !version || savingComision) return;
-    setSavingComision(true);
-    try {
-      if (comisionActive) {
-        await cotizacionesApi.deleteComision(cotizacionId, version.id);
-      } else {
-        await cotizacionesApi.updateComision(cotizacionId, version.id, { margen: comisionMargenLocal, descuentoId: null });
-      }
-      invalidateVersion();
-    } finally {
-      setSavingComision(false);
-    }
-  }
-
-  async function updateComisionMargen(margen: number) {
-    setComisionMargenLocal(margen);
-  }
-
-  async function saveComisionMargen() {
-    if (!version || !comisionActive) return;
-    setSavingComision(true);
-    try {
-      await cotizacionesApi.updateComision(cotizacionId, version.id, { margen: comisionMargenLocal, descuentoId: comisionDescuentoId });
-      invalidateVersion();
-    } finally {
-      setSavingComision(false);
-    }
-  }
-
-  async function updateComisionDescuentoId(descuentoId: number | null) {
-    if (!version || !comisionActive) return;
-    setSavingComision(true);
-    try {
-      await cotizacionesApi.updateComision(cotizacionId, version.id, { margen: comisionMargenLocal, descuentoId });
-      invalidateVersion();
-    } finally {
-      setSavingComision(false);
-    }
-  }
 
   // PNG export
   const pngExport = useCotizacionExportPng({
@@ -1704,8 +1624,6 @@ export function CotizacionEditorPage() {
                               cultivoVolumen={stats.bolsas}
                               cultivoMonto={stats.monto}
                               totalBolsas={totalBolsas}
-                              showComision={showComision}
-                              comisionEfectiva={comisionEfectiva}
                             />
                           );
                         })}
@@ -1730,8 +1648,6 @@ export function CotizacionEditorPage() {
                     cultivoVolumen={stats.bolsas}
                     cultivoMonto={stats.monto}
                     totalBolsas={totalBolsas}
-                    showComision={showComision}
-                    comisionEfectiva={comisionEfectiva}
                   />
                 );
               })
@@ -1751,14 +1667,6 @@ export function CotizacionEditorPage() {
               onApplySelector={applySelector}
               version={version}
               excludeIds={sectionVariableDescIds}
-              comisionActive={comisionActive}
-              comisionMargen={comisionMargenLocal}
-              comisionDescuentoId={comisionDescuentoId}
-              onToggleComision={toggleComision}
-              onUpdateComisionMargen={updateComisionMargen}
-              onSaveComisionMargen={saveComisionMargen}
-              onUpdateComisionDescuentoId={updateComisionDescuentoId}
-              savingComision={savingComision}
             />
             {version && (
               <DescuentosGlobalesPanel

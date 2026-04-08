@@ -4,8 +4,10 @@ import type { Descuento, DescuentoAplicado, TipoAplicacion } from './types';
 export interface CreateDescuentoPayload {
   nombre: string;
   tipoAplicacion?: TipoAplicacion;
-  modo?: 'basico' | 'avanzado' | 'selector';
+  modo?: 'basico' | 'avanzado' | 'selector' | 'comision';
   valorPorcentaje?: number;
+  comisionMargen?: number;
+  comisionDescuentoId?: number;
   fechaVigencia: string;
   reglas?: Array<{
     nombre?: string;
