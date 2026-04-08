@@ -733,7 +733,7 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                 <div className="flex items-center gap-2">
                   <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
                   <div className="flex-1">
-                    <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
+                    <div className="text-sm font-medium text-blue-600 mb-1">{desc.nombre}</div>
                     <div className="flex items-center gap-2">
                       {pending ? (
                         <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
@@ -783,7 +783,7 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                       className="rounded text-blue-600 cursor-pointer"
                     />
                   )}
-                  <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                  <span className={`flex-1 text-sm leading-tight ${applied ? 'text-blue-700 font-medium' : 'text-blue-600'}`}>
                     {desc.nombre}
                   </span>
                   <span className="text-xs text-gray-400">{desc.comisionMargen}% − {refName}</span>
@@ -818,7 +818,7 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                     className="rounded text-orange-500 cursor-pointer"
                   />
                 )}
-                <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                <span className={`flex-1 text-sm leading-tight ${applied ? 'text-blue-700 font-medium' : 'text-blue-600'}`}>
                   {desc.nombre}
                 </span>
                 {desc.modo === 'basico' && desc.valorPorcentaje != null && (
@@ -950,7 +950,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
                 <div className="flex items-center gap-2">
                   <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
                   <div className="flex-1">
-                    <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
+                    <div className="text-sm font-medium text-blue-600 mb-1">{desc.nombre}</div>
                     <div className="flex items-center gap-2">
                       {pending ? (
                         <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
@@ -999,7 +999,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
                     className="rounded text-blue-600 cursor-pointer"
                   />
                 )}
-                <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                <span className={`flex-1 text-sm leading-tight ${applied ? 'text-blue-700 font-medium' : 'text-blue-600'}`}>
                   {desc.nombre}
                 </span>
                 {noAplica ? (
@@ -1574,7 +1574,7 @@ export function CotizacionEditorPage() {
 
                       return (
                         <span key={desc.id} className="inline-flex items-center gap-1.5 bg-orange-50 rounded px-2 py-0.5">
-                          <span className="text-xs font-medium text-gray-600">{desc.nombre}:</span>
+                          <span className="text-sm font-medium text-blue-600">{desc.nombre}:</span>
                           {isSelMode ? (
                             <SelectorDropdown
                               reglasSorted={reglasSorted}
