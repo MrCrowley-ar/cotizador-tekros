@@ -1104,10 +1104,16 @@ export function CotizacionEditorPage() {
   // Derives from version.items so it updates on every refetch, not just version switch
   const serverDiscountIds = useMemo(() => {
     if (!version) return new Set<number>();
-    return new Set(
+    const ids = new Set(
       (version.items ?? []).flatMap((i) => i.descuentos.map((d) => d.descuentoId))
     );
-  }, [version]);
+    // Comision discounts are persisted as global records — include them
+    for (const d of version.descuentos ?? []) {
+      const desc = allDescuentos.find((dd) => dd.id === d.descuentoId);
+      if (desc?.modo === 'comision') ids.add(d.descuentoId);
+    }
+    return ids;
+  }, [version, allDescuentos]);
 
   useEffect(() => {
     if (!version) return;
@@ -1203,7 +1209,20 @@ export function CotizacionEditorPage() {
     });
 
     try {
-      if (isActive) {
+      if (desc.modo === 'comision') {
+        // Comision: persist as global discount record, effective % computed dynamically
+        if (isActive) {
+          const globalRec = version.descuentos.find((d) => d.descuentoId === desc.id);
+          if (globalRec) {
+            await cotizacionesApi.deleteGlobalDescuento(cotizacionId, version.id, globalRec.id);
+          }
+        } else {
+          await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
+            descuentoId: desc.id,
+            porcentaje: 0,
+          });
+        }
+      } else if (isActive) {
         await Promise.all(
           allItems.flatMap((item) => {
             const found = item.descuentos.find((d) => d.descuentoId === desc.id);

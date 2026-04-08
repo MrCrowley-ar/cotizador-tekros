@@ -717,7 +717,9 @@ export class CotizacionesService {
 
     let descuentosGlobales = 0;
     for (const d of globalDescuentos) {
-      descuentosGlobales += subtotalNeto * (Number(d.valorPorcentaje) / 100);
+      const pct = Number(d.valorPorcentaje);
+      if (pct === 0) continue; // skip comision placeholders (effective % computed on frontend)
+      descuentosGlobales += subtotalNeto * (pct / 100);
     }
 
     const comision = 0;
