@@ -811,7 +811,6 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                   <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
                     {desc.nombre}
                   </span>
-                  <span className="text-xs text-gray-400">{desc.comisionMargen}% − {refName}</span>
                 </label>
               </div>
             );
@@ -846,12 +845,6 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                 <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
                   {desc.nombre}
                 </span>
-                {desc.modo === 'basico' && desc.valorPorcentaje != null && (
-                  <span className="text-xs text-gray-400">{desc.valorPorcentaje}%</span>
-                )}
-                {desc.modo === 'avanzado' && (
-                  <span className="text-xs text-gray-400">{desc.reglas?.length ?? 0} reglas</span>
-                )}
               </label>
             </div>
           );
@@ -1033,9 +1026,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
                   <span className="text-xs text-gray-400 italic">No aplica</span>
                 ) : applied && pct != null ? (
                   <span className="text-xs font-semibold text-orange-600">−{pct}%</span>
-                ) : (
-                  <span className="text-xs text-gray-400">{desc.valorPorcentaje ?? '?'}%</span>
-                )}
+                ) : null}
               </label>
             </div>
           );
