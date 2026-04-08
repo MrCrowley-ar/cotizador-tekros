@@ -87,7 +87,13 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
               porcentaje: Number(desc.valorPorcentaje),
             });
           } else if (desc.modo === 'selector') {
-            // selector discounts are applied via the dropdown, skip
+            const reglas = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
+            if (reglas.length > 0) {
+              await cotizacionesApi.applyItemDescuento(cotizacionId, versionId, newItem.id, {
+                descuentoId: desc.id,
+                porcentaje: Number(reglas[0].valor),
+              });
+            }
           } else {
             const newBolsas = Number(bolsas);
             const volumen = cultivoVolumen + newBolsas;
@@ -205,8 +211,10 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
     n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   function invalidate() {
-    qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
-    qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
+    return Promise.all([
+      qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] }),
+      qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] }),
+    ]);
   }
 
   async function saveManualPct(descId: number, pctStr: string) {
@@ -222,7 +230,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
       porcentaje: pct,
     });
     setEditingManual((prev) => { const n = { ...prev }; delete n[descId]; return n; });
-    invalidate();
+    await invalidate();
   }
 
   // Subtotal = precioBase × descuentos aplicados (incluyendo comisión dinámica)
@@ -239,6 +247,15 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
     const applied = item.descuentos.find((x) => x.descuentoId === d.id);
     return applied ? Number(applied.valorPorcentaje) : null;
   }
+
+  // Subtotal before comision (for computing comision USD display)
+  const subtotalBeforeComision = activeDescuentos
+    .filter(d => d.modo !== 'comision')
+    .reduce((acc, d) => {
+      const pct = getEffectivePct(d);
+      if (pct == null) return acc;
+      return acc * (1 - pct / 100);
+    }, bruto);
 
   const afterDiscounts = activeDescuentos.reduce((acc, d) => {
     const pct = getEffectivePct(d);
@@ -258,14 +275,15 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
         const isManual = d.modo === 'manual';
         const isComision = d.modo === 'comision';
 
-        // Comision: show dynamic effective pct
+        // Comision: show as USD value (pct × subtotal before comision)
         if (isComision) {
           const pct = getEffectivePct(d);
+          const comisionUSD = pct != null ? subtotalBeforeComision * pct / 100 : null;
           return (
             <td key={d.id} className="px-4 py-2 text-sm text-right whitespace-nowrap">
-              {pct != null ? (
+              {comisionUSD != null ? (
                 <span className="text-blue-600 text-xs font-medium">
-                  −{pct.toFixed(2)}%
+                  ${fmt(comisionUSD)}
                 </span>
               ) : (
                 <span className="text-gray-300 text-xs">—</span>
@@ -639,6 +657,10 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
   // Optimistic local state so the select doesn't revert while the API call is in flight
   const [localReglaId, setLocalReglaId] = useState<number | string | null>(null);
 
+  // Keep a ref to onApply so the auto-apply effect always uses the latest callback
+  const onApplyRef = useRef(onApply);
+  onApplyRef.current = onApply;
+
   // Reset optimistic state when server data arrives
   useEffect(() => {
     setLocalReglaId(null);
@@ -650,11 +672,13 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
 
   const currentReglaId = localReglaId ?? serverReglaId;
 
+  // Auto-apply first rule when no value is applied yet
+  const firstRuleValue = reglasSorted[0]?.valor;
   useEffect(() => {
-    if (appliedPct == null && reglasSorted.length > 0 && isEditable) {
-      onApply(Number(reglasSorted[0].valor));
+    if (appliedPct == null && firstRuleValue != null && isEditable) {
+      onApplyRef.current(Number(firstRuleValue));
     }
-  }, [appliedPct]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [appliedPct, firstRuleValue, isEditable]);
 
   return (
     <select
@@ -680,23 +704,22 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
 
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
-function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos, onToggle, onApplySelector, version, excludeIds }: {
+function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, sortedDescuentos, onToggle, onApplySelector, version, excludeIds,
+  onDragStart, onDragOver, onDragEnd }: {
   isEditable: boolean;
   activeIds: Set<number>;
   pendingIds: Set<number>;
-  allDescuentos: Descuento[];
+  sortedDescuentos: Descuento[];
   onToggle: (desc: Descuento) => void;
   onApplySelector: (desc: Descuento, pct: number | null) => void;
   version: CotizacionVersion | undefined;
   excludeIds?: Set<number>;
+  onDragStart: (id: number) => void;
+  onDragOver: (id: number) => void;
+  onDragEnd: () => void;
 }) {
-  // Show non-global discounts + global selectors/manual/comision (apply per-item)
-  const nonGlobal = allDescuentos.filter((d) =>
-    (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision')
-    && !(excludeIds?.has(d.id)),
-  );
-  const { sorted: sortedNonGlobal, onDragStart, onDragOver, onDragEnd } = useDiscountOrder('desc-order-item', nonGlobal);
-  if (nonGlobal.length === 0) return null;
+  const visibleDescuentos = sortedDescuentos.filter(d => !(excludeIds?.has(d.id)));
+  if (visibleDescuentos.length === 0) return null;
 
   // Find currently applied pct for selector discounts
   function getAppliedSelectorPct(descId: number): number | null {
@@ -712,7 +735,7 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
     <div className="bg-white rounded-xl border p-4">
       <h3 className="text-sm font-semibold text-gray-700 mb-3">Descuentos</h3>
       <div className="space-y-2">
-        {sortedNonGlobal.map((desc) => {
+        {visibleDescuentos.map((desc) => {
           const applied = activeIds.has(desc.id);
           const pending = pendingIds.has(desc.id);
           const isSelector = desc.modo === 'selector';
@@ -735,17 +758,15 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                   <div className="flex-1">
                     <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
                     <div className="flex items-center gap-2">
-                      {pending ? (
-                        <Spinner className="w-4 h-4 shrink-0 text-orange-500" />
-                      ) : (
-                        <SelectorDropdown
-                          reglasSorted={reglasSorted}
-                          appliedPct={appliedPct}
-                          isEditable={isEditable}
-                          onApply={(pct) => onApplySelector(desc, pct)}
-                          className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
-                        />
-                      )}
+                      <SelectorDropdown
+                        key={version?.id}
+                        reglasSorted={reglasSorted}
+                        appliedPct={appliedPct}
+                        isEditable={isEditable && !pending}
+                        onApply={(pct) => onApplySelector(desc, pct)}
+                        className={`flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default ${pending ? 'opacity-50' : ''}`}
+                      />
+                      {pending && <Spinner className="w-4 h-4 shrink-0 text-orange-500" />}
                     </div>
                   </div>
                 </div>
@@ -753,10 +774,8 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
             );
           }
 
-          // Comision: show as checkbox with formula info
+          // Comision: show as checkbox
           if (desc.modo === 'comision') {
-            const refDesc = allDescuentos.find((d) => d.id === desc.comisionDescuentoId);
-            const refName = refDesc?.nombre ?? `#${desc.comisionDescuentoId}`;
             return (
               <div
                 key={desc.id}
@@ -786,7 +805,6 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                   <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
                     {desc.nombre}
                   </span>
-                  <span className="text-xs text-gray-400">{desc.comisionMargen}% − {refName}</span>
                 </label>
               </div>
             );
@@ -821,12 +839,6 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, allDescuentos,
                 <span className={`flex-1 leading-tight ${applied ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
                   {desc.nombre}
                 </span>
-                {desc.modo === 'basico' && desc.valorPorcentaje != null && (
-                  <span className="text-xs text-gray-400">{desc.valorPorcentaje}%</span>
-                )}
-                {desc.modo === 'avanzado' && (
-                  <span className="text-xs text-gray-400">{desc.reglas?.length ?? 0} reglas</span>
-                )}
               </label>
             </div>
           );
@@ -870,8 +882,10 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
     return version.descuentos.find((d) => d.descuentoId === desc.id)?.valorPorcentaje ?? null;
   }
   function invalidate() {
-    qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] });
-    qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] });
+    return Promise.all([
+      qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] }),
+      qc.refetchQueries({ queryKey: ['total', cotizacionId, version.id] }),
+    ]);
   }
   function showNoAplica(id: number) {
     setNoAplicaId(id);
@@ -900,7 +914,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
         descuentoId: desc.id,
         porcentaje,
       });
-      invalidate();
+      await invalidate();
     } catch { /* silently fail */ } finally {
       markPending(desc.id, false);
     }
@@ -913,7 +927,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
       if (applied) {
         await cotizacionesApi.deleteGlobalDescuento(cotizacionId, version.id, applied.id);
       }
-      invalidate();
+      await invalidate();
     } finally {
       markPending(desc.id, false);
     }
@@ -952,17 +966,14 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
                   <div className="flex-1">
                     <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
                     <div className="flex items-center gap-2">
-                      {pending ? (
-                        <Spinner className="w-4 h-4 shrink-0 text-blue-500" />
-                      ) : (
-                        <SelectorDropdown
-                          reglasSorted={reglasSorted}
-                          appliedPct={pct != null ? Number(pct) : null}
-                          isEditable={isEditable}
-                          onApply={(val) => applyDescuento(desc, val)}
-                          className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default"
-                        />
-                      )}
+                      <SelectorDropdown
+                        reglasSorted={reglasSorted}
+                        appliedPct={pct != null ? Number(pct) : null}
+                        isEditable={isEditable && !pending}
+                        onApply={(val) => applyDescuento(desc, val)}
+                        className={`flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default ${pending ? 'opacity-50' : ''}`}
+                      />
+                      {pending && <Spinner className="w-4 h-4 shrink-0 text-blue-500" />}
                       {applied && pct != null && (
                         <span className="text-xs font-semibold text-orange-600 shrink-0">−{pct}%</span>
                       )}
@@ -1006,9 +1017,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
                   <span className="text-xs text-gray-400 italic">No aplica</span>
                 ) : applied && pct != null ? (
                   <span className="text-xs font-semibold text-orange-600">−{pct}%</span>
-                ) : (
-                  <span className="text-xs text-gray-400">{desc.valorPorcentaje ?? '?'}%</span>
-                )}
+                ) : null}
               </label>
             </div>
           );
@@ -1133,19 +1142,26 @@ export function CotizacionEditorPage() {
 
   // Active discounts as full objects (for passing to CultivoSection)
   // Include global selectors and manual discounts alongside non-global discounts
-  const activeDescuentos = useMemo(
-    () => allDescuentos
-      .filter((d) =>
-        (d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision') && activeDiscountIds.has(d.id)
-      )
-      .sort((a, b) => {
-        // Comision columns always last (before subtotal)
-        if (a.modo === 'comision' && b.modo !== 'comision') return 1;
-        if (a.modo !== 'comision' && b.modo === 'comision') return -1;
-        return 0;
-      }),
-    [allDescuentos, activeDiscountIds],
+  // Sorted by sidebar drag order (persisted in localStorage), comision always last
+  const itemPanelDescuentos = useMemo(
+    () => allDescuentos.filter((d) =>
+      d.tipoAplicacion !== 'global' || d.modo === 'selector' || d.modo === 'manual' || d.modo === 'comision'
+    ),
+    [allDescuentos],
   );
+  const {
+    sorted: sortedItemDesc,
+    onDragStart: itemDescDragStart,
+    onDragOver: itemDescDragOver,
+    onDragEnd: itemDescDragEnd,
+  } = useDiscountOrder('desc-order-item', itemPanelDescuentos);
+
+  const activeDescuentos = useMemo(() => {
+    const active = sortedItemDesc.filter((d) => activeDiscountIds.has(d.id));
+    const nonComision = active.filter(d => d.modo !== 'comision');
+    const comision = active.filter(d => d.modo === 'comision');
+    return [...nonComision, ...comision];
+  }, [sortedItemDesc, activeDiscountIds]);
 
   // PNG export
   const pngExport = useCotizacionExportPng({
@@ -1190,8 +1206,10 @@ export function CotizacionEditorPage() {
   }
 
   function invalidateVersion() {
-    qc.refetchQueries({ queryKey: ['version', cotizacionId, selectedVersionId] });
-    qc.refetchQueries({ queryKey: ['total', cotizacionId, selectedVersionId] });
+    return Promise.all([
+      qc.refetchQueries({ queryKey: ['version', cotizacionId, selectedVersionId] }),
+      qc.refetchQueries({ queryKey: ['total', cotizacionId, selectedVersionId] }),
+    ]);
   }
 
   async function toggleDiscount(desc: Descuento) {
@@ -1290,7 +1308,7 @@ export function CotizacionEditorPage() {
           }
         }
       }
-      invalidateVersion();
+      await invalidateVersion();
     } catch {
       // Revert optimistic update on error
       setActiveDiscountIds((prev) => {
@@ -1330,8 +1348,10 @@ export function CotizacionEditorPage() {
       } else {
         setActiveDiscountIds((prev) => { const n = new Set(prev); n.delete(desc.id); return n; });
       }
-      invalidateVersion();
-    } catch { /* silent */ } finally {
+      await invalidateVersion();
+    } catch (e) {
+      console.error('applySelector failed:', e);
+    } finally {
       markDiscPending(desc.id, false);
     }
   }
@@ -1569,7 +1589,7 @@ export function CotizacionEditorPage() {
                         await cotizacionesApi.updateSeccionDescuento(
                           cotizacionId, version!.id, seccion.id, desc.id, pct,
                         );
-                        invalidateVersion();
+                        await invalidateVersion();
                       };
 
                       return (
@@ -1688,11 +1708,14 @@ export function CotizacionEditorPage() {
               isEditable={isEditable}
               activeIds={activeDiscountIds}
               pendingIds={pendingDiscountIds}
-              allDescuentos={allDescuentos}
+              sortedDescuentos={sortedItemDesc}
               onToggle={toggleDiscount}
               onApplySelector={applySelector}
               version={version}
               excludeIds={sectionVariableDescIds}
+              onDragStart={itemDescDragStart}
+              onDragOver={itemDescDragOver}
+              onDragEnd={itemDescDragEnd}
             />
             {version && (
               <DescuentosGlobalesPanel
