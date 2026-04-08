@@ -1564,7 +1564,6 @@ export function CotizacionEditorPage() {
                 return (version!.secciones ?? [])
                   .sort((a, b) => a.orden - b.orden)
                   .map((seccion) => {
-                    const secTotal = totals?.secciones?.find((s) => s.seccionId === seccion.id);
 
                     const getSeccionPct = (descId: number): number | null => {
                       for (const item of version!.items ?? []) {
@@ -1633,11 +1632,6 @@ export function CotizacionEditorPage() {
                             {seccion.nombre ?? `Sección ${seccion.orden + 1}`}
                           </h3>
                           {discountSelectors}
-                          {secTotal && (
-                            <span className="text-xs text-gray-500 ml-auto">
-                              Total: ${secTotal.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                          )}
                           {isEditable && (version!.secciones ?? []).length > 1 && (
                             <button
                               onClick={() => deleteSeccionMut.mutate(seccion.id)}
