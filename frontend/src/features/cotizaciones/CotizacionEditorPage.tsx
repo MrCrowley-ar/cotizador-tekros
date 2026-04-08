@@ -413,7 +413,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
               <th className="text-right px-4 py-2">Bolsas</th>
               <th className="text-right px-4 py-2 whitespace-nowrap">P. Base</th>
               {activeDescuentos.map((d) => (
-                <th key={d.id} className={`px-4 py-2 text-right whitespace-nowrap normal-case tracking-normal font-medium ${d.modo === 'comision' ? 'text-blue-500' : 'text-orange-500'}`}>
+                <th key={d.id} className="px-4 py-2 text-right whitespace-nowrap normal-case tracking-normal font-medium text-sm text-blue-600">
                   {d.nombre}
                 </th>
               ))}
