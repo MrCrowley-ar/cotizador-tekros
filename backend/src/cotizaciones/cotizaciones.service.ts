@@ -353,13 +353,23 @@ export class CotizacionesService {
       );
     }
 
-    const aplicado = await this.itemDescRepo.save(
-      this.itemDescRepo.create({
-        cotizacionItemId: itemId,
-        descuentoId: descuento.id,
-        valorPorcentaje: porcentaje,
-      }),
-    );
+    // Upsert: update existing entry if present, otherwise create new one
+    let aplicado = await this.itemDescRepo.findOneBy({
+      cotizacionItemId: itemId,
+      descuentoId: descuento.id,
+    });
+    if (aplicado) {
+      aplicado.valorPorcentaje = porcentaje;
+      aplicado = await this.itemDescRepo.save(aplicado);
+    } else {
+      aplicado = await this.itemDescRepo.save(
+        this.itemDescRepo.create({
+          cotizacionItemId: itemId,
+          descuentoId: descuento.id,
+          valorPorcentaje: porcentaje,
+        }),
+      );
+    }
 
     const version = await this.versionRepo.findOneBy({ id: item.versionId });
     await this.recalcularTotal(item.versionId);
@@ -378,14 +388,15 @@ export class CotizacionesService {
   }
 
   async eliminarDescuentoItem(itemId: number, descuentoItemId: number, usuarioId?: number): Promise<void> {
-    const d = await this.itemDescRepo.findOneBy({ descuentoId: descuentoItemId, cotizacionItemId: itemId });
-    if (!d) throw new NotFoundException(`Descuento ${descuentoItemId} no encontrado en ítem ${itemId}`);
+    // Find ALL matching entries (handles duplicates)
+    const entries = await this.itemDescRepo.find({ where: { descuentoId: descuentoItemId, cotizacionItemId: itemId } });
+    if (entries.length === 0) throw new NotFoundException(`Descuento ${descuentoItemId} no encontrado en ítem ${itemId}`);
 
     const item = await this.itemRepo.findOneBy({ id: itemId });
     const versionId = item?.versionId;
     const version = versionId ? await this.versionRepo.findOneBy({ id: versionId }) : null;
 
-    await this.itemDescRepo.remove(d);
+    await this.itemDescRepo.remove(entries);
     if (versionId) await this.recalcularTotal(versionId);
 
     await this.historialService.registrar({
