@@ -35,7 +35,7 @@ export function useCotizacionExportPng({
     try {
       const dataUrl = await toPng(ref.current, {
         backgroundColor: '#ffffff',
-        pixelRatio: 2,
+        pixelRatio: 3,
       });
       const link = document.createElement('a');
       link.download = `${cotizacion.numero}_v${version.version}.png`;
@@ -153,10 +153,10 @@ export function useCotizacionExportPng({
   }
 
   // Table styles
-  const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontWeight: 'bold', borderBottom: '2px solid #333' };
+  const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 8px', fontWeight: 'bold', borderBottom: '2px solid #333', whiteSpace: 'nowrap' };
   const thRight: React.CSSProperties = { ...thStyle, textAlign: 'right' };
   const thCenter: React.CSSProperties = { ...thStyle, textAlign: 'center' };
-  const tdStyle: React.CSSProperties = { padding: '6px 10px', borderBottom: '1px solid #e5e5e5' };
+  const tdStyle: React.CSSProperties = { padding: '8px', borderBottom: '1px solid #e5e5e5', whiteSpace: 'nowrap' };
   const tdRight: React.CSSProperties = { ...tdStyle, textAlign: 'right' };
   const tdCenter: React.CSSProperties = { ...tdStyle, textAlign: 'center' };
 
@@ -182,17 +182,17 @@ export function useCotizacionExportPng({
     return (
       <div key={`${seccionId ?? 0}-${cultivoName}`} style={{ marginBottom: '20px' }}>
         <div style={{
-          fontSize: '14px',
+          fontSize: '16px',
           fontWeight: 'bold',
           color: '#333',
-          padding: '6px 10px',
+          padding: '8px 12px',
           background: '#f3f4f6',
           borderRadius: '4px',
           marginBottom: '4px',
         }}>
           {cultivoName}
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '15px', tableLayout: 'auto' }}>
           <thead>
             <tr>
               <th style={thStyle}>Híbrido</th>
@@ -223,16 +223,16 @@ export function useCotizacionExportPng({
     <div
       ref={ref}
       style={{
-        width: '800px',
+        width: '720px',
         fontFamily: 'Arial, Helvetica, sans-serif',
-        fontSize: '14px',
+        fontSize: '16px',
         color: '#111',
         background: '#fff',
-        padding: '40px',
+        padding: '32px',
       }}
     >
       {/* Header */}
-      <h1 style={{ textAlign: 'center', fontSize: '22px', fontWeight: 'bold', marginBottom: '4px' }}>
+      <h1 style={{ textAlign: 'center', fontSize: '26px', fontWeight: 'bold', marginBottom: '4px' }}>
         Cotización Tekros
       </h1>
       <div style={{ height: '16px' }} />
@@ -243,10 +243,10 @@ export function useCotizacionExportPng({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: '24px',
-        padding: '12px 16px',
+        padding: '14px 18px',
         background: '#f9fafb',
         borderRadius: '6px',
-        fontSize: '13px',
+        fontSize: '15px',
         lineHeight: '1.7',
       }}>
         <div>
@@ -297,11 +297,11 @@ export function useCotizacionExportPng({
             <div key={seccion.id} style={{ marginBottom: '32px' }}>
               {/* Section title */}
               <div style={{
-                fontSize: '16px',
+                fontSize: '18px',
                 fontWeight: 'bold',
                 color: '#fff',
                 background: '#1f2937',
-                padding: '10px 16px',
+                padding: '12px 16px',
                 borderRadius: '6px',
                 marginBottom: '16px',
                 display: 'flex',
@@ -309,7 +309,7 @@ export function useCotizacionExportPng({
                 alignItems: 'center',
               }}>
                 <span>{label}</span>
-                <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
+                <span style={{ fontSize: '16px', fontWeight: 'normal' }}>
                   Precio Promedio: {fmt(secPrecioProm)} USD
                 </span>
               </div>
@@ -331,11 +331,11 @@ export function useCotizacionExportPng({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            fontSize: '16px',
+            fontSize: '18px',
             fontWeight: 'bold',
           }}>
             <span>Medio de pago: {medioDePago}</span>
-            <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
+            <span style={{ fontSize: '16px', fontWeight: 'normal' }}>
               Precio Promedio: {fmt(precioPonderado)} USD
             </span>
           </div>
@@ -348,7 +348,7 @@ export function useCotizacionExportPng({
       {/* Aclaración legal */}
       <div style={{
         marginTop: '24px',
-        fontSize: '11px',
+        fontSize: '13px',
         color: '#6b7280',
         lineHeight: '1.5',
         textAlign: 'left',
