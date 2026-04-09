@@ -145,10 +145,10 @@ export function useCotizacionExportPng({
   }
 
   // Table styles
-  const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontWeight: 'bold', borderBottom: '2px solid #333' };
+  const thStyle: React.CSSProperties = { textAlign: 'left', padding: '9px 10px', fontWeight: 'bold', borderBottom: '2px solid #333' };
   const thRight: React.CSSProperties = { ...thStyle, textAlign: 'right' };
   const thCenter: React.CSSProperties = { ...thStyle, textAlign: 'center' };
-  const tdStyle: React.CSSProperties = { padding: '6px 10px', borderBottom: '1px solid #e5e5e5' };
+  const tdStyle: React.CSSProperties = { padding: '7px 10px', borderBottom: '1px solid #e5e5e5' };
   const tdRight: React.CSSProperties = { ...tdStyle, textAlign: 'right' };
   const tdCenter: React.CSSProperties = { ...tdStyle, textAlign: 'center' };
 
@@ -174,17 +174,17 @@ export function useCotizacionExportPng({
     return (
       <div key={`${seccionId ?? 0}-${cultivoName}`} style={{ marginBottom: '20px' }}>
         <div style={{
-          fontSize: '14px',
+          fontSize: '15px',
           fontWeight: 'bold',
           color: '#333',
-          padding: '6px 10px',
+          padding: '7px 10px',
           background: '#f3f4f6',
           borderRadius: '4px',
           marginBottom: '4px',
         }}>
           {cultivoName}
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
           <thead>
             <tr>
               <th style={thStyle}>Híbrido</th>
@@ -217,14 +217,14 @@ export function useCotizacionExportPng({
       style={{
         width: '800px',
         fontFamily: 'Arial, Helvetica, sans-serif',
-        fontSize: '14px',
+        fontSize: '15px',
         color: '#111',
         background: '#fff',
         padding: '40px',
       }}
     >
       {/* Header */}
-      <h1 style={{ textAlign: 'center', fontSize: '22px', fontWeight: 'bold', marginBottom: '4px' }}>
+      <h1 style={{ textAlign: 'center', fontSize: '24px', fontWeight: 'bold', marginBottom: '4px' }}>
         Cotización Tekros
       </h1>
       <div style={{ height: '16px' }} />
@@ -237,7 +237,7 @@ export function useCotizacionExportPng({
         padding: '12px 16px',
         background: '#f9fafb',
         borderRadius: '6px',
-        fontSize: '13px',
+        fontSize: '14px',
         lineHeight: '1.7',
       }}>
         <div>
@@ -261,7 +261,7 @@ export function useCotizacionExportPng({
             <div key={seccion.id} style={{ marginBottom: '32px' }}>
               {/* Section title */}
               <div style={{
-                fontSize: '16px',
+                fontSize: '17px',
                 fontWeight: 'bold',
                 color: '#fff',
                 background: '#1f2937',
@@ -273,7 +273,7 @@ export function useCotizacionExportPng({
                 alignItems: 'center',
               }}>
                 <span>{label}</span>
-                <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
+                <span style={{ fontSize: '15px', fontWeight: 'normal' }}>
                   Precio Promedio: {fmt(secPrecioProm)} USD
                 </span>
               </div>
@@ -295,11 +295,11 @@ export function useCotizacionExportPng({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            fontSize: '16px',
+            fontSize: '17px',
             fontWeight: 'bold',
           }}>
             <span>Medio de pago: {medioDePago}</span>
-            <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
+            <span style={{ fontSize: '15px', fontWeight: 'normal' }}>
               Precio Promedio: {fmt(precioPonderado)} USD
             </span>
           </div>
@@ -312,18 +312,18 @@ export function useCotizacionExportPng({
       {/* Aclaración legal */}
       <div style={{
         marginTop: '24px',
-        fontSize: '11px',
-        color: '#6b7280',
-        lineHeight: '1.5',
+        fontSize: '13px',
+        color: '#4b5563',
+        lineHeight: '1.6',
         textAlign: 'left',
       }}>
-        <p style={{ margin: '0 0 6px 0' }}>
+        <p style={{ margin: '0 0 8px 0' }}>
           La presente cotización refleja valores de referencia expresados en dólares estadounidenses, no contemplando IVA ni otros tributos que pudieran corresponder según la jurisdicción.
         </p>
-        <p style={{ margin: '0 0 6px 0' }}>
+        <p style={{ margin: '0 0 8px 0' }}>
           Las condiciones aquí detalladas podrán ser revisadas o ajustadas sin notificación previa.
         </p>
-        <p style={{ margin: '0 0 6px 0' }}>
+        <p style={{ margin: '0 0 8px 0' }}>
           La concreción de la operación estará condicionada a la disponibilidad de stock al momento de su confirmación.
         </p>
         <p style={{ margin: 0 }}>
