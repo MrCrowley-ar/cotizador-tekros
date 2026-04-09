@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 import { DescuentosService } from '../descuentos/descuentos.service';
 import { DescuentosVolumenService } from '../descuentos/descuentos-volumen.service';
 import { TipoAccion, TipoEntidad } from '../historial/historial-accion.entity';
@@ -357,6 +357,7 @@ export class CotizacionesService {
     let aplicado = await this.itemDescRepo.findOneBy({
       cotizacionItemId: itemId,
       descuentoId: descuento.id,
+      seccionId: IsNull(),
     });
     if (aplicado) {
       aplicado.valorPorcentaje = porcentaje;
