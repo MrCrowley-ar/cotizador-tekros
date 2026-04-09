@@ -2,6 +2,14 @@ import { useRef, useCallback } from 'react';
 import { toPng } from 'html-to-image';
 import type { Cotizacion, CotizacionVersion, Descuento, TotalDesglose } from '../../api/types';
 
+// Logos en base64 (data:image/svg+xml;base64,...)
+// Pegá acá el string base64 de cada SVG (sin el prefijo "data:image/svg+xml;base64,")
+const LOGO_NIDERA_B64 = '';
+const LOGO_REDIN_B64 = '';
+const LOGO_TEKROS_B64 = '';
+
+const toDataUri = (b64: string) => (b64 ? `data:image/svg+xml;base64,${b64}` : '');
+
 const fmt = (n: number) =>
   n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -229,10 +237,11 @@ export function useCotizacionExportPng({
       </h1>
       <div style={{ height: '16px' }} />
 
-      {/* Client info */}
+      {/* Client info + logos */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: '24px',
         padding: '12px 16px',
         background: '#f9fafb',
@@ -244,6 +253,33 @@ export function useCotizacionExportPng({
           <div><strong>Fecha:</strong> {fecha}</div>
           <div><strong>Cliente:</strong> {cliente?.razonSocial ?? cliente?.nombre ?? '—'}</div>
           <div><strong>CUIT:</strong> {cliente?.cuit ?? '—'}</div>
+        </div>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '24px',
+        }}>
+          {LOGO_NIDERA_B64 && (
+            <img
+              src={toDataUri(LOGO_NIDERA_B64)}
+              alt="Nidera"
+              style={{ height: '40px', width: 'auto', objectFit: 'contain' }}
+            />
+          )}
+          {LOGO_REDIN_B64 && (
+            <img
+              src={toDataUri(LOGO_REDIN_B64)}
+              alt="RED.IN"
+              style={{ height: '32px', width: 'auto', objectFit: 'contain' }}
+            />
+          )}
+          {LOGO_TEKROS_B64 && (
+            <img
+              src={toDataUri(LOGO_TEKROS_B64)}
+              alt="Tekros"
+              style={{ height: '44px', width: 'auto', objectFit: 'contain' }}
+            />
+          )}
         </div>
       </div>
 
