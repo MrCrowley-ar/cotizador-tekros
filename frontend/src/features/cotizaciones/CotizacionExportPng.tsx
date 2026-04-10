@@ -153,10 +153,10 @@ export function useCotizacionExportPng({
   }
 
   // Table styles
-  const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 8px', fontWeight: 'bold', borderBottom: '2px solid #333', whiteSpace: 'nowrap' };
+  const thStyle: React.CSSProperties = { textAlign: 'left', padding: '10px 6px', fontWeight: 'bold', borderBottom: '2px solid #333', whiteSpace: 'nowrap' };
   const thRight: React.CSSProperties = { ...thStyle, textAlign: 'right' };
   const thCenter: React.CSSProperties = { ...thStyle, textAlign: 'center' };
-  const tdStyle: React.CSSProperties = { padding: '8px', borderBottom: '1px solid #e5e5e5', whiteSpace: 'nowrap' };
+  const tdStyle: React.CSSProperties = { padding: '8px 6px', borderBottom: '1px solid #e5e5e5', whiteSpace: 'nowrap' };
   const tdRight: React.CSSProperties = { ...tdStyle, textAlign: 'right' };
   const tdCenter: React.CSSProperties = { ...tdStyle, textAlign: 'center' };
 
@@ -182,7 +182,7 @@ export function useCotizacionExportPng({
     return (
       <div key={`${seccionId ?? 0}-${cultivoName}`} style={{ marginBottom: '20px' }}>
         <div style={{
-          fontSize: '16px',
+          fontSize: '18px',
           fontWeight: 'bold',
           color: '#333',
           padding: '8px 12px',
@@ -192,7 +192,7 @@ export function useCotizacionExportPng({
         }}>
           {cultivoName}
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '15px', tableLayout: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '17px', tableLayout: 'auto' }}>
           <thead>
             <tr>
               <th style={thStyle}>Híbrido</th>
@@ -225,14 +225,14 @@ export function useCotizacionExportPng({
       style={{
         width: '720px',
         fontFamily: 'Arial, Helvetica, sans-serif',
-        fontSize: '16px',
+        fontSize: '18px',
         color: '#111',
         background: '#fff',
         padding: '32px',
       }}
     >
       {/* Header */}
-      <h1 style={{ textAlign: 'center', fontSize: '26px', fontWeight: 'bold', marginBottom: '4px' }}>
+      <h1 style={{ textAlign: 'center', fontSize: '30px', fontWeight: 'bold', marginBottom: '4px' }}>
         Cotización Tekros
       </h1>
       <div style={{ height: '16px' }} />
@@ -246,7 +246,7 @@ export function useCotizacionExportPng({
         padding: '14px 18px',
         background: '#f9fafb',
         borderRadius: '6px',
-        fontSize: '15px',
+        fontSize: '17px',
         lineHeight: '1.7',
       }}>
         <div>
@@ -297,7 +297,7 @@ export function useCotizacionExportPng({
             <div key={seccion.id} style={{ marginBottom: '32px' }}>
               {/* Section title */}
               <div style={{
-                fontSize: '18px',
+                fontSize: '20px',
                 fontWeight: 'bold',
                 color: '#fff',
                 background: '#1f2937',
@@ -309,7 +309,7 @@ export function useCotizacionExportPng({
                 alignItems: 'center',
               }}>
                 <span>{label}</span>
-                <span style={{ fontSize: '16px', fontWeight: 'normal' }}>
+                <span style={{ fontSize: '18px', fontWeight: 'normal' }}>
                   Precio Promedio: {fmt(secPrecioProm)} USD
                 </span>
               </div>
@@ -331,11 +331,11 @@ export function useCotizacionExportPng({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            fontSize: '18px',
+            fontSize: '20px',
             fontWeight: 'bold',
           }}>
             <span>Medio de pago: {medioDePago}</span>
-            <span style={{ fontSize: '16px', fontWeight: 'normal' }}>
+            <span style={{ fontSize: '18px', fontWeight: 'normal' }}>
               Precio Promedio: {fmt(precioPonderado)} USD
             </span>
           </div>
@@ -348,7 +348,7 @@ export function useCotizacionExportPng({
       {/* Aclaración legal */}
       <div style={{
         marginTop: '24px',
-        fontSize: '13px',
+        fontSize: '15px',
         color: '#6b7280',
         lineHeight: '1.5',
         textAlign: 'left',
