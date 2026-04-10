@@ -18,7 +18,6 @@ import { CreateCotizacionDto } from './dto/create-cotizacion.dto';
 import { CreateSeccionDto } from './dto/create-seccion.dto';
 import { UpdateEstadoDto } from './dto/update-estado.dto';
 import { UpdateSeccionDescuentoDto } from './dto/update-seccion-descuento.dto';
-import { UpsertCultivoVigenciaDto } from './dto/upsert-cultivo-vigencia.dto';
 import { CotizacionesService } from './cotizaciones.service';
 
 @Controller('cotizaciones')
@@ -189,16 +188,5 @@ export class CotizacionesController {
     @Body() dto: UpdateSeccionDescuentoDto,
   ) {
     return this.service.updateSeccionDescuento(seccionId, did, dto);
-  }
-
-  // ─── VIGENCIA POR CULTIVO ─────────────────────────────────────────────────
-
-  @Patch(':id/versiones/:versionId/cultivos/:cultivoId/vigencia')
-  upsertCultivoVigencia(
-    @Param('versionId', ParseIntPipe) versionId: number,
-    @Param('cultivoId', ParseIntPipe) cultivoId: number,
-    @Body() dto: UpsertCultivoVigenciaDto,
-  ) {
-    return this.service.upsertCultivoVigencia(versionId, cultivoId, dto);
   }
 }

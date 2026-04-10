@@ -59,6 +59,13 @@ export class CotizacionVersion {
   @OneToMany('CotizacionVersionSeccion', 'version')
   secciones: any[];
 
-  @OneToMany('CotizacionVersionCultivo', 'version')
-  cultivoMetadata: any[];
+  @Column({ name: 'vigencia_snapshot', type: 'jsonb', nullable: true })
+  vigenciaSnapshot: VigenciaSnapshot | null;
 }
+
+// Snapshot de la vigencia configurada en el catálogo al momento de crear la cotización.
+// modo='global' → una sola fecha aplica a todos los cultivos.
+// modo='cultivo' → una fecha por cultivoId.
+export type VigenciaSnapshot =
+  | { modo: 'global'; fecha: string }
+  | { modo: 'cultivo'; fechas: Record<number, string> };

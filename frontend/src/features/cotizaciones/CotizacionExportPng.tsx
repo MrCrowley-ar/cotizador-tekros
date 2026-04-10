@@ -1,6 +1,11 @@
 import { useRef, useCallback } from 'react';
 import { toPng } from 'html-to-image';
 import type { Cotizacion, CotizacionVersion, Descuento, TotalDesglose } from '../../api/types';
+import {
+  formatVigenciaDate,
+  getEffectiveVigenciaDate,
+  isVigenciaExpired,
+} from './vigenciaHelpers';
 
 // Logos en base64 (data:image/svg+xml;base64,...)
 // Pegá acá el string base64 de cada SVG (sin el prefijo "data:image/svg+xml;base64,")
@@ -160,19 +165,7 @@ export function useCotizacionExportPng({
   const tdRight: React.CSSProperties = { ...tdStyle, textAlign: 'right' };
   const tdCenter: React.CSSProperties = { ...tdStyle, textAlign: 'center' };
 
-  const fmtFecha = (iso: string | null | undefined): string => {
-    if (!iso) return '—';
-    // Parse YYYY-MM-DD as local date to avoid TZ shift
-    const [y, m, d] = iso.substring(0, 10).split('-').map(Number);
-    if (!y || !m || !d) return '—';
-    return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
-  };
-
   function renderCultivoTable(cultivoName: string, cultivoItems: typeof items, seccionId?: number) {
-    const cultivoId = cultivoItems[0]?.cultivoId;
-    const vigenciaMeta = (version?.cultivoMetadata ?? []).find((m) => m.cultivoId === cultivoId);
-    const hasVigencia = !!(vigenciaMeta?.vigenciaDesde || vigenciaMeta?.vigenciaHasta);
-
     let cultivoTotal = 0;
     let cultivoBolsas = 0;
     const rows = cultivoItems.map((item) => {
@@ -201,17 +194,8 @@ export function useCotizacionExportPng({
           background: '#f3f4f6',
           borderRadius: '4px',
           marginBottom: '4px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '12px',
         }}>
-          <span>{cultivoName}</span>
-          {hasVigencia && (
-            <span style={{ fontSize: '14px', fontWeight: 'normal', color: '#4b5563' }}>
-              Vigencia: {fmtFecha(vigenciaMeta?.vigenciaDesde)} a {fmtFecha(vigenciaMeta?.vigenciaHasta)}
-            </span>
-          )}
+          {cultivoName}
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '17px', tableLayout: 'auto' }}>
           <thead>
@@ -274,6 +258,21 @@ export function useCotizacionExportPng({
           <div><strong>Fecha:</strong> {fecha}</div>
           <div><strong>Cliente:</strong> {cliente?.razonSocial ?? cliente?.nombre ?? '—'}</div>
           <div><strong>CUIT:</strong> {cliente?.cuit ?? '—'}</div>
+          {(() => {
+            const vigenciaFecha = getEffectiveVigenciaDate(version?.vigenciaSnapshot);
+            const expired = isVigenciaExpired(vigenciaFecha);
+            if (!vigenciaFecha) return null;
+            return (
+              <div>
+                <strong>Vigencia:</strong>{' '}
+                {expired ? (
+                  <span style={{ color: '#dc2626', fontWeight: 'bold' }}>actualizar</span>
+                ) : (
+                  formatVigenciaDate(vigenciaFecha)
+                )}
+              </div>
+            );
+          })()}
         </div>
         <div style={{
           display: 'flex',

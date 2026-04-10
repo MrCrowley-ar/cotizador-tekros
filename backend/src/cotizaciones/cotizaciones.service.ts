@@ -18,8 +18,8 @@ import { CotizacionDescuento } from './cotizacion-descuento.entity';
 import { CotizacionItemDescuento } from './cotizacion-item-descuento.entity';
 import { CotizacionItem } from './cotizacion-item.entity';
 import { CotizacionVersion } from './cotizacion-version.entity';
-import { CotizacionVersionCultivo } from './cotizacion-version-cultivo.entity';
 import { CotizacionVersionSeccion } from './cotizacion-version-seccion.entity';
+import { VigenciasService } from '../vigencias/vigencias.service';
 import { Cotizacion, EstadoCotizacion } from './cotizacion.entity';
 import { CreateSeccionDto } from './dto/create-seccion.dto';
 import { UpdateSeccionDescuentoDto } from './dto/update-seccion-descuento.dto';
@@ -39,11 +39,10 @@ export class CotizacionesService {
     private readonly descRepo: Repository<CotizacionDescuento>,
     @InjectRepository(CotizacionVersionSeccion)
     private readonly seccionRepo: Repository<CotizacionVersionSeccion>,
-    @InjectRepository(CotizacionVersionCultivo)
-    private readonly versionCultivoRepo: Repository<CotizacionVersionCultivo>,
     private readonly preciosService: PreciosService,
     private readonly descuentosService: DescuentosService,
     private readonly descuentosVolumenService: DescuentosVolumenService,
+    private readonly vigenciasService: VigenciasService,
     private readonly historialService: HistorialService,
     private readonly dataSource: DataSource,
   ) {}
@@ -78,6 +77,9 @@ export class CotizacionesService {
 
   // Crea cotización + versión 1 en una transacción
   async crear(dto: CreateCotizacionDto, usuarioId?: number): Promise<Cotizacion> {
+    // Snapshot del catálogo de vigencias en el momento de crear la cotización
+    const vigenciaSnapshot = await this.vigenciasService.getSnapshot();
+
     const saved = await this.dataSource.transaction(async (em) => {
       const numero = await this.generarNumero();
       const cotizacion = em.create(Cotizacion, { clienteId: dto.clienteId, usuarioId, numero });
@@ -88,6 +90,7 @@ export class CotizacionesService {
         version: 1,
         usuarioId: usuarioId ?? null,
         total: 0,
+        vigenciaSnapshot,
       });
       await em.save(version);
 
@@ -150,36 +153,10 @@ export class CotizacionesService {
         'descuentos',
         'descuentos.descuento',
         'secciones',
-        'cultivoMetadata',
       ],
     });
     if (!v) throw new NotFoundException(`Versión ${versionId} no encontrada`);
     return v;
-  }
-
-  // ─── VIGENCIA POR CULTIVO ─────────────────────────────────────────────────
-
-  async upsertCultivoVigencia(
-    versionId: number,
-    cultivoId: number,
-    dto: { vigenciaDesde?: string | null; vigenciaHasta?: string | null },
-  ): Promise<CotizacionVersionCultivo> {
-    const version = await this.versionRepo.findOneBy({ id: versionId });
-    if (!version) throw new NotFoundException(`Versión ${versionId} no encontrada`);
-
-    let meta = await this.versionCultivoRepo.findOneBy({ versionId, cultivoId });
-    if (!meta) {
-      meta = this.versionCultivoRepo.create({
-        versionId,
-        cultivoId,
-        vigenciaDesde: dto.vigenciaDesde ?? null,
-        vigenciaHasta: dto.vigenciaHasta ?? null,
-      });
-    } else {
-      if (dto.vigenciaDesde !== undefined) meta.vigenciaDesde = dto.vigenciaDesde;
-      if (dto.vigenciaHasta !== undefined) meta.vigenciaHasta = dto.vigenciaHasta;
-    }
-    return this.versionCultivoRepo.save(meta);
   }
 
   private async getUltimaVersion(cotizacionId: number): Promise<CotizacionVersion> {
@@ -207,7 +184,6 @@ export class CotizacionesService {
     }
     await this.itemRepo.delete({ versionId });
     await this.descRepo.delete({ versionId });
-    await this.versionCultivoRepo.delete({ versionId });
     await this.versionRepo.remove(version);
 
     await this.historialService.registrar({
@@ -237,6 +213,8 @@ export class CotizacionesService {
         total: ultima.total,
         comisionMargen: ultima.comisionMargen,
         comisionDescuentoId: ultima.comisionDescuentoId,
+        // Nuevas versiones heredan el snapshot de vigencia de la versión anterior
+        vigenciaSnapshot: ultima.vigenciaSnapshot,
       });
       const savedVersion = await em.save(nueva);
 
@@ -271,18 +249,6 @@ export class CotizacionesService {
             versionId: savedVersion.id,
             descuentoId: d.descuentoId,
             valorPorcentaje: d.valorPorcentaje,
-          }),
-        );
-      }
-
-      // Clonar vigencia por cultivo
-      for (const meta of ultima.cultivoMetadata ?? []) {
-        await em.save(
-          em.create(CotizacionVersionCultivo, {
-            versionId: savedVersion.id,
-            cultivoId: meta.cultivoId,
-            vigenciaDesde: meta.vigenciaDesde,
-            vigenciaHasta: meta.vigenciaHasta,
           }),
         );
       }

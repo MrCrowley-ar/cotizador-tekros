@@ -9,6 +9,11 @@ import { Badge } from '../../components/Badge';
 import { Spinner } from '../../components/Spinner';
 import { VersionHistory } from './VersionHistory';
 import { useCotizacionExportPng } from './CotizacionExportPng';
+import {
+  formatVigenciaDate,
+  getEffectiveVigenciaDate,
+  isVigenciaExpired,
+} from './vigenciaHelpers';
 import { FeedPanelInline } from '../feed/FeedPanel';
 import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../../api/types';
 
@@ -392,28 +397,6 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
 }) {
   const [showNewItem, setShowNewItem] = useState(false);
 
-  const qc = useQueryClient();
-  const vigenciaMeta = (version.cultivoMetadata ?? []).find((m) => m.cultivoId === cultivo.id);
-  const [vigenciaDesde, setVigenciaDesde] = useState<string>(vigenciaMeta?.vigenciaDesde ?? '');
-  const [vigenciaHasta, setVigenciaHasta] = useState<string>(vigenciaMeta?.vigenciaHasta ?? '');
-  useEffect(() => {
-    setVigenciaDesde(vigenciaMeta?.vigenciaDesde ?? '');
-    setVigenciaHasta(vigenciaMeta?.vigenciaHasta ?? '');
-  }, [vigenciaMeta?.vigenciaDesde, vigenciaMeta?.vigenciaHasta]);
-
-  const vigenciaMut = useMutation({
-    mutationFn: (body: { vigenciaDesde?: string | null; vigenciaHasta?: string | null }) =>
-      cotizacionesApi.upsertCultivoVigencia(cotizacionId, version.id, cultivo.id, body),
-    onSuccess: () => qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] }),
-  });
-
-  const commitVigencia = (next: { desde: string; hasta: string }) => {
-    vigenciaMut.mutate({
-      vigenciaDesde: next.desde ? next.desde : null,
-      vigenciaHasta: next.hasta ? next.hasta : null,
-    });
-  };
-
   const totalCols = 6 + activeDescuentos.length;
 
   const fmt = (n: number) =>
@@ -440,34 +423,8 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
 
   return (
     <div className="bg-white rounded-xl border overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b bg-gray-50 flex-wrap">
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
         <h2 className="text-sm font-semibold text-gray-800">{cultivo.nombre}</h2>
-        <div className="flex items-center gap-2 text-xs text-gray-600">
-          <span className="text-gray-500">Vigencia:</span>
-          <input
-            type="date"
-            value={vigenciaDesde}
-            disabled={!isEditable}
-            onChange={(e) => {
-              const v = e.target.value;
-              setVigenciaDesde(v);
-              commitVigencia({ desde: v, hasta: vigenciaHasta });
-            }}
-            className="border rounded px-2 py-1 text-xs disabled:bg-gray-100 disabled:text-gray-500"
-          />
-          <span className="text-gray-400">a</span>
-          <input
-            type="date"
-            value={vigenciaHasta}
-            disabled={!isEditable}
-            onChange={(e) => {
-              const v = e.target.value;
-              setVigenciaHasta(v);
-              commitVigencia({ desde: vigenciaDesde, hasta: v });
-            }}
-            className="border rounded px-2 py-1 text-xs disabled:bg-gray-100 disabled:text-gray-500"
-          />
-        </div>
         {isEditable && (
           <button
             onClick={() => setShowNewItem(true)}
@@ -1562,6 +1519,21 @@ export function CotizacionEditorPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {(() => {
+              const vigenciaFecha = getEffectiveVigenciaDate(version?.vigenciaSnapshot);
+              if (!vigenciaFecha) return null;
+              const expired = isVigenciaExpired(vigenciaFecha);
+              return (
+                <span className="text-xs">
+                  <span className="text-gray-400">Vigencia:&nbsp;</span>
+                  {expired ? (
+                    <span className="text-red-600 font-semibold">actualizar</span>
+                  ) : (
+                    <span className="text-gray-500">{formatVigenciaDate(vigenciaFecha)}</span>
+                  )}
+                </span>
+              );
+            })()}
             <span className="text-xs text-gray-400">
               {new Date(cotizacion.fechaCreacion).toLocaleDateString('es-AR', { dateStyle: 'long' })}
             </span>
