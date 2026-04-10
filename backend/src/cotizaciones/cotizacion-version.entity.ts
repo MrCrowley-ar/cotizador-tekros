@@ -58,4 +58,7 @@ export class CotizacionVersion {
 
   @OneToMany('CotizacionVersionSeccion', 'version')
   secciones: any[];
+
+  @OneToMany('CotizacionVersionCultivo', 'version')
+  cultivoMetadata: any[];
 }

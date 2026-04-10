@@ -3,6 +3,7 @@ import type {
   Cotizacion,
   CotizacionVersion,
   CotizacionVersionSeccion,
+  CotizacionVersionCultivo,
   CotizacionItem,
   CotizacionItemDescuento,
   CotizacionDescuento,
@@ -51,4 +52,16 @@ export const cotizacionesApi = {
     api.delete(`${ver(id, vid)}/secciones/${seccionId}`),
   updateSeccionDescuento: (id: number, vid: number, seccionId: number, did: number, porcentaje: number) =>
     api.patch(`${ver(id, vid)}/secciones/${seccionId}/descuentos/${did}`, { porcentaje }),
+
+  // Vigencia por cultivo
+  upsertCultivoVigencia: (
+    id: number,
+    vid: number,
+    cultivoId: number,
+    body: { vigenciaDesde?: string | null; vigenciaHasta?: string | null },
+  ) =>
+    api.patch<CotizacionVersionCultivo>(
+      `${ver(id, vid)}/cultivos/${cultivoId}/vigencia`,
+      body,
+    ),
 };

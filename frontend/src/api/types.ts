@@ -86,7 +86,6 @@ export interface Descuento {
   valorPorcentaje: number | null;
   comisionMargen: number | null;
   comisionDescuentoId: number | null;
-  fechaVigencia: string;
   activo: boolean;
   reglas: DescuentoRegla[];
 }
@@ -106,6 +105,14 @@ export interface CotizacionVersionSeccion {
   versionId: number;
   nombre: string | null;
   orden: number;
+}
+
+export interface CotizacionVersionCultivo {
+  id: number;
+  versionId: number;
+  cultivoId: number;
+  vigenciaDesde: string | null;
+  vigenciaHasta: string | null;
 }
 
 export interface CotizacionItemDescuento {
@@ -148,6 +155,7 @@ export interface CotizacionVersion {
   items: CotizacionItem[];
   descuentos: CotizacionDescuento[];
   secciones?: CotizacionVersionSeccion[];
+  cultivoMetadata?: CotizacionVersionCultivo[];
   usuario?: Usuario;
 }
 export interface Cotizacion {

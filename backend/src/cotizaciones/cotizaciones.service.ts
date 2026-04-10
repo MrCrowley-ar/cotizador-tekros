@@ -18,6 +18,7 @@ import { CotizacionDescuento } from './cotizacion-descuento.entity';
 import { CotizacionItemDescuento } from './cotizacion-item-descuento.entity';
 import { CotizacionItem } from './cotizacion-item.entity';
 import { CotizacionVersion } from './cotizacion-version.entity';
+import { CotizacionVersionCultivo } from './cotizacion-version-cultivo.entity';
 import { CotizacionVersionSeccion } from './cotizacion-version-seccion.entity';
 import { Cotizacion, EstadoCotizacion } from './cotizacion.entity';
 import { CreateSeccionDto } from './dto/create-seccion.dto';
@@ -38,6 +39,8 @@ export class CotizacionesService {
     private readonly descRepo: Repository<CotizacionDescuento>,
     @InjectRepository(CotizacionVersionSeccion)
     private readonly seccionRepo: Repository<CotizacionVersionSeccion>,
+    @InjectRepository(CotizacionVersionCultivo)
+    private readonly versionCultivoRepo: Repository<CotizacionVersionCultivo>,
     private readonly preciosService: PreciosService,
     private readonly descuentosService: DescuentosService,
     private readonly descuentosVolumenService: DescuentosVolumenService,
@@ -147,10 +150,36 @@ export class CotizacionesService {
         'descuentos',
         'descuentos.descuento',
         'secciones',
+        'cultivoMetadata',
       ],
     });
     if (!v) throw new NotFoundException(`Versión ${versionId} no encontrada`);
     return v;
+  }
+
+  // ─── VIGENCIA POR CULTIVO ─────────────────────────────────────────────────
+
+  async upsertCultivoVigencia(
+    versionId: number,
+    cultivoId: number,
+    dto: { vigenciaDesde?: string | null; vigenciaHasta?: string | null },
+  ): Promise<CotizacionVersionCultivo> {
+    const version = await this.versionRepo.findOneBy({ id: versionId });
+    if (!version) throw new NotFoundException(`Versión ${versionId} no encontrada`);
+
+    let meta = await this.versionCultivoRepo.findOneBy({ versionId, cultivoId });
+    if (!meta) {
+      meta = this.versionCultivoRepo.create({
+        versionId,
+        cultivoId,
+        vigenciaDesde: dto.vigenciaDesde ?? null,
+        vigenciaHasta: dto.vigenciaHasta ?? null,
+      });
+    } else {
+      if (dto.vigenciaDesde !== undefined) meta.vigenciaDesde = dto.vigenciaDesde;
+      if (dto.vigenciaHasta !== undefined) meta.vigenciaHasta = dto.vigenciaHasta;
+    }
+    return this.versionCultivoRepo.save(meta);
   }
 
   private async getUltimaVersion(cotizacionId: number): Promise<CotizacionVersion> {
@@ -178,6 +207,7 @@ export class CotizacionesService {
     }
     await this.itemRepo.delete({ versionId });
     await this.descRepo.delete({ versionId });
+    await this.versionCultivoRepo.delete({ versionId });
     await this.versionRepo.remove(version);
 
     await this.historialService.registrar({
@@ -241,6 +271,18 @@ export class CotizacionesService {
             versionId: savedVersion.id,
             descuentoId: d.descuentoId,
             valorPorcentaje: d.valorPorcentaje,
+          }),
+        );
+      }
+
+      // Clonar vigencia por cultivo
+      for (const meta of ultima.cultivoMetadata ?? []) {
+        await em.save(
+          em.create(CotizacionVersionCultivo, {
+            versionId: savedVersion.id,
+            cultivoId: meta.cultivoId,
+            vigenciaDesde: meta.vigenciaDesde,
+            vigenciaHasta: meta.vigenciaHasta,
           }),
         );
       }
