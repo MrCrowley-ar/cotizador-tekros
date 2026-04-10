@@ -41,6 +41,7 @@ export function VigenciaTab() {
   const [modo, setModo] = useState<Modo>(inferredModo);
   const [fechaGlobal, setFechaGlobal] = useState<string>(toInputDate(globalVigencia?.fechaVigencia));
   const [fechasCultivo, setFechasCultivo] = useState<Record<number, string>>(porCultivoMap);
+  const [error, setError] = useState<string>('');
 
   // Sync when server data arrives/changes
   useEffect(() => {
@@ -52,13 +53,21 @@ export function VigenciaTab() {
 
   const setGlobalMut = useMutation({
     mutationFn: (fecha: string) => vigenciasApi.setGlobal(fecha),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vigencias'] }),
+    onSuccess: () => {
+      setError('');
+      qc.invalidateQueries({ queryKey: ['vigencias'] });
+    },
+    onError: (e: any) => setError(e?.message ?? 'Error al guardar'),
   });
 
   const setPorCultivoMut = useMutation({
     mutationFn: (items: Array<{ cultivoId: number; fechaVigencia: string }>) =>
       vigenciasApi.setPorCultivo(items),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['vigencias'] }),
+    onSuccess: () => {
+      setError('');
+      qc.invalidateQueries({ queryKey: ['vigencias'] });
+    },
+    onError: (e: any) => setError(e?.message ?? 'Error al guardar'),
   });
 
   const isLoading = loadingCultivos || loadingVigencias;
@@ -77,6 +86,10 @@ export function VigenciaTab() {
             para todos los cultivos) o por cada cultivo individualmente.
           </p>
         </div>
+
+        {error && (
+          <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2 mb-4">{error}</p>
+        )}
 
         {/* Modo toggle */}
         <div className="grid grid-cols-2 gap-2 mb-5">
