@@ -256,7 +256,7 @@ export function useCotizacionExportPng({
       }}>
         <div>
           <div><strong>Fecha:</strong> {fecha}</div>
-          <div><strong>Cliente:</strong> {cliente?.razonSocial ?? cliente?.nombre ?? '—'}</div>
+          <div><strong>Cliente:</strong> {cliente?.razonSocial ?? '—'}</div>
           <div><strong>CUIT:</strong> {cliente?.cuit ?? '—'}</div>
           {(() => {
             const vigenciaFecha = getEffectiveVigenciaDate(version?.vigenciaSnapshot);
