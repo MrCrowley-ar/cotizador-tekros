@@ -9,6 +9,11 @@ import { Badge } from '../../components/Badge';
 import { Spinner } from '../../components/Spinner';
 import { VersionHistory } from './VersionHistory';
 import { useCotizacionExportPng } from './CotizacionExportPng';
+import {
+  formatVigenciaDate,
+  getEffectiveVigenciaDate,
+  isVigenciaExpired,
+} from './vigenciaHelpers';
 import { FeedPanelInline } from '../feed/FeedPanel';
 import type { CotizacionVersion, CotizacionItem, Cultivo, Descuento } from '../../api/types';
 
@@ -1505,13 +1510,28 @@ export function CotizacionEditorPage() {
               </span>
             )}
             <span className="text-gray-300">|</span>
-            <span className="text-sm font-medium text-gray-700">{cotizacion.cliente?.nombre}</span>
             {cotizacion.cliente?.razonSocial && (
-              <span className="text-sm text-gray-500">{cotizacion.cliente.razonSocial}</span>
+              <span className="text-sm font-medium text-gray-700">{cotizacion.cliente.razonSocial}</span>
             )}
             {cotizacion.cliente?.cuit && (
               <span className="text-xs text-gray-400 font-mono">CUIT: {cotizacion.cliente.cuit}</span>
             )}
+            {(() => {
+              const vigenciaFecha = getEffectiveVigenciaDate(version?.vigenciaSnapshot);
+              if (!vigenciaFecha) return null;
+              const expired = isVigenciaExpired(vigenciaFecha);
+              return (
+                <span className="text-xs inline-flex items-center gap-1">
+                  <span className="text-gray-300">|</span>
+                  <span className="text-gray-400">Vigencia:</span>
+                  {expired ? (
+                    <span className="text-red-600 font-semibold">actualizar</span>
+                  ) : (
+                    <span className="text-gray-600 font-medium">{formatVigenciaDate(vigenciaFecha)}</span>
+                  )}
+                </span>
+              );
+            })()}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400">

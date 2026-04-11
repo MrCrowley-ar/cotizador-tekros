@@ -19,6 +19,7 @@ import { CotizacionItemDescuento } from './cotizacion-item-descuento.entity';
 import { CotizacionItem } from './cotizacion-item.entity';
 import { CotizacionVersion } from './cotizacion-version.entity';
 import { CotizacionVersionSeccion } from './cotizacion-version-seccion.entity';
+import { VigenciasService } from '../vigencias/vigencias.service';
 import { Cotizacion, EstadoCotizacion } from './cotizacion.entity';
 import { CreateSeccionDto } from './dto/create-seccion.dto';
 import { UpdateSeccionDescuentoDto } from './dto/update-seccion-descuento.dto';
@@ -41,6 +42,7 @@ export class CotizacionesService {
     private readonly preciosService: PreciosService,
     private readonly descuentosService: DescuentosService,
     private readonly descuentosVolumenService: DescuentosVolumenService,
+    private readonly vigenciasService: VigenciasService,
     private readonly historialService: HistorialService,
     private readonly dataSource: DataSource,
   ) {}
@@ -75,6 +77,9 @@ export class CotizacionesService {
 
   // Crea cotización + versión 1 en una transacción
   async crear(dto: CreateCotizacionDto, usuarioId?: number): Promise<Cotizacion> {
+    // Snapshot del catálogo de vigencias en el momento de crear la cotización
+    const vigenciaSnapshot = await this.vigenciasService.getSnapshot();
+
     const saved = await this.dataSource.transaction(async (em) => {
       const numero = await this.generarNumero();
       const cotizacion = em.create(Cotizacion, { clienteId: dto.clienteId, usuarioId, numero });
@@ -85,6 +90,7 @@ export class CotizacionesService {
         version: 1,
         usuarioId: usuarioId ?? null,
         total: 0,
+        vigenciaSnapshot,
       });
       await em.save(version);
 
@@ -207,6 +213,8 @@ export class CotizacionesService {
         total: ultima.total,
         comisionMargen: ultima.comisionMargen,
         comisionDescuentoId: ultima.comisionDescuentoId,
+        // Nuevas versiones heredan el snapshot de vigencia de la versión anterior
+        vigenciaSnapshot: ultima.vigenciaSnapshot,
       });
       const savedVersion = await em.save(nueva);
 

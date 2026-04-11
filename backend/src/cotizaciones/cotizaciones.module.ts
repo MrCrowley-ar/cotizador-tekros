@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DescuentosModule } from '../descuentos/descuentos.module';
 import { HistorialModule } from '../historial/historial.module';
 import { PreciosModule } from '../precios/precios.module';
+import { VigenciasModule } from '../vigencias/vigencias.module';
 import { CotizacionDescuento } from './cotizacion-descuento.entity';
 import { CotizacionItemDescuento } from './cotizacion-item-descuento.entity';
 import { CotizacionItem } from './cotizacion-item.entity';
@@ -24,6 +25,7 @@ import { CotizacionesService } from './cotizaciones.service';
     ]),
     PreciosModule,
     DescuentosModule,
+    VigenciasModule,
     HistorialModule,
   ],
   controllers: [CotizacionesController],

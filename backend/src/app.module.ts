@@ -15,6 +15,7 @@ import { MensajesModule } from './mensajes/mensajes.module';
 import { PreciosModule } from './precios/precios.module';
 import { ProductosModule } from './productos/productos.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
+import { VigenciasModule } from './vigencias/vigencias.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
     ProductosModule,
     PreciosModule,
     DescuentosModule,
+    VigenciasModule,
     CotizacionesModule,
     HistorialModule,
     MensajesModule,
