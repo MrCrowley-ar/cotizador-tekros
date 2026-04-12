@@ -3,7 +3,9 @@ import { toPng } from 'html-to-image';
 import type { Cotizacion, CotizacionVersion, Descuento, TotalDesglose } from '../../api/types';
 import {
   formatVigenciaDate,
+  formatVigenciaDateShort,
   getEffectiveVigenciaDate,
+  getVigenciaDateForCultivo,
   isVigenciaExpired,
 } from './vigenciaHelpers';
 
@@ -166,6 +168,12 @@ export function useCotizacionExportPng({
   const tdCenter: React.CSSProperties = { ...tdStyle, textAlign: 'center' };
 
   function renderCultivoTable(cultivoName: string, cultivoItems: typeof items, seccionId?: number) {
+    const cultivoIdForVigencia = cultivoItems[0]?.cultivoId ?? null;
+    const vigenciaCultivoFecha = getVigenciaDateForCultivo(
+      version?.vigenciaSnapshot,
+      cultivoIdForVigencia,
+    );
+
     let cultivoTotal = 0;
     let cultivoBolsas = 0;
     const rows = cultivoItems.map((item) => {
@@ -219,6 +227,16 @@ export function useCotizacionExportPng({
             </tr>
           </tbody>
         </table>
+        {vigenciaCultivoFecha && (
+          <div style={{
+            marginTop: '6px',
+            fontSize: '14px',
+            fontStyle: 'italic',
+            color: '#4b5563',
+          }}>
+            {cultivoName}: Condiciones válidas hasta el {formatVigenciaDateShort(vigenciaCultivoFecha)} o hasta agotar stock
+          </div>
+        )}
       </div>
     );
   }

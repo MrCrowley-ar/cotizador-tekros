@@ -11,6 +11,19 @@ export function getEffectiveVigenciaDate(snapshot: VigenciaSnapshot | null | und
   return fechas.sort()[0];
 }
 
+// Devuelve la fecha de vigencia para un cultivo específico según el snapshot.
+// - modo 'global' → la misma fecha global aplica a todos los cultivos.
+// - modo 'cultivo' → la fecha puntual del cultivo, o null si no tiene configurada.
+export function getVigenciaDateForCultivo(
+  snapshot: VigenciaSnapshot | null | undefined,
+  cultivoId: number | null | undefined,
+): string | null {
+  if (!snapshot) return null;
+  if (snapshot.modo === 'global') return snapshot.fecha ?? null;
+  if (cultivoId == null) return null;
+  return snapshot.fechas?.[cultivoId] ?? null;
+}
+
 // Parsea YYYY-MM-DD como fecha local (sin desfase por TZ).
 function parseLocal(iso: string): Date | null {
   const [y, m, d] = iso.substring(0, 10).split('-').map(Number);
@@ -34,4 +47,12 @@ export function formatVigenciaDate(iso: string | null | undefined): string {
   const date = parseLocal(iso);
   if (!date) return '—';
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+// Formatea una fecha ISO YYYY-MM-DD como DD/MM (sin año, sin TZ shift).
+export function formatVigenciaDateShort(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const date = parseLocal(iso);
+  if (!date) return '—';
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
