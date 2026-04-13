@@ -34,6 +34,10 @@ RUN npm run build
 # ─── Stage: production ────────────────────────────────────────────────────────
 FROM nginx:1.25-alpine AS production
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+ENV PORT=8080
+ENV BACKEND_URL=http://localhost:3001
+EXPOSE 8080
+# envsubst is limited to ${PORT} and ${BACKEND_URL} so it won't clobber
+# nginx's own variables ($uri, $host, $remote_addr, ...).
+CMD ["/bin/sh", "-c", "envsubst '${PORT} ${BACKEND_URL}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
