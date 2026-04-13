@@ -5,8 +5,9 @@ import { HibridosTab } from './HibridosTab';
 import { PreciosTab } from './PreciosTab';
 import { ClientesTab } from './ClientesTab';
 import { DescuentosTab } from './DescuentosTab';
+import { VigenciaTab } from './VigenciaTab';
 
-type Tab = 'cultivos' | 'hibridos' | 'precios' | 'clientes' | 'descuentos';
+type Tab = 'cultivos' | 'hibridos' | 'precios' | 'clientes' | 'descuentos' | 'vigencia';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'cultivos', label: 'Cultivos' },
@@ -14,6 +15,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'precios', label: 'Precios' },
   { id: 'clientes', label: 'Clientes' },
   { id: 'descuentos', label: 'Descuentos' },
+  { id: 'vigencia', label: 'Vigencia' },
 ];
 
 export function DatosPage() {
@@ -47,6 +49,7 @@ export function DatosPage() {
         {tab === 'precios' && <PreciosTab />}
         {tab === 'clientes' && <ClientesTab />}
         {tab === 'descuentos' && <DescuentosTab />}
+        {tab === 'vigencia' && <VigenciaTab />}
       </div>
     </Layout>
   );

@@ -166,11 +166,6 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
   const isEdit = !!initial;
 
   const [nombre, setNombre] = useState(initial?.nombre ?? '');
-  const [fechaVigencia, setFechaVigencia] = useState(
-    initial?.fechaVigencia
-      ? new Date(initial.fechaVigencia).toISOString().split('T')[0]
-      : new Date().toISOString().split('T')[0],
-  );
   const [error, setError] = useState('');
 
   // ── Alcance y tipo de condición (independientes) ──
@@ -357,7 +352,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           }));
         const payload = {
           nombre, tipoAplicacion: 'cultivo' as const,
-          modo: 'avanzado' as const, fechaVigencia, reglas,
+          modo: 'avanzado' as const, reglas,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
@@ -368,7 +363,6 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
           nombre, tipoAplicacion: alcance,
           modo: 'basico' as const,
           valorPorcentaje: Number(pctFijo),
-          fechaVigencia,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
@@ -392,7 +386,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
             allRules.push({ valor: Number(pctDefC), prioridad: prio++, condiciones: [{ campo: 'cultivo_id' as const, operador: '=' as CondOp, valor: cultivo.id }, { campo: driver as string, operador: '>=' as CondOp, valor: 0 }] });
           }
         }
-        const payload = { nombre, tipoAplicacion: 'cultivo' as const, modo: 'avanzado' as const, fechaVigencia, reglas: allRules };
+        const payload = { nombre, tipoAplicacion: 'cultivo' as const, modo: 'avanzado' as const, reglas: allRules };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
@@ -416,7 +410,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         ];
         const payload = {
           nombre, tipoAplicacion: alcance,
-          modo: 'avanzado' as const, fechaVigencia, reglas,
+          modo: 'avanzado' as const, reglas,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
@@ -443,7 +437,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
             });
           }
         }
-        const payload = { nombre, tipoAplicacion: 'cultivo' as const, modo: 'avanzado' as const, fechaVigencia, reglas: allRules };
+        const payload = { nombre, tipoAplicacion: 'cultivo' as const, modo: 'avanzado' as const, reglas: allRules };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
@@ -462,7 +456,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         }));
         const payload = {
           nombre, tipoAplicacion: alcance,
-          modo: 'avanzado' as const, fechaVigencia, reglas,
+          modo: 'avanzado' as const, reglas,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
@@ -471,7 +465,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
       if (tipoCondicion === 'manual') {
         const payload = {
           nombre, tipoAplicacion: alcance,
-          modo: 'manual' as const, fechaVigencia,
+          modo: 'manual' as const,
         };
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
@@ -480,7 +474,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
       if (tipoCondicion === 'comision') {
         const payload = {
           nombre, tipoAplicacion: 'global' as const,
-          modo: 'comision' as const, fechaVigencia,
+          modo: 'comision' as const,
           comisionMargen: Number(comisionMargenStr),
           comisionDescuentoId: comisionDescuentoRefId!,
         };
@@ -498,7 +492,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         }));
       const payload = {
         nombre, tipoAplicacion: alcance,
-        modo: 'selector' as const, fechaVigencia, reglas,
+        modo: 'selector' as const, reglas,
       };
       return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
     },
@@ -508,7 +502,7 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
 
   // ── Validación ──
   const canSave = (() => {
-    if (!nombre.trim() || !fechaVigencia) return false;
+    if (!nombre.trim()) return false;
     if (tipoCondicion === 'fijo' && alcance === 'cultivo')
       return cultivos.some((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0);
     if (tipoCondicion === 'fijo') return pctFijo !== '' && Number(pctFijo) >= 0;
@@ -549,27 +543,16 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
       <div className="space-y-5">
         {error && <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2">{error}</p>}
 
-        {/* Nombre + Fecha */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Nombre *</label>
-            <input
-              autoFocus
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="ej: Pre-campaña Soja 2025"
-              className={`w-full ${inputCls}`}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Vigencia hasta *</label>
-            <input
-              type="date"
-              value={fechaVigencia}
-              onChange={(e) => setFechaVigencia(e.target.value)}
-              className={`w-full ${inputCls}`}
-            />
-          </div>
+        {/* Nombre */}
+        <div>
+          <label className={labelCls}>Nombre *</label>
+          <input
+            autoFocus
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            placeholder="ej: Pre-campaña Soja 2025"
+            className={`w-full ${inputCls}`}
+          />
         </div>
 
         {/* ── Alcance ── */}
@@ -1126,11 +1109,6 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           <Badge label={descuento.activo ? 'activo' : 'inactivo'} />
         </div>
 
-        <div className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
-          <span className="text-gray-400">Vigencia:</span>{' '}
-          <span className="font-medium">{new Date(descuento.fechaVigencia).toLocaleDateString('es-AR')}</span>
-        </div>
-
         {/* Fijo básico */}
         {tipoV === 'fijo' && descuento.modo === 'basico' && (
           <div className="bg-blue-50 rounded-lg p-3 text-sm flex items-center gap-2">
@@ -1295,7 +1273,6 @@ export function DescuentosTab() {
               <th className="text-left px-4 py-3">Nombre</th>
               <th className="text-left px-4 py-3">Alcance</th>
               <th className="text-left px-4 py-3">Valor / Reglas</th>
-              <th className="text-left px-4 py-3">Vigencia</th>
               <th className="text-left px-4 py-3">Estado</th>
             </tr>
           </thead>
@@ -1332,9 +1309,6 @@ export function DescuentosTab() {
                       : d.modo === 'manual'
                       ? '% por ítem'
                       : `${d.reglas?.length ?? 0} regla(s)`}
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {new Date(d.fechaVigencia).toLocaleDateString('es-AR')}
                   </td>
                   <td className="px-4 py-3">
                     <Badge label={d.activo ? 'activo' : 'inactivo'} />

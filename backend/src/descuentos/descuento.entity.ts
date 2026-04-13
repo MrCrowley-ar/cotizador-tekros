@@ -55,9 +55,6 @@ export class Descuento {
   })
   valorPorcentaje: number | null;
 
-  @Column({ name: 'fecha_vigencia', type: 'date' })
-  fechaVigencia: Date;
-
   @Column({ default: true })
   activo: boolean;
 

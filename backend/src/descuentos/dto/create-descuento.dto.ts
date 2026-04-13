@@ -1,6 +1,5 @@
 import {
   IsArray,
-  IsDateString,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -34,9 +33,6 @@ export class CreateDescuentoDto {
   @Min(0)
   @Max(100)
   valorPorcentaje?: number;
-
-  @IsDateString()
-  fechaVigencia: string;
 
   // Requerido en modo AVANZADO y SELECTOR
   @ValidateIf((o) => o.modo === ModoDescuento.AVANZADO || o.modo === ModoDescuento.SELECTOR)

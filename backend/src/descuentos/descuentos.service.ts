@@ -25,7 +25,7 @@ export class DescuentosService {
     return this.repo.find({
       where: soloActivos ? { activo: true } : {},
       relations: ['reglas', 'reglas.condiciones'],
-      order: { nombre: 'ASC', fechaVigencia: 'DESC' },
+      order: { nombre: 'ASC', id: 'DESC' },
     });
   }
 
@@ -43,7 +43,7 @@ export class DescuentosService {
     return this.repo.find({
       where: { activo: true, tipoAplicacion },
       relations: ['reglas', 'reglas.condiciones'],
-      order: { fechaVigencia: 'DESC' },
+      order: { id: 'DESC' },
     });
   }
 
@@ -70,7 +70,6 @@ export class DescuentosService {
         valorPorcentaje: modo === ModoDescuento.BASICO ? dto.valorPorcentaje : null,
         comisionMargen: modo === ModoDescuento.COMISION ? dto.comisionMargen : null,
         comisionDescuentoId: modo === ModoDescuento.COMISION ? dto.comisionDescuentoId : null,
-        fechaVigencia: dto.fechaVigencia as any,
       }),
     );
 
@@ -155,12 +154,10 @@ export class DescuentosService {
       modo: descuento.modo,
       tipoAplicacion: descuento.tipoAplicacion,
       valorPorcentaje: descuento.valorPorcentaje,
-      fechaVigencia: descuento.fechaVigencia,
     };
 
     if (dto.nombre !== undefined) descuento.nombre = dto.nombre;
     if (dto.tipoAplicacion !== undefined) descuento.tipoAplicacion = dto.tipoAplicacion;
-    if (dto.fechaVigencia !== undefined) descuento.fechaVigencia = dto.fechaVigencia as any;
     if (dto.valorPorcentaje !== undefined) descuento.valorPorcentaje = dto.valorPorcentaje;
     if (dto.modo !== undefined) {
       descuento.modo = dto.modo;

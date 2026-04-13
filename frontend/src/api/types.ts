@@ -86,7 +86,6 @@ export interface Descuento {
   valorPorcentaje: number | null;
   comisionMargen: number | null;
   comisionDescuentoId: number | null;
-  fechaVigencia: string;
   activo: boolean;
   reglas: DescuentoRegla[];
 }
@@ -107,6 +106,21 @@ export interface CotizacionVersionSeccion {
   nombre: string | null;
   orden: number;
 }
+
+// ─── Vigencia (catálogo) ──────────────────────────────────────────────────────
+export interface Vigencia {
+  id: number;
+  cultivoId: number | null; // null = vigencia global
+  fechaVigencia: string;
+  cultivo?: Cultivo | null;
+}
+
+// Snapshot almacenado por versión de cotización.
+// modo='global' → una fecha aplica a todos los cultivos.
+// modo='cultivo' → una fecha por cultivoId.
+export type VigenciaSnapshot =
+  | { modo: 'global'; fecha: string }
+  | { modo: 'cultivo'; fechas: Record<number, string> };
 
 export interface CotizacionItemDescuento {
   id: number;
@@ -148,6 +162,7 @@ export interface CotizacionVersion {
   items: CotizacionItem[];
   descuentos: CotizacionDescuento[];
   secciones?: CotizacionVersionSeccion[];
+  vigenciaSnapshot?: VigenciaSnapshot | null;
   usuario?: Usuario;
 }
 export interface Cotizacion {
