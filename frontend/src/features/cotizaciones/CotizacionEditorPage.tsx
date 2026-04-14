@@ -552,65 +552,9 @@ function CultivoSelector({ cultivos, activeCultivoIds, withItemIds, onToggle }: 
   );
 }
 
-// ─── Cultivo Stats Panel ──────────────────────────────────────────────────────
-
-function CultivoStatsPanel({ version, cultivos }: { version: CotizacionVersion; cultivos: Cultivo[] }) {
-  const items = version.items ?? [];
-  if (items.length === 0) return null;
-
-  const byCultivo = new Map<number, { nombre: string; bolsas: number; monto: number }>();
-  for (const item of items) {
-    const nombre =
-      item.cultivo?.nombre ??
-      cultivos.find((c) => c.id === item.cultivoId)?.nombre ??
-      String(item.cultivoId);
-    const cur = byCultivo.get(item.cultivoId) ?? { nombre, bolsas: 0, monto: 0 };
-    cur.bolsas += Number(item.bolsas);
-    // Monto = sum of (precio con descuentos × bolsas) per cultivo
-    const precioConDesc = (item.descuentos ?? []).reduce(
-      (acc, d) => acc * (1 - Number(d.valorPorcentaje) / 100),
-      Number(item.precioBase),
-    );
-    cur.monto += precioConDesc * Number(item.bolsas);
-    byCultivo.set(item.cultivoId, cur);
-  }
-
-  const fmt = (n: number) =>
-    n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  return (
-    <div className="bg-white rounded-xl border p-4 text-sm">
-      {Array.from(byCultivo.entries()).map(([cultivoId, stats], idx) => {
-        const precioPonderado = stats.bolsas > 0 ? stats.monto / stats.bolsas : 0;
-        return (
-          <div key={cultivoId} className={idx > 0 ? 'mt-3 pt-3 border-t' : ''}>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-              {stats.nombre}
-            </p>
-            <div className="space-y-1">
-              <div className="flex justify-between text-gray-600">
-                <span>Volumen</span>
-                <span>{stats.bolsas.toLocaleString('es-AR')} bolsas</span>
-              </div>
-              <div className="flex justify-between text-gray-600">
-                <span>Monto</span>
-                <span>${fmt(stats.monto)}</span>
-              </div>
-              <div className="flex justify-between text-gray-600">
-                <span>P. ponderado</span>
-                <span>${fmt(precioPonderado)}</span>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Discount Ordering (localStorage) ─────────────────────────────────────────
 
-function useDiscountOrder(storageKey: string, items: { id: number }[]) {
+function useDiscountOrder<T extends { id: number }>(storageKey: string, items: T[]) {
   const [order, setOrder] = useState<number[]>(() => {
     try {
       const saved = localStorage.getItem(storageKey);
@@ -662,7 +606,7 @@ function useDiscountOrder(storageKey: string, items: { id: number }[]) {
 // ─── Selector Dropdown (shared by all selector-mode discounts) ───────────────
 
 function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, className }: {
-  reglasSorted: { id: number; nombre?: string | null; prioridad: number; valor: string }[];
+  reglasSorted: { id: number; nombre?: string | null; prioridad: number; valor: number }[];
   appliedPct: number | null;
   isEditable: boolean;
   onApply: (pct: number) => void;

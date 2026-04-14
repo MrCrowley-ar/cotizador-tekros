@@ -98,7 +98,13 @@ export interface DescuentoAplicado {
 }
 
 // ─── Cotizaciones ─────────────────────────────────────────────────────────────
-export type EstadoCotizacion = 'borrador' | 'enviada' | 'aprobada' | 'rechazada' | 'cerrada';
+// Incluye el vocabulario nuevo ('generado' | 'enviado' | 'aceptado' | 'perdido')
+// y el viejo ('borrador' | 'enviada' | 'aprobada' | 'rechazada' | 'cerrada')
+// porque la base de datos puede tener registros con cualquiera de los dos
+// durante la migración. ESTADO_LABEL en CotizacionEditorPage mapea ambos.
+export type EstadoCotizacion =
+  | 'generado' | 'enviado' | 'aceptado' | 'perdido'
+  | 'borrador' | 'enviada' | 'aprobada' | 'rechazada' | 'cerrada';
 
 export interface CotizacionVersionSeccion {
   id: number;

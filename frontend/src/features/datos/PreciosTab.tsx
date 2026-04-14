@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { productosApi } from '../../api/productos';
 import { preciosApi } from '../../api/precios';
 import { Spinner } from '../../components/Spinner';
-import type { Cultivo, Hibrido, Banda } from '../../api/types';
+import type { Cultivo } from '../../api/types';
 
 // ─── Tabla de precios por cultivo ─────────────────────────────────────────────
 
@@ -95,8 +95,6 @@ function CultivoTable({ cultivo }: { cultivo: Cultivo }) {
 
   const isEditing = (hibridoId: number, bandaId: number) =>
     editCell?.hibridoId === hibridoId && editCell?.bandaId === bandaId;
-
-  const isEmpty = hibridos.length === 0 || bandas.length === 0;
 
   return (
     <div className="bg-white rounded-xl border overflow-x-auto">
