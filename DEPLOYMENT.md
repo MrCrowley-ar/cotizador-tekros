@@ -150,7 +150,39 @@ camino recomendado para on-prem.
   el `proxy_pass /api` al backend. Ver `frontend/Dockerfile:44-46` y
   `frontend/nginx.conf.template:20`.
 - **postgres**: **no** se despliega en Cloud Run. Usar Cloud SQL (PostgreSQL) o una base
-  manejada equivalente, y pasarle al backend la `DATABASE_URL` como env var o como secreto.
+  manejada equivalente. El backend **no** lee `DATABASE_URL`: lee 5 variables separadas
+  (`DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`), ver
+  `backend/src/database/database.module.ts:13-17`. Hay que pasárselas como env vars o como
+  secretos de Secret Manager.
+
+### Provisionar la base de datos (Cloud SQL)
+
+Antes del deploy del backend hay que tener una Postgres accesible. La opción estándar es
+**Cloud SQL** conectada por el **Cloud SQL Auth Proxy** que Cloud Run expone como Unix
+socket:
+
+```bash
+gcloud sql instances create cotizador-db \
+  --database-version=POSTGRES_15 \
+  --tier=db-f1-micro \
+  --region=<REGION> --project=<PROJECT>
+
+gcloud sql databases create cotizador_db \
+  --instance=cotizador-db --project=<PROJECT>
+
+gcloud sql users create tekros_user \
+  --instance=cotizador-db \
+  --password='<password-fuerte>' --project=<PROJECT>
+
+# Tomá nota del connection name (formato PROJECT:REGION:INSTANCE)
+gcloud sql instances describe cotizador-db --project=<PROJECT> \
+  --format='value(connectionName)'
+```
+
+Si tu Postgres ya está en otro lado (otro cloud, on-prem, Supabase, Neon, etc.), saltá esta
+sección y en el deploy pasá `DB_HOST` directamente al hostname/IP accesible. Si es una IP
+privada dentro de tu VPC, además vas a necesitar un **Serverless VPC Access Connector** y el
+flag `--vpc-connector=<connector-name>` en el deploy.
 
 ### Build + deploy
 
@@ -167,7 +199,17 @@ gcloud run deploy cotizador-backend \
   --region <REGION> \
   --project <PROJECT> \
   --allow-unauthenticated \
-  --set-env-vars DATABASE_URL=<url>,JWT_SECRET=<secret>,FRONTEND_URL=https://<frontend>.run.app,INITIAL_ADMIN_NOMBRE=...,INITIAL_ADMIN_EMAIL=...,INITIAL_ADMIN_PASSWORD=...
+  --add-cloudsql-instances=<PROJECT>:<REGION>:cotizador-db \
+  --set-env-vars "DB_HOST=/cloudsql/<PROJECT>:<REGION>:cotizador-db" \
+  --set-env-vars "DB_PORT=5432" \
+  --set-env-vars "DB_USERNAME=tekros_user" \
+  --set-env-vars "DB_PASSWORD=<password>" \
+  --set-env-vars "DB_DATABASE=cotizador_db" \
+  --set-env-vars "JWT_SECRET=<secret>" \
+  --set-env-vars "FRONTEND_URL=https://<frontend>.run.app" \
+  --set-env-vars "INITIAL_ADMIN_NOMBRE=NicoB" \
+  --set-env-vars "INITIAL_ADMIN_EMAIL=nicolas.bergmann@tekros.org" \
+  --set-env-vars "INITIAL_ADMIN_PASSWORD=<password-admin>"
 
 # Frontend — BACKEND_URL tiene que apuntar al servicio de backend recién deployado
 gcloud builds submit ./frontend \
@@ -178,18 +220,30 @@ gcloud run deploy cotizador-frontend \
   --region <REGION> \
   --project <PROJECT> \
   --allow-unauthenticated \
-  --set-env-vars BACKEND_URL=https://<backend>.run.app
+  --set-env-vars "BACKEND_URL=https://<backend>.run.app"
 ```
 
 Variables importantes:
 
 | Variable | Servicio | Por qué |
 |---|---|---|
-| `DATABASE_URL` | backend | Cadena de conexión a Cloud SQL / Postgres externo |
-| `JWT_SECRET` | backend | Mismo valor que en el `.env` de docker-compose |
-| `FRONTEND_URL` | backend | Se usa en `app.enableCors()` (`backend/src/main.ts:32`) |
-| `INITIAL_ADMIN_*` | backend | Crea el admin en la primera migración (solo 1ª vez) |
-| `BACKEND_URL` | frontend | URL completa `https://...run.app` del servicio de backend; reemplaza el default `http://localhost:3001` del Dockerfile |
+| `DB_HOST` | backend | Con Cloud SQL, la ruta del Unix socket `/cloudsql/<connection-name>`; el driver `pg` detecta el prefijo `/` y usa socket en vez de TCP. Con DB externa, hostname o IP. Default del código: `localhost` (inservible en Cloud Run). Ver `backend/src/database/database.module.ts:13`. |
+| `DB_PORT` | backend | `5432`. Se ignora cuando `DB_HOST` es un Unix socket, pero no molesta. |
+| `DB_USERNAME` / `DB_PASSWORD` / `DB_DATABASE` | backend | Credenciales y nombre de base. **No hay default** para username/password: si faltan, TypeORM cuelga intentando conectar. |
+| `JWT_SECRET` | backend | Mismo valor que en el `.env` de docker-compose. |
+| `FRONTEND_URL` | backend | Se usa en `app.enableCors()` (`backend/src/main.ts:32`). |
+| `INITIAL_ADMIN_*` | backend | Crea el admin en la primera migración (solo 1ª vez). |
+| `BACKEND_URL` | frontend | URL completa `https://...run.app` del servicio de backend; reemplaza el default `http://localhost:3001` del Dockerfile. |
+
+> **`--add-cloudsql-instances` es obligatorio** cuando usás Cloud SQL vía socket. Sin ese flag
+> el socket `/cloudsql/<connection-name>` **no existe** dentro del container, TypeORM queda
+> colgado tratando de conectar, `app.listen()` nunca se ejecuta, y Cloud Run aborta la
+> revisión con el error *"container failed to start and listen on the port defined by the
+> PORT=8080 environment variable"*. Ver la sección de troubleshooting más abajo.
+
+> **Secrets, no env vars:** `DB_PASSWORD`, `JWT_SECRET` e `INITIAL_ADMIN_PASSWORD` deberían
+> vivir en Secret Manager y pasarse con `--set-secrets` en lugar de `--set-env-vars`. Para un
+> primer deploy está bien así, pero migrarlos queda pendiente como higiene.
 
 > **`--allow-unauthenticated` es obligatorio en ambos servicios.** El frontend hace
 > `proxy_pass` al `.run.app` del backend desde el container nginx, y Cloud Run/GFE bloquea
@@ -266,16 +320,67 @@ Lecturas típicas:
 
 - **(a) FAILURE** → abrir el link de la build en la consola y leer el error de `npm run
   build` / `npm ci`.
-- **(b) "Container failed to start... listen on the port defined by PORT"** → el proceso no
-  está bindeando `process.env.PORT`. En este repo ya está resuelto (`backend/src/main.ts:37`,
-  `frontend/Dockerfile:44`), así que esto solo aparece si alguien rompió esa parte.
+- **(b) "Container failed to start and listen on the port defined by PORT=8080"** → ver la
+  subsección dedicada más abajo; en este repo la causa casi siempre es que `TypeOrmModule`
+  cuelga conectando a la DB antes de que `bootstrap()` llegue a `app.listen()`, no un
+  problema de `process.env.PORT`.
 - **(c) con un stack trace de NestJS** → el container sí arranca pero crashea: leer el
-  mensaje (típicamente falta `DATABASE_URL`, `JWT_SECRET`, o `DATABASE_URL` inválido).
-- **(c) con `Nest application successfully started`** → el backend arranca perfecto; el
-  síntoma "no inicia" en realidad es el Forbidden de GFE (volver al fix de `allUsers` de
-  arriba, aplicado al backend).
+  mensaje (típicamente falta alguna de `DB_HOST`/`DB_USERNAME`/`DB_PASSWORD`/`DB_DATABASE` o
+  `JWT_SECRET`).
+- **(c) con `Nest application successfully started` + `Backend running on port 8080`** → el
+  backend arranca perfecto; el síntoma "no inicia" en realidad es el Forbidden de GFE (volver
+  al fix de `allUsers` de arriba, aplicado al backend).
 - **(c) completamente vacío y (b) Ready=True** → los logs existen, el UI te está filtrando;
   usar `(c-bis)`.
+
+#### "Container failed to start and listen on the port defined by PORT=8080"
+
+Este error es engañoso: suena a "tu app no respeta `PORT`", pero en este repo el código está
+correcto (`backend/src/main.ts:37` lee `process.env.PORT ?? '3001'` y bindea `0.0.0.0`). La
+causa real es casi siempre que **`NestFactory.create(AppModule)` se queda colgado antes de
+llegar a `app.listen()`**, y el proceso del container nunca se llega a bindear al puerto.
+
+El culpable habitual es `DatabaseModule`: `TypeOrmModule.forRootAsync` con `migrationsRun: true`
+(`backend/src/database/database.module.ts:8-23`) no resuelve hasta que logra conectarse y correr
+las migraciones pendientes. Si las env vars de la DB apuntan a ningún lado, la conexión queda
+reintentando en silencio hasta que Cloud Run mata la revisión por timeout.
+
+Checklist para destrabarlo:
+
+1. **¿Están todas las env vars de la DB seteadas en la revisión?** Revisá el YAML del servicio:
+   ```bash
+   gcloud run services describe cotizador-backend \
+     --region=<REGION> --project=<PROJECT> \
+     --format='value(spec.template.spec.containers[0].env)'
+   ```
+   Tienen que aparecer `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`,
+   `JWT_SECRET`. Si falta alguna, la conexión a la DB no va a funcionar y vas a caer acá.
+2. **Si usás Cloud SQL, ¿está el flag `--add-cloudsql-instances` en el deploy?** Sin ese flag,
+   la ruta `/cloudsql/<connection-name>` no existe dentro del container y el socket nunca se
+   abre. Confirmalo con:
+   ```bash
+   gcloud run services describe cotizador-backend \
+     --region=<REGION> --project=<PROJECT> \
+     --format='value(spec.template.metadata.annotations."run.googleapis.com/cloudsql-instances")'
+   ```
+   Debería devolver el connection name completo.
+3. **¿`DB_HOST` está bien formado?** Con Cloud SQL socket tiene que ser exactamente
+   `/cloudsql/PROJECT:REGION:INSTANCE` (empieza con `/`, no con `https://` ni con IP). Con DB
+   externa pública, tiene que ser un hostname resoluble desde internet.
+4. **¿La service account del backend tiene `roles/cloudsql.client`?** Sin ese rol, el proxy
+   de Cloud SQL rechaza la conexión:
+   ```bash
+   gcloud projects add-iam-policy-binding <PROJECT> \
+     --member="serviceAccount:<PROJECT-NUMBER>-compute@developer.gserviceaccount.com" \
+     --role="roles/cloudsql.client"
+   ```
+5. **¿La DB es alcanzable desde donde estás?** Probá con `psql` o el Cloud SQL Studio en la
+   consola con las mismas credenciales. Si falla por `psql`, va a fallar igual desde Cloud Run.
+
+Una vez corregido lo que corresponda, redeployá. Si el problema era env vars o el flag de
+Cloud SQL, no hace falta rebuildear la imagen — basta con `gcloud run services update` con
+las flags nuevas, o directamente re-run del Cloud Build trigger si está configurado con el
+deploy en el mismo `cloudbuild.yaml`.
 
 > **Importante sobre "no hay logs porque no inicia":** si Cloud Run **sí** arrancó una revisión
 > del container, aunque sea por 2 segundos, siempre hay algo en Cloud Logging. "Vacío total"
