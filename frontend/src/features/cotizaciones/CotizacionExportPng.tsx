@@ -45,7 +45,9 @@ export function useCotizacionExportPng({
         pixelRatio: 3,
       });
       const link = document.createElement('a');
-      link.download = `${cotizacion.numero}_v${version.version}.png`;
+      const razon = (cotizacion.cliente?.razonSocial ?? 'SIN-RAZON-SOCIAL').replace(/\s+/g, '-');
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      link.download = `${razon}_${today}.png`;
       link.href = dataUrl;
       link.click();
     } catch (err) {
