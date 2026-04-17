@@ -218,6 +218,20 @@ export class CotizacionesService {
       });
       const savedVersion = await em.save(nueva);
 
+      // Clonar secciones y mapear viejos ids → nuevos ids para preservar
+      // la relación (item, descuento, seccion) bajo el UNIQUE constraint.
+      const seccionIdMap = new Map<number, number>();
+      for (const sec of ultima.secciones ?? []) {
+        const nuevaSec = await em.save(
+          em.create(CotizacionVersionSeccion, {
+            versionId: savedVersion.id,
+            nombre: sec.nombre,
+            orden: sec.orden,
+          }),
+        );
+        seccionIdMap.set(sec.id, nuevaSec.id);
+      }
+
       // Clonar ítems y sus descuentos
       for (const item of ultima.items) {
         const nuevoItem = em.create(CotizacionItem, {
@@ -237,6 +251,7 @@ export class CotizacionesService {
               cotizacionItemId: savedItem.id,
               descuentoId: d.descuentoId,
               valorPorcentaje: d.valorPorcentaje,
+              seccionId: d.seccionId != null ? (seccionIdMap.get(d.seccionId) ?? null) : null,
             }),
           );
         }
@@ -249,6 +264,7 @@ export class CotizacionesService {
             versionId: savedVersion.id,
             descuentoId: d.descuentoId,
             valorPorcentaje: d.valorPorcentaje,
+            seccionId: d.seccionId != null ? (seccionIdMap.get(d.seccionId) ?? null) : null,
           }),
         );
       }
@@ -361,13 +377,24 @@ export class CotizacionesService {
       );
     }
 
-    const aplicado = await this.itemDescRepo.save(
-      this.itemDescRepo.create({
+    // UPSERT idempotente: una sola fila por (item, descuento, seccion). Respeta el
+    // UNIQUE constraint (UQ_cid_item_desc_seccion) aún bajo requests concurrentes.
+    await this.itemDescRepo
+      .createQueryBuilder()
+      .insert()
+      .values({
         cotizacionItemId: itemId,
         descuentoId: descuento.id,
         valorPorcentaje: porcentaje,
-      }),
-    );
+        seccionId: null,
+      })
+      .orUpdate(['valor_porcentaje'], ['cotizacion_item_id', 'descuento_id', 'seccion_id'])
+      .execute();
+
+    const aplicado = await this.itemDescRepo.findOne({
+      where: { cotizacionItemId: itemId, descuentoId: descuento.id, seccionId: null },
+    });
+    if (!aplicado) throw new NotFoundException('No se pudo aplicar el descuento');
 
     const version = await this.versionRepo.findOneBy({ id: item.versionId });
     await this.recalcularTotal(item.versionId);
@@ -386,14 +413,19 @@ export class CotizacionesService {
   }
 
   async eliminarDescuentoItem(itemId: number, descuentoItemId: number, usuarioId?: number): Promise<void> {
-    const d = await this.itemDescRepo.findOneBy({ descuentoId: descuentoItemId, cotizacionItemId: itemId });
-    if (!d) throw new NotFoundException(`Descuento ${descuentoItemId} no encontrado en ítem ${itemId}`);
+    // Idempotente: si no hay nada que borrar retorna silenciosamente (204).
+    // Elimina todas las filas coincidentes como defensa en profundidad frente a
+    // datos legacy con duplicados.
+    const rows = await this.itemDescRepo.find({
+      where: { descuentoId: descuentoItemId, cotizacionItemId: itemId },
+    });
+    if (rows.length === 0) return;
 
     const item = await this.itemRepo.findOneBy({ id: itemId });
     const versionId = item?.versionId;
     const version = versionId ? await this.versionRepo.findOneBy({ id: versionId }) : null;
 
-    await this.itemDescRepo.remove(d);
+    await this.itemDescRepo.remove(rows);
     if (versionId) await this.recalcularTotal(versionId);
 
     await this.historialService.registrar({
@@ -425,13 +457,24 @@ export class CotizacionesService {
       );
     }
 
-    const aplicado = await this.descRepo.save(
-      this.descRepo.create({
+    // UPSERT idempotente sobre (version, descuento, seccion). Respeta el UNIQUE
+    // constraint UQ_cd_version_desc_seccion.
+    await this.descRepo
+      .createQueryBuilder()
+      .insert()
+      .values({
         versionId,
         descuentoId: descuento.id,
         valorPorcentaje: porcentaje,
-      }),
-    );
+        seccionId: null,
+      })
+      .orUpdate(['valor_porcentaje'], ['version_id', 'descuento_id', 'seccion_id'])
+      .execute();
+
+    const aplicado = await this.descRepo.findOne({
+      where: { versionId, descuentoId: descuento.id, seccionId: null },
+    });
+    if (!aplicado) throw new NotFoundException('No se pudo aplicar el descuento global');
 
     await this.recalcularTotal(versionId);
 
@@ -614,6 +657,30 @@ export class CotizacionesService {
       // Si queda solo 1 sección, revertir al modo sin secciones
       if (secciones.length === 2) {
         const restante = secciones.find((s) => s.id !== seccionId)!;
+
+        // Antes de mover a seccion_id=null, borrar cualquier fila ya existente
+        // con el mismo (item/version, descuento) y seccion_id=null. Si no, el
+        // UNIQUE (item, descuento, seccion_id) bloquearía el UPDATE. Se prefiere
+        // la fila específica de la sección sobre la "shared" pre-existente.
+        await em.query(
+          `DELETE FROM "cotizacion_item_descuentos" shared
+           USING "cotizacion_item_descuentos" restante
+           WHERE restante.seccion_id = $1
+             AND shared.seccion_id IS NULL
+             AND shared.cotizacion_item_id = restante.cotizacion_item_id
+             AND shared.descuento_id IS NOT DISTINCT FROM restante.descuento_id`,
+          [restante.id],
+        );
+        await em.query(
+          `DELETE FROM "cotizacion_descuentos" shared
+           USING "cotizacion_descuentos" restante
+           WHERE restante.seccion_id = $1
+             AND shared.seccion_id IS NULL
+             AND shared.version_id = restante.version_id
+             AND shared.descuento_id IS NOT DISTINCT FROM restante.descuento_id`,
+          [restante.id],
+        );
+
         // Mover descuentos de la sección restante a seccion_id = null
         await em
           .createQueryBuilder()

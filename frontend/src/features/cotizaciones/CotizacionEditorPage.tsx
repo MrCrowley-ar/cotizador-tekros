@@ -1275,60 +1275,29 @@ export function CotizacionEditorPage() {
     markDiscPending(desc.id, true);
     const versionId = version.id;
     try {
-      // Paso 1: borrar + aplicar sobre el snapshot actual
-      const snapshot = version.items ?? [];
-      await Promise.all(
-        snapshot.flatMap((item) => {
-          const found = item.descuentos.find((d) => d.descuentoId === desc.id);
-          return found
-            ? [cotizacionesApi.deleteItemDescuento(cotizacionId, versionId, item.id, found.descuentoId)]
-            : [];
-        })
-      );
+      // El backend hace UPSERT idempotente por (item, descuento, seccion) y el
+      // DELETE también es idempotente. Una sola llamada por ítem alcanza; no
+      // hace falta borrar-y-aplicar ni reconciliar stragglers.
+      const items = version.items ?? [];
       if (porcentaje !== null) {
         await Promise.all(
-          snapshot.map((item) =>
+          items.map((item) =>
             cotizacionesApi.applyItemDescuento(cotizacionId, versionId, item.id, {
               descuentoId: desc.id,
               porcentaje,
-            })
-          )
+            }),
+          ),
         );
         setActiveDiscountIds((prev) => { const n = new Set(prev); n.add(desc.id); return n; });
       } else {
+        await Promise.all(
+          items.map((item) =>
+            cotizacionesApi.deleteItemDescuento(cotizacionId, versionId, item.id, desc.id),
+          ),
+        );
         setActiveDiscountIds((prev) => { const n = new Set(prev); n.delete(desc.id); return n; });
       }
       await invalidateVersion();
-
-      // Paso 2: reconciliación sobre ítems "stragglers" — ítems que fueron
-      // agregados durante la mutación y quedaron con el pct vigente previo,
-      // o cualquier inconsistencia residual.
-      const fresh = qc.getQueryData<CotizacionVersion>(['version', cotizacionId, versionId]);
-      const freshItems = fresh?.items ?? [];
-      const needsFix = freshItems.filter((item) => {
-        const found = item.descuentos.find((d) => d.descuentoId === desc.id);
-        if (porcentaje == null) return !!found;
-        return !found || Number(found.valorPorcentaje) !== porcentaje;
-      });
-      if (needsFix.length > 0) {
-        await Promise.all(
-          needsFix.flatMap((item) => {
-            const found = item.descuentos.find((d) => d.descuentoId === desc.id);
-            const ops: Promise<unknown>[] = [];
-            if (found) {
-              ops.push(cotizacionesApi.deleteItemDescuento(cotizacionId, versionId, item.id, found.descuentoId));
-            }
-            if (porcentaje != null) {
-              ops.push(cotizacionesApi.applyItemDescuento(cotizacionId, versionId, item.id, {
-                descuentoId: desc.id,
-                porcentaje,
-              }));
-            }
-            return ops;
-          })
-        );
-        await invalidateVersion();
-      }
     } catch (e) {
       console.error('applySelector failed:', e);
     } finally {
