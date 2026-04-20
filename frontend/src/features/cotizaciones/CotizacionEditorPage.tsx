@@ -619,6 +619,12 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
   const onApplyRef = useRef(onApply);
   onApplyRef.current = onApply;
 
+  // Fires the "auto-apply first rule" effect at most once per mount. Without
+  // this, reglasSorted is a new array reference every render, the effect
+  // retriggers, and while appliedPct is still null (API in flight) it
+  // overwrites the user's selection with the first option.
+  const autoAppliedRef = useRef(false);
+
   // Reset optimistic state when server data arrives
   useEffect(() => {
     setLocalReglaId(null);
@@ -630,13 +636,17 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
 
   const currentReglaId = localReglaId ?? serverReglaId;
 
-  // Auto-apply first rule when no value is applied yet
+  // Auto-apply first rule when no value is applied yet — only once per mount,
+  // and never while the user already has a pending local selection.
   const firstRuleValue = reglasSorted[0]?.valor;
   useEffect(() => {
+    if (autoAppliedRef.current) return;
+    if (localReglaId != null) return;
     if (appliedPct == null && firstRuleValue != null && isEditable) {
+      autoAppliedRef.current = true;
       onApplyRef.current(Number(firstRuleValue));
     }
-  }, [appliedPct, firstRuleValue, isEditable, reglasSorted]);
+  }, [appliedPct, firstRuleValue, isEditable, localReglaId]);
 
   return (
     <select
@@ -1112,6 +1122,28 @@ export function CotizacionEditorPage() {
     return [...nonComision, ...comision];
   }, [sortedItemDesc, activeDiscountIds]);
 
+  // Track in-flight discount mutations so the PNG export can wait for them
+  // before snapshotting the DOM. Without this, the export can capture stale
+  // React Query data and render a different discount than the selector shows.
+  const pendingMutationsRef = useRef<Set<Promise<unknown>>>(new Set());
+  const [pendingMutationsCount, setPendingMutationsCount] = useState(0);
+
+  const trackPending = useCallback(<T,>(promise: Promise<T>): Promise<T> => {
+    pendingMutationsRef.current.add(promise);
+    setPendingMutationsCount((c) => c + 1);
+    const cleanup = () => {
+      pendingMutationsRef.current.delete(promise);
+      setPendingMutationsCount((c) => c - 1);
+    };
+    promise.then(cleanup, cleanup);
+    return promise;
+  }, []);
+
+  // Indirection so the pre-export flush can reference invalidateVersion (defined below)
+  // without reorganizing the whole component.
+  const beforeExportImplRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const onBeforeExport = useCallback(() => beforeExportImplRef.current(), []);
+
   // PNG export
   const pngExport = useCotizacionExportPng({
     cotizacion: cotizacion ?? undefined,
@@ -1119,6 +1151,7 @@ export function CotizacionEditorPage() {
     totals: totals ?? undefined,
     allDescuentos,
     activeDescuentos,
+    onBeforeExport,
   });
 
   // Stats por cultivo: volumen (bolsas), monto (suma subtotales con descuentos × bolsas), precio ponderado
@@ -1160,6 +1193,16 @@ export function CotizacionEditorPage() {
       qc.refetchQueries({ queryKey: ['total', cotizacionId, selectedVersionId] }),
     ]);
   }
+
+  // Drain pending mutations + force a fresh refetch before exporting the PNG.
+  // Looped because new mutations may enqueue while we await the current batch
+  // (e.g. an onBlur-triggered save fired right before the export click).
+  beforeExportImplRef.current = async () => {
+    while (pendingMutationsRef.current.size > 0) {
+      await Promise.allSettled([...pendingMutationsRef.current]);
+    }
+    await invalidateVersion();
+  };
 
   async function toggleDiscount(desc: Descuento) {
     if (!isEditable || pendingDiscountIds.has(desc.id) || !version) return;
@@ -1481,14 +1524,26 @@ export function CotizacionEditorPage() {
             <span className="text-xs text-gray-400">
               {new Date(cotizacion.fechaCreacion).toLocaleDateString('es-AR', { dateStyle: 'long' })}
             </span>
-            {version && totals && (
-              <button
-                onClick={pngExport.download}
-                className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Descargar PNG
-              </button>
-            )}
+            {version && totals && (() => {
+              const pendingEdits = pendingMutationsCount > 0 || pendingDiscountIds.size > 0;
+              const busy = pngExport.isExporting || pendingEdits;
+              const label = pngExport.isExporting
+                ? 'Generando PNG…'
+                : pendingEdits
+                  ? 'Guardando cambios…'
+                  : 'Descargar PNG';
+              return (
+                <button
+                  onClick={pngExport.download}
+                  disabled={busy}
+                  title={pendingEdits ? 'Esperá a que terminen de guardarse los cambios' : undefined}
+                  className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                >
+                  {busy && <Spinner className="w-4 h-4" />}
+                  {label}
+                </button>
+              );
+            })()}
             <button
               onClick={() => setShowHistory((v) => !v)}
               className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 transition-colors"
@@ -1607,10 +1662,12 @@ export function CotizacionEditorPage() {
                       const isSelMode = desc.modo === 'selector';
                       const reglasSorted = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
                       const updatePct = async (pct: number) => {
-                        await cotizacionesApi.updateSeccionDescuento(
-                          cotizacionId, version!.id, seccion.id, desc.id, pct,
-                        );
-                        await invalidateVersion();
+                        await trackPending((async () => {
+                          await cotizacionesApi.updateSeccionDescuento(
+                            cotizacionId, version!.id, seccion.id, desc.id, pct,
+                          );
+                          await invalidateVersion();
+                        })());
                       };
 
                       return (

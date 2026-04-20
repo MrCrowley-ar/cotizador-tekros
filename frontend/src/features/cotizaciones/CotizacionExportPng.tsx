@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { toPng } from 'html-to-image';
 import type { Cotizacion, CotizacionVersion, Descuento, TotalDesglose } from '../../api/types';
 import {
@@ -26,6 +26,7 @@ interface ExportPngProps {
   totals?: TotalDesglose;
   allDescuentos: Descuento[];
   activeDescuentos: Descuento[];
+  onBeforeExport?: () => Promise<void>;
 }
 
 export function useCotizacionExportPng({
@@ -34,12 +35,25 @@ export function useCotizacionExportPng({
   totals,
   allDescuentos,
   activeDescuentos,
+  onBeforeExport,
 }: ExportPngProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const download = useCallback(async () => {
-    if (!ref.current || !cotizacion || !version) return;
+    if (!ref.current || !cotizacion || !version || isExporting) return;
+    setIsExporting(true);
     try {
+      // Flush any onBlur-triggered edits (e.g. numeric % inputs) before snapshotting.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
+      // Let React run the onBlur handlers and register any resulting mutations.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Wait for pending discount mutations + a fresh version refetch.
+      if (onBeforeExport) await onBeforeExport();
+      // One render pass with the freshly refetched data before capturing.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (!ref.current) return;
       const dataUrl = await toPng(ref.current, {
         backgroundColor: '#ffffff',
         pixelRatio: 3,
@@ -52,11 +66,13 @@ export function useCotizacionExportPng({
       link.click();
     } catch (err) {
       console.error('Error generando PNG:', err);
+    } finally {
+      setIsExporting(false);
     }
-  }, [cotizacion, version]);
+  }, [cotizacion, version, isExporting, onBeforeExport]);
 
   if (!cotizacion || !version || !totals) {
-    return { node: null, download };
+    return { node: null, download, isExporting };
   }
 
   const items = version.items ?? [];
@@ -410,5 +426,5 @@ export function useCotizacionExportPng({
     </div>
   );
 
-  return { node, download };
+  return { node, download, isExporting };
 }
