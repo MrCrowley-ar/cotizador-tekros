@@ -31,11 +31,13 @@ export class PreciosService {
   }
 
   // Precio vigente = registro más reciente para (hibrido, banda)
+  // Desempate por id DESC para varios registros con la misma fecha (p. ej. dos ediciones el mismo día).
   async getPrecioActual(hibridoId: number, bandaId: number): Promise<Precio> {
     const precio = await this.repo
       .createQueryBuilder('p')
       .where('p.hibridoId = :hibridoId AND p.bandaId = :bandaId', { hibridoId, bandaId })
       .orderBy('p.fecha', 'DESC')
+      .addOrderBy('p.id', 'DESC')
       .getOne();
 
     if (!precio) {
@@ -66,11 +68,11 @@ export class PreciosService {
     );
   }
 
-  // Historial completo ordenado por fecha descendente
+  // Historial completo ordenado por fecha descendente (desempate por id DESC)
   getHistorico(hibridoId: number, bandaId: number): Promise<Precio[]> {
     return this.repo.find({
       where: { hibridoId, bandaId },
-      order: { fecha: 'DESC' },
+      order: { fecha: 'DESC', id: 'DESC' },
     });
   }
 }
