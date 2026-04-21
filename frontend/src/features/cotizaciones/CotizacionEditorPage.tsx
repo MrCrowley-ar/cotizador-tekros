@@ -618,7 +618,11 @@ function SelectorDropdown({ reglasSorted, appliedPct, appliedReglaId, isEditable
   onApply: (pct: number, reglaId: number) => void;
   className?: string;
 }) {
-  // Optimistic local state so the select doesn't revert while the API call is in flight
+  // Estado optimista: guarda la regla que el usuario (o el auto-apply) eligió
+  // hasta que el servidor confirma la misma elección. Antes se limpiaba ni bien
+  // cambiaba `appliedPct`, y si la DB no tenía reglaId persistido (o si había
+  // dos reglas con el mismo valor), el servidor "respondía" con la primera
+  // coincidencia por valor y el dropdown saltaba atrás a esa regla.
   const [localReglaId, setLocalReglaId] = useState<number | null>(null);
 
   // Keep a ref to onApply so the auto-apply effect always uses the latest callback
@@ -631,10 +635,29 @@ function SelectorDropdown({ reglasSorted, appliedPct, appliedReglaId, isEditable
   // overwrites the user's selection with the first option.
   const autoAppliedRef = useRef(false);
 
-  // Reset optimistic state when server data arrives
+  // Limpiar el estado optimista SOLO cuando el servidor confirma la elección
+  // (o cuando la regla elegida dejó de existir). Mientras no haya confirmación
+  // mantenemos la selección del usuario para que no se vea "revertir al
+  // primero" por un refetch que todavía no trae el reglaId guardado.
   useEffect(() => {
-    setLocalReglaId(null);
-  }, [appliedPct, appliedReglaId]);
+    if (localReglaId == null) return;
+    const localRegla = reglasSorted.find((r) => r.id === localReglaId);
+    if (!localRegla) {
+      setLocalReglaId(null);
+      return;
+    }
+    if (appliedReglaId === localReglaId) {
+      setLocalReglaId(null);
+      return;
+    }
+    // Fallback para datos viejos que no guardan reglaId: si el porcentaje
+    // coincide con la regla elegida y no hay otra regla con el mismo valor
+    // que podamos confundir, damos por buena la confirmación.
+    if (appliedReglaId == null && appliedPct != null && Number(localRegla.valor) === appliedPct) {
+      const sameValue = reglasSorted.filter((r) => Number(r.valor) === appliedPct);
+      if (sameValue.length <= 1) setLocalReglaId(null);
+    }
+  }, [appliedPct, appliedReglaId, localReglaId, reglasSorted]);
 
   const serverReglaId = (() => {
     // 1) Si el servidor nos dijo qué regla está aplicada, usarla directamente.
@@ -661,6 +684,9 @@ function SelectorDropdown({ reglasSorted, appliedPct, appliedReglaId, isEditable
     if (localReglaId != null) return;
     if (appliedPct == null && firstRule != null && isEditable) {
       autoAppliedRef.current = true;
+      // Marcar la primera regla como elección optimista. Si el usuario clickea
+      // otra antes de que el auto-apply retorne, su setLocalReglaId la pisa.
+      setLocalReglaId(firstRule.id);
       onApplyRef.current(Number(firstRule.valor), firstRule.id);
     }
   }, [appliedPct, firstRule, isEditable, localReglaId]);
