@@ -120,6 +120,19 @@ export function useCotizacionExportPng({
   const secciones = version.secciones ?? [];
   const hasSecciones = secciones.length > 0;
 
+  // Resuelve la regla específica aplicada. Si el backend guarda reglaId lo
+  // usamos directamente; si no, hacemos fallback a matchear por valor (ambiguo
+  // cuando dos reglas tienen el mismo porcentaje, pero soporta datos viejos).
+  function resolveRegla(desc: Descuento, applied: { valorPorcentaje: number; reglaId?: number | null }) {
+    const reglas = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
+    if (applied.reglaId != null) {
+      const byId = reglas.find((r) => r.id === applied.reglaId);
+      if (byId) return byId;
+    }
+    const pct = Number(applied.valorPorcentaje);
+    return reglas.find((r) => Number(r.valor) === pct) ?? null;
+  }
+
   // Resolve section label from variable selector discount
   function getSeccionLabel(seccion: typeof secciones[0]): string {
     // Find the selector discount applied in this section
@@ -131,10 +144,8 @@ export function useCotizacionExportPng({
           (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
         );
         if (applied) {
+          const regla = resolveRegla(desc, applied);
           const pct = Number(applied.valorPorcentaje);
-          const regla = [...(desc.reglas ?? [])]
-            .sort((a, b) => a.prioridad - b.prioridad)
-            .find((r) => Number(r.valor) === pct);
           return regla?.nombre ?? `${desc.nombre} ${pct}%`;
         }
       }
@@ -143,10 +154,8 @@ export function useCotizacionExportPng({
         (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
       );
       if (appliedGlobal) {
+        const regla = resolveRegla(desc, appliedGlobal);
         const pct = Number(appliedGlobal.valorPorcentaje);
-        const regla = [...(desc.reglas ?? [])]
-          .sort((a, b) => a.prioridad - b.prioridad)
-          .find((r) => Number(r.valor) === pct);
         return regla?.nombre ?? `${desc.nombre} ${pct}%`;
       }
     }
@@ -162,16 +171,11 @@ export function useCotizacionExportPng({
     for (const desc of globalSelectorDescs) {
       const appliedItem = items[0]?.descuentos.find((d) => d.descuentoId === desc.id);
       const appliedGlobal = (version?.descuentos ?? []).find((d) => d.descuentoId === desc.id);
-      const appliedPct = appliedItem
-        ? Number(appliedItem.valorPorcentaje)
-        : appliedGlobal
-          ? Number(appliedGlobal.valorPorcentaje)
-          : null;
-      if (appliedPct !== null) {
-        const regla = [...(desc.reglas ?? [])]
-          .sort((a, b) => a.prioridad - b.prioridad)
-          .find((r) => Number(r.valor) === appliedPct);
-        medioDePago = regla?.nombre ?? `${appliedPct}%`;
+      const applied = appliedItem ?? appliedGlobal ?? null;
+      if (applied) {
+        const regla = resolveRegla(desc, applied);
+        const pct = Number(applied.valorPorcentaje);
+        medioDePago = regla?.nombre ?? `${pct}%`;
         break;
       }
     }

@@ -12,4 +12,11 @@ export class ApplyDescuentoDto {
   @Max(100)
   @IsOptional()
   porcentaje?: number;
+
+  // Para descuentos modo selector/avanzado: id de la regla específica elegida.
+  // Permite distinguir reglas con el mismo porcentaje.
+  @IsInt()
+  @IsPositive()
+  @IsOptional()
+  reglaId?: number;
 }

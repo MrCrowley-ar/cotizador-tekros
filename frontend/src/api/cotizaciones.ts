@@ -32,12 +32,12 @@ export const cotizacionesApi = {
     api.post<CotizacionItem>(`${ver(id, vid)}/items`, body),
   deleteItem: (id: number, vid: number, itemId: number) =>
     api.delete(`${ver(id, vid)}/items/${itemId}`),
-  applyItemDescuento: (id: number, vid: number, itemId: number, body: { descuentoId: number; porcentaje?: number }) =>
+  applyItemDescuento: (id: number, vid: number, itemId: number, body: { descuentoId: number; porcentaje?: number; reglaId?: number }) =>
     api.post<CotizacionItemDescuento>(`${ver(id, vid)}/items/${itemId}/descuentos`, body),
   deleteItemDescuento: (id: number, vid: number, itemId: number, did: number) =>
     api.delete(`${ver(id, vid)}/items/${itemId}/descuentos/${did}`),
 
-  applyGlobalDescuento: (id: number, vid: number, body: { descuentoId: number; porcentaje?: number }) =>
+  applyGlobalDescuento: (id: number, vid: number, body: { descuentoId: number; porcentaje?: number; reglaId?: number }) =>
     api.post<CotizacionDescuento>(`${ver(id, vid)}/descuentos`, body),
   deleteGlobalDescuento: (id: number, vid: number, did: number) =>
     api.delete(`${ver(id, vid)}/descuentos/${did}`),
@@ -49,6 +49,6 @@ export const cotizacionesApi = {
     api.post<CotizacionVersionSeccion>(`${ver(id, vid)}/secciones`, body),
   deleteSeccion: (id: number, vid: number, seccionId: number) =>
     api.delete(`${ver(id, vid)}/secciones/${seccionId}`),
-  updateSeccionDescuento: (id: number, vid: number, seccionId: number, did: number, porcentaje: number) =>
-    api.patch(`${ver(id, vid)}/secciones/${seccionId}/descuentos/${did}`, { porcentaje }),
+  updateSeccionDescuento: (id: number, vid: number, seccionId: number, did: number, porcentaje: number, reglaId?: number) =>
+    api.patch(`${ver(id, vid)}/secciones/${seccionId}/descuentos/${did}`, { porcentaje, ...(reglaId != null ? { reglaId } : {}) }),
 };

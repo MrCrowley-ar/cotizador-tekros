@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 import { DescuentosService } from '../descuentos/descuentos.service';
 import { DescuentosVolumenService } from '../descuentos/descuentos-volumen.service';
 import { TipoAccion, TipoEntidad } from '../historial/historial-accion.entity';
@@ -237,6 +237,7 @@ export class CotizacionesService {
               cotizacionItemId: savedItem.id,
               descuentoId: d.descuentoId,
               valorPorcentaje: d.valorPorcentaje,
+              reglaId: d.reglaId ?? null,
             }),
           );
         }
@@ -249,6 +250,7 @@ export class CotizacionesService {
             versionId: savedVersion.id,
             descuentoId: d.descuentoId,
             valorPorcentaje: d.valorPorcentaje,
+            reglaId: d.reglaId ?? null,
           }),
         );
       }
@@ -361,13 +363,28 @@ export class CotizacionesService {
       );
     }
 
-    const aplicado = await this.itemDescRepo.save(
-      this.itemDescRepo.create({
-        cotizacionItemId: itemId,
-        descuentoId: descuento.id,
-        valorPorcentaje: porcentaje,
-      }),
-    );
+    // Upsert: si ya existe un descuento aplicado para este ítem + descuento
+    // (y sin sección asignada, que es como se aplican siempre por este
+    // endpoint), actualizar en lugar de insertar. Evita que clics rápidos en
+    // un selector creen filas duplicadas.
+    const existing = await this.itemDescRepo.findOne({
+      where: { cotizacionItemId: itemId, descuentoId: descuento.id, seccionId: IsNull() },
+    });
+    let aplicado: CotizacionItemDescuento;
+    if (existing) {
+      existing.valorPorcentaje = porcentaje;
+      existing.reglaId = dto.reglaId ?? null;
+      aplicado = await this.itemDescRepo.save(existing);
+    } else {
+      aplicado = await this.itemDescRepo.save(
+        this.itemDescRepo.create({
+          cotizacionItemId: itemId,
+          descuentoId: descuento.id,
+          valorPorcentaje: porcentaje,
+          reglaId: dto.reglaId ?? null,
+        }),
+      );
+    }
 
     const version = await this.versionRepo.findOneBy({ id: item.versionId });
     await this.recalcularTotal(item.versionId);
@@ -425,13 +442,27 @@ export class CotizacionesService {
       );
     }
 
-    const aplicado = await this.descRepo.save(
-      this.descRepo.create({
-        versionId,
-        descuentoId: descuento.id,
-        valorPorcentaje: porcentaje,
-      }),
-    );
+    // Upsert: si ya hay un descuento global para esta versión + descuento (en
+    // seccion null), actualizar. Evita que un clic rápido en el selector genere
+    // filas duplicadas que después suman porcentajes o eligen la opción vieja.
+    const existing = await this.descRepo.findOne({
+      where: { versionId, descuentoId: descuento.id, seccionId: IsNull() },
+    });
+    let aplicado: CotizacionDescuento;
+    if (existing) {
+      existing.valorPorcentaje = porcentaje;
+      existing.reglaId = dto.reglaId ?? null;
+      aplicado = await this.descRepo.save(existing);
+    } else {
+      aplicado = await this.descRepo.save(
+        this.descRepo.create({
+          versionId,
+          descuentoId: descuento.id,
+          valorPorcentaje: porcentaje,
+          reglaId: dto.reglaId ?? null,
+        }),
+      );
+    }
 
     await this.recalcularTotal(versionId);
 
@@ -529,6 +560,7 @@ export class CotizacionesService {
                 cotizacionItemId: d.cotizacionItemId,
                 descuentoId: d.descuentoId,
                 valorPorcentaje: d.valorPorcentaje,
+                reglaId: d.reglaId ?? null,
                 seccionId: nuevaSeccion.id,
               }),
             );
@@ -546,6 +578,7 @@ export class CotizacionesService {
                 versionId,
                 descuentoId: d.descuentoId,
                 valorPorcentaje: d.valorPorcentaje,
+                reglaId: d.reglaId ?? null,
                 seccionId: nuevaSeccion.id,
               }),
             );
@@ -565,6 +598,7 @@ export class CotizacionesService {
               cotizacionItemId: d.cotizacionItemId,
               descuentoId: d.descuentoId,
               valorPorcentaje: d.valorPorcentaje,
+              reglaId: d.reglaId ?? null,
               seccionId: nuevaSeccion.id,
             }),
           );
@@ -579,6 +613,7 @@ export class CotizacionesService {
               versionId,
               descuentoId: d.descuentoId,
               valorPorcentaje: d.valorPorcentaje,
+              reglaId: d.reglaId ?? null,
               seccionId: nuevaSeccion.id,
             }),
           );
@@ -652,11 +687,13 @@ export class CotizacionesService {
     dto: UpdateSeccionDescuentoDto,
   ): Promise<void> {
     let updated = false;
+    const reglaId = dto.reglaId ?? null;
 
     // Update all item-level discounts for this descuento+section
     const itemDescs = await this.itemDescRepo.find({ where: { seccionId, descuentoId } });
     for (const d of itemDescs) {
       d.valorPorcentaje = dto.porcentaje;
+      d.reglaId = reglaId;
       await this.itemDescRepo.save(d);
       updated = true;
     }
@@ -665,6 +702,7 @@ export class CotizacionesService {
     const globalDescs = await this.descRepo.find({ where: { seccionId, descuentoId } });
     for (const d of globalDescs) {
       d.valorPorcentaje = dto.porcentaje;
+      d.reglaId = reglaId;
       await this.descRepo.save(d);
       updated = true;
     }
