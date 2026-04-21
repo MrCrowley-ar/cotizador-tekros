@@ -1712,11 +1712,30 @@ export function CotizacionEditorPage() {
                   .map((seccion) => {
 
                     const getSeccionApplied = (descId: number): { pct: number; reglaId: number | null } | null => {
+                      // Tomar el par (pct, reglaId) más frecuente entre los ítems
+                      // de la sección; así, si un ítem quedó desincronizado (por
+                      // una mutación parcial o latencia) el selector y el PNG
+                      // muestran el valor dominante en vez del primer ítem.
+                      const counts = new Map<string, { count: number; pct: number; reglaId: number | null }>();
                       for (const item of version!.items ?? []) {
                         const found = item.descuentos.find(
                           (d) => d.descuentoId === descId && d.seccionId === seccion.id,
                         );
-                        if (found) return { pct: Number(found.valorPorcentaje), reglaId: found.reglaId ?? null };
+                        if (found) {
+                          const pct = Number(found.valorPorcentaje);
+                          const reglaId = found.reglaId ?? null;
+                          const key = `${pct}|${reglaId ?? 'null'}`;
+                          const prev = counts.get(key);
+                          if (prev) prev.count++;
+                          else counts.set(key, { count: 1, pct, reglaId });
+                        }
+                      }
+                      if (counts.size > 0) {
+                        let best: { count: number; pct: number; reglaId: number | null } | null = null;
+                        for (const e of counts.values()) {
+                          if (!best || e.count > best.count) best = e;
+                        }
+                        if (best) return { pct: best.pct, reglaId: best.reglaId };
                       }
                       const globalFound = (version!.descuentos ?? []).find(
                         (d) => d.descuentoId === descId && d.seccionId === seccion.id,

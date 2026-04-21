@@ -133,23 +133,40 @@ export function useCotizacionExportPng({
     return reglas.find((r) => Number(r.valor) === pct) ?? null;
   }
 
-  // Resolve section label from variable selector discount
+  // Resolve section label from variable selector discount. Usa el par
+  // (pct, reglaId) más frecuente entre los ítems de la sección: así, si un
+  // ítem quedó con el valor viejo por alguna inconsistencia transitoria, el
+  // label del PNG refleja la opción mayoritaria (la que el usuario eligió)
+  // y no la de un ítem rezagado.
   function getSeccionLabel(seccion: typeof secciones[0]): string {
-    // Find the selector discount applied in this section
     for (const desc of allDescuentos) {
       if (desc.modo !== 'selector') continue;
-      // Check item descuentos for this section
+
+      const counts = new Map<string, { count: number; pct: number; reglaId: number | null }>();
       for (const item of items) {
         const applied = item.descuentos.find(
           (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
         );
         if (applied) {
-          const regla = resolveRegla(desc, applied);
           const pct = Number(applied.valorPorcentaje);
-          return regla?.nombre ?? `${desc.nombre} ${pct}%`;
+          const reglaId = applied.reglaId ?? null;
+          const key = `${pct}|${reglaId ?? 'null'}`;
+          const prev = counts.get(key);
+          if (prev) prev.count++;
+          else counts.set(key, { count: 1, pct, reglaId });
         }
       }
-      // Check global descuentos
+      if (counts.size > 0) {
+        let best: { count: number; pct: number; reglaId: number | null } | null = null;
+        for (const e of counts.values()) {
+          if (!best || e.count > best.count) best = e;
+        }
+        if (best) {
+          const regla = resolveRegla(desc, { valorPorcentaje: best.pct, reglaId: best.reglaId });
+          return regla?.nombre ?? `${desc.nombre} ${best.pct}%`;
+        }
+      }
+
       const appliedGlobal = (version?.descuentos ?? []).find(
         (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
       );

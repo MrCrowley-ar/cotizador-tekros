@@ -309,6 +309,42 @@ export class CotizacionesService {
       );
     }
 
+    // Si ya hay descuentos "variables" aplicados a la versión (filas con
+    // seccionId != null en otros ítems), heredarlos para este nuevo ítem.
+    // Sin esto, actualizar el selector de una sección no impactaba a los
+    // ítems agregados después y quedaban inconsistentes con el resto.
+    const seccionedItemDescs = await this.itemDescRepo
+      .createQueryBuilder('d')
+      .innerJoin('d.item', 'i', 'i.versionId = :versionId', { versionId })
+      .where('d.seccionId IS NOT NULL')
+      .andWhere('d.cotizacionItemId != :itemId', { itemId: item.id })
+      .getMany();
+    const seenByKey = new Set<string>();
+    const plantillas: { descuentoId: number; seccionId: number; valorPorcentaje: number; reglaId: number | null }[] = [];
+    for (const d of seccionedItemDescs) {
+      if (d.descuentoId == null || d.seccionId == null) continue;
+      const key = `${d.descuentoId}|${d.seccionId}`;
+      if (seenByKey.has(key)) continue;
+      seenByKey.add(key);
+      plantillas.push({
+        descuentoId: d.descuentoId,
+        seccionId: d.seccionId,
+        valorPorcentaje: Number(d.valorPorcentaje),
+        reglaId: d.reglaId ?? null,
+      });
+    }
+    for (const p of plantillas) {
+      await this.itemDescRepo.save(
+        this.itemDescRepo.create({
+          cotizacionItemId: item.id,
+          descuentoId: p.descuentoId,
+          seccionId: p.seccionId,
+          valorPorcentaje: p.valorPorcentaje,
+          reglaId: p.reglaId,
+        }),
+      );
+    }
+
     await this.recalcularTotal(versionId);
 
     await this.historialService.registrar({
@@ -678,42 +714,66 @@ export class CotizacionesService {
   }
 
   /**
-   * Actualiza TODOS los descuentos de un descuento específico en una sección.
-   * Busca tanto a nivel de ítem como global y actualiza todos los que encuentre.
+   * Aplica el par (porcentaje, reglaId) de un descuento "variable" en una
+   * sección a TODOS los ítems de la versión. Si un ítem ya tiene fila para
+   * esa sección + descuento la actualiza; si no, la crea. Así garantizamos
+   * que todos los ítems queden sincronizados aunque alguno haya sido
+   * agregado después de haber creado la sección.
    */
   async updateSeccionDescuento(
     seccionId: number,
     descuentoId: number,
     dto: UpdateSeccionDescuentoDto,
   ): Promise<void> {
-    let updated = false;
-    const reglaId = dto.reglaId ?? null;
-
-    // Update all item-level discounts for this descuento+section
-    const itemDescs = await this.itemDescRepo.find({ where: { seccionId, descuentoId } });
-    for (const d of itemDescs) {
-      d.valorPorcentaje = dto.porcentaje;
-      d.reglaId = reglaId;
-      await this.itemDescRepo.save(d);
-      updated = true;
-    }
-
-    // Update all global-level discounts for this descuento+section
-    const globalDescs = await this.descRepo.find({ where: { seccionId, descuentoId } });
-    for (const d of globalDescs) {
-      d.valorPorcentaje = dto.porcentaje;
-      d.reglaId = reglaId;
-      await this.descRepo.save(d);
-      updated = true;
-    }
-
-    if (!updated) {
-      throw new NotFoundException(`Descuento ${descuentoId} no encontrado en sección ${seccionId}`);
-    }
-
-    // Recalcular
     const seccion = await this.seccionRepo.findOneBy({ id: seccionId });
-    if (seccion) await this.recalcularTotal(seccion.versionId);
+    if (!seccion) {
+      throw new NotFoundException(`Sección ${seccionId} no encontrada`);
+    }
+
+    const reglaId = dto.reglaId ?? null;
+    const versionId = seccion.versionId;
+
+    await this.dataSource.transaction(async (em) => {
+      // 1) Upsert por ítem: todos los ítems de la versión terminan con una
+      //    fila (item, desc, seccion) con el valor actualizado.
+      const items = await em.find(CotizacionItem, { where: { versionId } });
+      const existingItemDescs = await em.find(CotizacionItemDescuento, {
+        where: { seccionId, descuentoId },
+      });
+      const byItemId = new Map(existingItemDescs.map((d) => [d.cotizacionItemId, d]));
+
+      for (const item of items) {
+        const existing = byItemId.get(item.id);
+        if (existing) {
+          existing.valorPorcentaje = dto.porcentaje;
+          existing.reglaId = reglaId;
+          await em.save(existing);
+        } else {
+          await em.save(
+            em.create(CotizacionItemDescuento, {
+              cotizacionItemId: item.id,
+              descuentoId,
+              seccionId,
+              valorPorcentaje: dto.porcentaje,
+              reglaId,
+            }),
+          );
+        }
+      }
+
+      // 2) Actualizar descuentos globales de la misma (desc, seccion), si los
+      //    hay — el modelo permite que sean globales en vez de por ítem.
+      const globalDescs = await em.find(CotizacionDescuento, {
+        where: { seccionId, descuentoId },
+      });
+      for (const d of globalDescs) {
+        d.valorPorcentaje = dto.porcentaje;
+        d.reglaId = reglaId;
+        await em.save(d);
+      }
+    });
+
+    await this.recalcularTotal(versionId);
   }
 
   // ─── CÁLCULO DE TOTAL (siempre en backend) ────────────────────────────────
