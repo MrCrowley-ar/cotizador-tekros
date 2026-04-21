@@ -309,40 +309,65 @@ export class CotizacionesService {
       );
     }
 
-    // Si ya hay descuentos "variables" aplicados a la versión (filas con
-    // seccionId != null en otros ítems), heredarlos para este nuevo ítem.
-    // Sin esto, actualizar el selector de una sección no impactaba a los
-    // ítems agregados después y quedaban inconsistentes con el resto.
-    const seccionedItemDescs = await this.itemDescRepo
-      .createQueryBuilder('d')
-      .innerJoin('d.item', 'i', 'i.versionId = :versionId', { versionId })
-      .where('d.seccionId IS NOT NULL')
-      .andWhere('d.cotizacionItemId != :itemId', { itemId: item.id })
-      .getMany();
-    const seenByKey = new Set<string>();
-    const plantillas: { descuentoId: number; seccionId: number; valorPorcentaje: number; reglaId: number | null }[] = [];
-    for (const d of seccionedItemDescs) {
-      if (d.descuentoId == null || d.seccionId == null) continue;
-      const key = `${d.descuentoId}|${d.seccionId}`;
-      if (seenByKey.has(key)) continue;
-      seenByKey.add(key);
-      plantillas.push({
-        descuentoId: d.descuentoId,
-        seccionId: d.seccionId,
-        valorPorcentaje: Number(d.valorPorcentaje),
-        reglaId: d.reglaId ?? null,
+    // Si ya hay descuentos "variables" aplicados en secciones, heredar una
+    // fila por (descuento, sección) para este ítem nuevo. Así, el ítem nace
+    // con el porcentaje y la regla elegidos en cada sección en vez de quedar
+    // sin descuento hasta que el usuario vuelva a tocar el selector.
+    const seccionesVersion = await this.seccionRepo.find({ where: { versionId } });
+    if (seccionesVersion.length > 0) {
+      const seccionIds = seccionesVersion.map((s) => s.id);
+      const otherItems = await this.itemRepo.find({ where: { versionId } });
+      const otherItemIds = otherItems.map((i) => i.id).filter((id) => id !== item.id);
+
+      const plantillas = new Map<string, { descuentoId: number; seccionId: number; valorPorcentaje: number; reglaId: number | null }>();
+
+      if (otherItemIds.length > 0) {
+        const seccionedItemDescs = await this.itemDescRepo.find({
+          where: seccionIds.flatMap((sid) =>
+            otherItemIds.map((iid) => ({ seccionId: sid, cotizacionItemId: iid })),
+          ),
+        });
+        for (const d of seccionedItemDescs) {
+          if (d.descuentoId == null || d.seccionId == null) continue;
+          const key = `${d.descuentoId}|${d.seccionId}`;
+          if (plantillas.has(key)) continue;
+          plantillas.set(key, {
+            descuentoId: d.descuentoId,
+            seccionId: d.seccionId,
+            valorPorcentaje: Number(d.valorPorcentaje),
+            reglaId: d.reglaId ?? null,
+          });
+        }
+      }
+
+      // También considerar descuentos globales asociados a las secciones —
+      // son templates válidos si no hay ítem previo de donde heredar.
+      const seccionedGlobalDescs = await this.descRepo.find({
+        where: seccionIds.map((sid) => ({ versionId, seccionId: sid })),
       });
-    }
-    for (const p of plantillas) {
-      await this.itemDescRepo.save(
-        this.itemDescRepo.create({
-          cotizacionItemId: item.id,
-          descuentoId: p.descuentoId,
-          seccionId: p.seccionId,
-          valorPorcentaje: p.valorPorcentaje,
-          reglaId: p.reglaId,
-        }),
-      );
+      for (const d of seccionedGlobalDescs) {
+        if (d.descuentoId == null || d.seccionId == null) continue;
+        const key = `${d.descuentoId}|${d.seccionId}`;
+        if (plantillas.has(key)) continue;
+        plantillas.set(key, {
+          descuentoId: d.descuentoId,
+          seccionId: d.seccionId,
+          valorPorcentaje: Number(d.valorPorcentaje),
+          reglaId: d.reglaId ?? null,
+        });
+      }
+
+      for (const p of plantillas.values()) {
+        await this.itemDescRepo.save(
+          this.itemDescRepo.create({
+            cotizacionItemId: item.id,
+            descuentoId: p.descuentoId,
+            seccionId: p.seccionId,
+            valorPorcentaje: p.valorPorcentaje,
+            reglaId: p.reglaId,
+          }),
+        );
+      }
     }
 
     await this.recalcularTotal(versionId);

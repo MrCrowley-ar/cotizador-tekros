@@ -50,7 +50,7 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
 
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version, selectorApplied }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version, selectorApplied, variableDescIds }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
   discountCount: number;
   activeDescuentos: Descuento[];
@@ -59,6 +59,11 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
   totalBolsas: number;
   version: CotizacionVersion;
   selectorApplied: Map<number, { pct: number; reglaId: number | null }>;
+  // Descuentos que ya son "variables" (viven por sección). Para esos NO
+  // aplicamos desde el front: el backend los hereda por sección al crear el
+  // ítem, evitando que queden con una fila duplicada seccionId=null que
+  // terminaría aplicando el descuento dos veces.
+  variableDescIds: Set<number>;
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -86,6 +91,9 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
 
       // Auto-apply active discounts to the new item
       for (const desc of activeDescuentos) {
+        // Skip variable (sectioned) discounts — backend ya los hereda por
+        // sección al crear el ítem.
+        if (variableDescIds.has(desc.id)) continue;
         try {
           if (desc.modo === 'basico') {
             await cotizacionesApi.applyItemDescuento(cotizacionId, versionId, newItem.id, {
@@ -386,7 +394,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
 
 // ─── Cultivo Section ──────────────────────────────────────────────────────────
 
-function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, selectorApplied }: {
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, selectorApplied, variableDescIds }: {
   cultivo: Cultivo;
   items: CotizacionItem[];
   cotizacionId: number;
@@ -397,6 +405,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
   cultivoMonto: number;
   totalBolsas: number;
   selectorApplied: Map<number, { pct: number; reglaId: number | null }>;
+  variableDescIds: Set<number>;
 }) {
   const [showNewItem, setShowNewItem] = useState(false);
 
@@ -481,6 +490,7 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 totalBolsas={totalBolsas}
                 version={version}
                 selectorApplied={selectorApplied}
+                variableDescIds={variableDescIds}
               />
             )}
             {!showNewItem && items.length === 0 && (
@@ -1835,6 +1845,7 @@ export function CotizacionEditorPage() {
                               cultivoMonto={stats.monto}
                               totalBolsas={totalBolsas}
                               selectorApplied={selectorApplied}
+                              variableDescIds={sectionVariableDescIds}
                             />
                           );
                         })}
@@ -1860,6 +1871,7 @@ export function CotizacionEditorPage() {
                     cultivoMonto={stats.monto}
                     totalBolsas={totalBolsas}
                     selectorApplied={selectorApplied}
+                    variableDescIds={sectionVariableDescIds}
                   />
                 );
               })
