@@ -750,15 +750,18 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, sortedDescuent
             return (
               <div
                 key={desc.id}
-                draggable
-                onDragStart={() => onDragStart(desc.id)}
                 onDragOver={(e) => { e.preventDefault(); onDragOver(desc.id); }}
                 onDrop={onDragEnd}
                 onDragEnd={onDragEnd}
                 className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
+                  <span
+                    draggable
+                    onDragStart={() => onDragStart(desc.id)}
+                    className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none"
+                    title="Arrastrar para reordenar"
+                  >⠿</span>
                   <div className="flex-1">
                     <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
                     <div className="flex items-center gap-2">
@@ -964,15 +967,18 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
             return (
               <div
                 key={desc.id}
-                draggable
-                onDragStart={() => onDragStart(desc.id)}
                 onDragOver={(e) => { e.preventDefault(); onDragOver(desc.id); }}
                 onDrop={onDragEnd}
                 onDragEnd={onDragEnd}
                 className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
+                  <span
+                    draggable
+                    onDragStart={() => onDragStart(desc.id)}
+                    className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none"
+                    title="Arrastrar para reordenar"
+                  >⠿</span>
                   <div className="flex-1">
                     <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
                     <div className="flex items-center gap-2">
