@@ -132,6 +132,7 @@ export interface CotizacionItemDescuento {
   id: number;
   descuentoId: number;
   valorPorcentaje: number;
+  reglaId?: number | null;
   seccionId: number | null;
   descuento?: Descuento;
 }
@@ -152,6 +153,7 @@ export interface CotizacionDescuento {
   id: number;
   descuentoId: number;
   valorPorcentaje: number;
+  reglaId?: number | null;
   seccionId: number | null;
   descuento?: Descuento;
 }

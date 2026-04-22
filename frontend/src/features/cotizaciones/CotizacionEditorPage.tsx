@@ -50,7 +50,7 @@ function ResizeDivider({ onDrag }: { onDrag: (dx: number) => void }) {
 
 // ─── New Item Row (per cultivo) ───────────────────────────────────────────────
 
-function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version, selectorAppliedPcts }: {
+function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, discountCount, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, version, selectorApplied, variableDescIds }: {
   cotizacionId: number; versionId: number; cultivoId: number; onDone: () => void;
   discountCount: number;
   activeDescuentos: Descuento[];
@@ -58,7 +58,12 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
   cultivoMonto: number;
   totalBolsas: number;
   version: CotizacionVersion;
-  selectorAppliedPcts: Map<number, number>;
+  selectorApplied: Map<number, { pct: number; reglaId: number | null }>;
+  // Descuentos que ya son "variables" (viven por sección). Para esos NO
+  // aplicamos desde el front: el backend los hereda por sección al crear el
+  // ítem, evitando que queden con una fila duplicada seccionId=null que
+  // terminaría aplicando el descuento dos veces.
+  variableDescIds: Set<number>;
 }) {
   const qc = useQueryClient();
   const [hibridoId, setHibridoId] = useState<number | ''>('');
@@ -86,6 +91,9 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
 
       // Auto-apply active discounts to the new item
       for (const desc of activeDescuentos) {
+        // Skip variable (sectioned) discounts — backend ya los hereda por
+        // sección al crear el ítem.
+        if (variableDescIds.has(desc.id)) continue;
         try {
           if (desc.modo === 'basico') {
             await cotizacionesApi.applyItemDescuento(cotizacionId, versionId, newItem.id, {
@@ -93,17 +101,20 @@ function NewItemRowForCultivo({ cotizacionId, versionId, cultivoId, onDone, disc
               porcentaje: Number(desc.valorPorcentaje),
             });
           } else if (desc.modo === 'selector') {
-            // Preferir el pct vigente (el que ya tienen los demás ítems);
-            // si no hay ítems todavía, caer a la primera regla por prioridad.
+            // Preferir la regla vigente (la que ya tienen los demás ítems) para
+            // que el nuevo ítem arranque igual al resto; si no hay ítems todavía,
+            // caer a la primera regla por prioridad.
             const reglas = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
-            const currentPct = selectorAppliedPcts.get(desc.id);
-            const pctToApply = currentPct != null
-              ? currentPct
+            const current = selectorApplied.get(desc.id);
+            const pctToApply = current != null
+              ? current.pct
               : (reglas[0] ? Number(reglas[0].valor) : null);
+            const reglaIdToApply = current?.reglaId ?? reglas[0]?.id ?? null;
             if (pctToApply != null) {
               await cotizacionesApi.applyItemDescuento(cotizacionId, versionId, newItem.id, {
                 descuentoId: desc.id,
                 porcentaje: pctToApply,
+                ...(reglaIdToApply != null ? { reglaId: reglaIdToApply } : {}),
               });
             }
           } else {
@@ -383,7 +394,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
 
 // ─── Cultivo Section ──────────────────────────────────────────────────────────
 
-function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, selectorAppliedPcts }: {
+function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, activeDescuentos, cultivoVolumen, cultivoMonto, totalBolsas, selectorApplied, variableDescIds }: {
   cultivo: Cultivo;
   items: CotizacionItem[];
   cotizacionId: number;
@@ -393,7 +404,8 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
   cultivoVolumen: number;
   cultivoMonto: number;
   totalBolsas: number;
-  selectorAppliedPcts: Map<number, number>;
+  selectorApplied: Map<number, { pct: number; reglaId: number | null }>;
+  variableDescIds: Set<number>;
 }) {
   const [showNewItem, setShowNewItem] = useState(false);
 
@@ -477,7 +489,8 @@ function CultivoSection({ cultivo, items, cotizacionId, version, isEditable, act
                 cultivoMonto={cultivoMonto}
                 totalBolsas={totalBolsas}
                 version={version}
-                selectorAppliedPcts={selectorAppliedPcts}
+                selectorApplied={selectorApplied}
+                variableDescIds={variableDescIds}
               />
             )}
             {!showNewItem && items.length === 0 && (
@@ -605,15 +618,22 @@ function useDiscountOrder<T extends { id: number }>(storageKey: string, items: T
 
 // ─── Selector Dropdown (shared by all selector-mode discounts) ───────────────
 
-function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, className }: {
+function SelectorDropdown({ reglasSorted, appliedPct, appliedReglaId, isEditable, onApply, className }: {
   reglasSorted: { id: number; nombre?: string | null; prioridad: number; valor: number }[];
   appliedPct: number | null;
+  // Si el backend guarda el reglaId específico elegido, lo preferimos sobre
+  // matchear por `valor` — distingue reglas distintas con el mismo porcentaje.
+  appliedReglaId?: number | null;
   isEditable: boolean;
-  onApply: (pct: number) => void;
+  onApply: (pct: number, reglaId: number) => void;
   className?: string;
 }) {
-  // Optimistic local state so the select doesn't revert while the API call is in flight
-  const [localReglaId, setLocalReglaId] = useState<number | string | null>(null);
+  // Estado optimista: guarda la regla que el usuario (o el auto-apply) eligió
+  // hasta que el servidor confirma la misma elección. Antes se limpiaba ni bien
+  // cambiaba `appliedPct`, y si la DB no tenía reglaId persistido (o si había
+  // dos reglas con el mismo valor), el servidor "respondía" con la primera
+  // coincidencia por valor y el dropdown saltaba atrás a esa regla.
+  const [localReglaId, setLocalReglaId] = useState<number | null>(null);
 
   // Keep a ref to onApply so the auto-apply effect always uses the latest callback
   const onApplyRef = useRef(onApply);
@@ -625,28 +645,61 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
   // overwrites the user's selection with the first option.
   const autoAppliedRef = useRef(false);
 
-  // Reset optimistic state when server data arrives
+  // Limpiar el estado optimista SOLO cuando el servidor confirma la elección
+  // (o cuando la regla elegida dejó de existir). Mientras no haya confirmación
+  // mantenemos la selección del usuario para que no se vea "revertir al
+  // primero" por un refetch que todavía no trae el reglaId guardado.
   useEffect(() => {
-    setLocalReglaId(null);
-  }, [appliedPct]);
+    if (localReglaId == null) return;
+    const localRegla = reglasSorted.find((r) => r.id === localReglaId);
+    if (!localRegla) {
+      setLocalReglaId(null);
+      return;
+    }
+    if (appliedReglaId === localReglaId) {
+      setLocalReglaId(null);
+      return;
+    }
+    // Fallback para datos viejos que no guardan reglaId: si el porcentaje
+    // coincide con la regla elegida y no hay otra regla con el mismo valor
+    // que podamos confundir, damos por buena la confirmación.
+    if (appliedReglaId == null && appliedPct != null && Number(localRegla.valor) === appliedPct) {
+      const sameValue = reglasSorted.filter((r) => Number(r.valor) === appliedPct);
+      if (sameValue.length <= 1) setLocalReglaId(null);
+    }
+  }, [appliedPct, appliedReglaId, localReglaId, reglasSorted]);
 
-  const serverReglaId = appliedPct != null
-    ? (reglasSorted.find((r) => Number(r.valor) === appliedPct)?.id ?? reglasSorted[0]?.id ?? '')
-    : (reglasSorted[0]?.id ?? '');
+  const serverReglaId = (() => {
+    // 1) Si el servidor nos dijo qué regla está aplicada, usarla directamente.
+    if (appliedReglaId != null && reglasSorted.some((r) => r.id === appliedReglaId)) {
+      return appliedReglaId;
+    }
+    // 2) Fallback legacy: matchear por valor (ambiguo si hay reglas con el
+    //    mismo porcentaje, pero mejor que nada para datos viejos).
+    if (appliedPct != null) {
+      return reglasSorted.find((r) => Number(r.valor) === appliedPct)?.id
+        ?? reglasSorted[0]?.id
+        ?? '';
+    }
+    return reglasSorted[0]?.id ?? '';
+  })();
 
   const currentReglaId = localReglaId ?? serverReglaId;
 
   // Auto-apply first rule when no value is applied yet — only once per mount,
   // and never while the user already has a pending local selection.
-  const firstRuleValue = reglasSorted[0]?.valor;
+  const firstRule = reglasSorted[0];
   useEffect(() => {
     if (autoAppliedRef.current) return;
     if (localReglaId != null) return;
-    if (appliedPct == null && firstRuleValue != null && isEditable) {
+    if (appliedPct == null && firstRule != null && isEditable) {
       autoAppliedRef.current = true;
-      onApplyRef.current(Number(firstRuleValue));
+      // Marcar la primera regla como elección optimista. Si el usuario clickea
+      // otra antes de que el auto-apply retorne, su setLocalReglaId la pisa.
+      setLocalReglaId(firstRule.id);
+      onApplyRef.current(Number(firstRule.valor), firstRule.id);
     }
-  }, [appliedPct, firstRuleValue, isEditable, localReglaId]);
+  }, [appliedPct, firstRule, isEditable, localReglaId]);
 
   return (
     <select
@@ -656,7 +709,7 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
         const regla = reglasSorted.find((r) => r.id === Number(e.target.value));
         if (regla) {
           setLocalReglaId(regla.id);
-          onApply(Number(regla.valor));
+          onApply(Number(regla.valor), regla.id);
         }
       }}
       className={className}
@@ -672,17 +725,17 @@ function SelectorDropdown({ reglasSorted, appliedPct, isEditable, onApply, class
 
 // ─── Item Discounts Panel (right sidebar) ─────────────────────────────────────
 
-function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, sortedDescuentos, onToggle, onApplySelector, version, excludeIds, selectorAppliedPcts,
+function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, sortedDescuentos, onToggle, onApplySelector, version, excludeIds, selectorApplied,
   onDragStart, onDragOver, onDragEnd }: {
   isEditable: boolean;
   activeIds: Set<number>;
   pendingIds: Set<number>;
   sortedDescuentos: Descuento[];
   onToggle: (desc: Descuento) => void;
-  onApplySelector: (desc: Descuento, pct: number | null) => void;
+  onApplySelector: (desc: Descuento, pct: number | null, reglaId: number | null) => void;
   version: CotizacionVersion | undefined;
   excludeIds?: Set<number>;
-  selectorAppliedPcts: Map<number, number>;
+  selectorApplied: Map<number, { pct: number; reglaId: number | null }>;
   onDragStart: (id: number) => void;
   onDragOver: (id: number) => void;
   onDragEnd: () => void;
@@ -699,21 +752,26 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, sortedDescuent
           const pending = pendingIds.has(desc.id);
           const isSelector = desc.modo === 'selector';
           const reglasSorted = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
-          const appliedPct = isSelector ? (selectorAppliedPcts.get(desc.id) ?? null) : null;
+          const appliedState = isSelector ? selectorApplied.get(desc.id) : undefined;
+          const appliedPct = appliedState?.pct ?? null;
+          const appliedReglaId = appliedState?.reglaId ?? null;
 
           if (isSelector) {
             return (
               <div
                 key={desc.id}
-                draggable
-                onDragStart={() => onDragStart(desc.id)}
                 onDragOver={(e) => { e.preventDefault(); onDragOver(desc.id); }}
                 onDrop={onDragEnd}
                 onDragEnd={onDragEnd}
                 className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
+                  <span
+                    draggable
+                    onDragStart={() => onDragStart(desc.id)}
+                    className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none"
+                    title="Arrastrar para reordenar"
+                  >⠿</span>
                   <div className="flex-1">
                     <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
                     <div className="flex items-center gap-2">
@@ -721,8 +779,9 @@ function ItemDescuentosPanel({ isEditable, activeIds, pendingIds, sortedDescuent
                         key={`${version?.id}-${desc.id}`}
                         reglasSorted={reglasSorted}
                         appliedPct={appliedPct}
+                        appliedReglaId={appliedReglaId}
                         isEditable={isEditable && !pending}
-                        onApply={(pct) => onApplySelector(desc, pct)}
+                        onApply={(pct, reglaId) => onApplySelector(desc, pct, reglaId)}
                         className={`flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default ${pending ? 'opacity-50' : ''}`}
                       />
                       {pending && <Spinner className="w-4 h-4 shrink-0 text-orange-500" />}
@@ -840,6 +899,9 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
   function getAppliedPct(desc: Descuento) {
     return version.descuentos.find((d) => d.descuentoId === desc.id)?.valorPorcentaje ?? null;
   }
+  function getAppliedReglaId(desc: Descuento): number | null {
+    return version.descuentos.find((d) => d.descuentoId === desc.id)?.reglaId ?? null;
+  }
   function invalidate() {
     return Promise.all([
       qc.refetchQueries({ queryKey: ['version', cotizacionId, version.id] }),
@@ -854,7 +916,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
     setPendingIds((prev) => { const next = new Set(prev); on ? next.add(id) : next.delete(id); return next; });
   }
 
-  async function applyDescuento(desc: Descuento, selectorPct?: number) {
+  async function applyDescuento(desc: Descuento, selectorPct?: number, reglaId?: number) {
     markPending(desc.id, true);
     try {
       let porcentaje: number | undefined;
@@ -872,6 +934,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
       await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
         descuentoId: desc.id,
         porcentaje,
+        ...(reglaId != null ? { reglaId } : {}),
       });
       await invalidate();
     } catch { /* silently fail */ } finally {
@@ -905,6 +968,7 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
         {sortedDescuentos.map((desc) => {
           const applied = isApplied(desc);
           const pct = getAppliedPct(desc);
+          const reglaId = getAppliedReglaId(desc);
           const pending = pendingIds.has(desc.id);
           const noAplica = noAplicaId === desc.id;
           const isSelector = desc.modo === 'selector';
@@ -913,23 +977,27 @@ function DescuentosGlobalesPanel({ cotizacionId, version, isEditable, excludeIds
             return (
               <div
                 key={desc.id}
-                draggable
-                onDragStart={() => onDragStart(desc.id)}
                 onDragOver={(e) => { e.preventDefault(); onDragOver(desc.id); }}
                 onDrop={onDragEnd}
                 onDragEnd={onDragEnd}
                 className={`rounded-lg px-2 py-1.5 ${applied ? 'bg-orange-50' : ''} ${!isEditable ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none" title="Arrastrar para reordenar">⠿</span>
+                  <span
+                    draggable
+                    onDragStart={() => onDragStart(desc.id)}
+                    className="cursor-grab text-gray-300 hover:text-gray-500 text-xs select-none"
+                    title="Arrastrar para reordenar"
+                  >⠿</span>
                   <div className="flex-1">
                     <div className="text-xs font-medium text-gray-600 mb-1">{desc.nombre}</div>
                     <div className="flex items-center gap-2">
                       <SelectorDropdown
                         reglasSorted={reglasSorted}
                         appliedPct={pct != null ? Number(pct) : null}
+                        appliedReglaId={reglaId}
                         isEditable={isEditable && !pending}
-                        onApply={(val) => applyDescuento(desc, val)}
+                        onApply={(val, rid) => applyDescuento(desc, val, rid)}
                         className={`flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:cursor-default ${pending ? 'opacity-50' : ''}`}
                       />
                       {pending && <Spinner className="w-4 h-4 shrink-0 text-blue-500" />}
@@ -1313,10 +1381,11 @@ export function CotizacionEditorPage() {
     }
   }
 
-  async function applySelector(desc: Descuento, porcentaje: number | null) {
+  async function applySelector(desc: Descuento, porcentaje: number | null, reglaId: number | null) {
     if (!isEditable || !version) return;
     markDiscPending(desc.id, true);
     const versionId = version.id;
+    const reglaIdArg = reglaId ?? undefined;
     try {
       // Paso 1: borrar + aplicar sobre el snapshot actual
       const snapshot = version.items ?? [];
@@ -1334,6 +1403,7 @@ export function CotizacionEditorPage() {
             cotizacionesApi.applyItemDescuento(cotizacionId, versionId, item.id, {
               descuentoId: desc.id,
               porcentaje,
+              reglaId: reglaIdArg,
             })
           )
         );
@@ -1351,7 +1421,10 @@ export function CotizacionEditorPage() {
       const needsFix = freshItems.filter((item) => {
         const found = item.descuentos.find((d) => d.descuentoId === desc.id);
         if (porcentaje == null) return !!found;
-        return !found || Number(found.valorPorcentaje) !== porcentaje;
+        if (!found) return true;
+        if (Number(found.valorPorcentaje) !== porcentaje) return true;
+        if (reglaId != null && (found.reglaId ?? null) !== reglaId) return true;
+        return false;
       });
       if (needsFix.length > 0) {
         await Promise.all(
@@ -1365,6 +1438,7 @@ export function CotizacionEditorPage() {
               ops.push(cotizacionesApi.applyItemDescuento(cotizacionId, versionId, item.id, {
                 descuentoId: desc.id,
                 porcentaje,
+                reglaId: reglaIdArg,
               }));
             }
             return ops;
@@ -1408,29 +1482,34 @@ export function CotizacionEditorPage() {
     onSuccess: () => invalidateVersion(),
   });
 
-  // Pct vigente de cada descuento en modo `selector`, derivado de los ítems.
-  // Usamos el valor más frecuente (mode) para tolerar estados inconsistentes
-  // transitorios y evitar que el dropdown muestre un valor que ningún ítem tiene.
-  const selectorAppliedPcts = useMemo(() => {
-    const map = new Map<number, number>();
+  // Pct y reglaId vigentes de cada descuento en modo `selector`, derivados de
+  // los ítems. Tomamos el par (pct, reglaId) más frecuente para tolerar
+  // inconsistencias transitorias y evitar que el dropdown muestre una opción
+  // que ningún ítem tiene. Guardamos reglaId para poder distinguir reglas con
+  // el mismo porcentaje.
+  const selectorApplied = useMemo(() => {
+    const map = new Map<number, { pct: number; reglaId: number | null }>();
     if (!version) return map;
     const selectorDescs = allDescuentos.filter((d) => d.modo === 'selector');
     for (const desc of selectorDescs) {
-      const counts = new Map<number, number>();
+      const counts = new Map<string, { count: number; pct: number; reglaId: number | null }>();
       for (const item of version.items ?? []) {
         const found = item.descuentos.find((x) => x.descuentoId === desc.id);
         if (found) {
-          const v = Number(found.valorPorcentaje);
-          counts.set(v, (counts.get(v) ?? 0) + 1);
+          const pct = Number(found.valorPorcentaje);
+          const reglaId = found.reglaId ?? null;
+          const key = `${pct}|${reglaId ?? 'null'}`;
+          const prev = counts.get(key);
+          if (prev) prev.count++;
+          else counts.set(key, { count: 1, pct, reglaId });
         }
       }
       if (counts.size === 0) continue;
-      let bestVal: number | null = null;
-      let bestCount = -1;
-      for (const [v, c] of counts) {
-        if (c > bestCount) { bestVal = v; bestCount = c; }
+      let best: { count: number; pct: number; reglaId: number | null } | null = null;
+      for (const entry of counts.values()) {
+        if (!best || entry.count > best.count) best = entry;
       }
-      if (bestVal != null) map.set(desc.id, bestVal);
+      if (best) map.set(desc.id, { pct: best.pct, reglaId: best.reglaId });
     }
     return map;
   }, [version, allDescuentos]);
@@ -1642,29 +1721,50 @@ export function CotizacionEditorPage() {
                   .sort((a, b) => a.orden - b.orden)
                   .map((seccion) => {
 
-                    const getSeccionPct = (descId: number): number | null => {
+                    const getSeccionApplied = (descId: number): { pct: number; reglaId: number | null } | null => {
+                      // Tomar el par (pct, reglaId) más frecuente entre los ítems
+                      // de la sección; así, si un ítem quedó desincronizado (por
+                      // una mutación parcial o latencia) el selector y el PNG
+                      // muestran el valor dominante en vez del primer ítem.
+                      const counts = new Map<string, { count: number; pct: number; reglaId: number | null }>();
                       for (const item of version!.items ?? []) {
                         const found = item.descuentos.find(
                           (d) => d.descuentoId === descId && d.seccionId === seccion.id,
                         );
-                        if (found) return Number(found.valorPorcentaje);
+                        if (found) {
+                          const pct = Number(found.valorPorcentaje);
+                          const reglaId = found.reglaId ?? null;
+                          const key = `${pct}|${reglaId ?? 'null'}`;
+                          const prev = counts.get(key);
+                          if (prev) prev.count++;
+                          else counts.set(key, { count: 1, pct, reglaId });
+                        }
+                      }
+                      if (counts.size > 0) {
+                        let best: { count: number; pct: number; reglaId: number | null } | null = null;
+                        for (const e of counts.values()) {
+                          if (!best || e.count > best.count) best = e;
+                        }
+                        if (best) return { pct: best.pct, reglaId: best.reglaId };
                       }
                       const globalFound = (version!.descuentos ?? []).find(
                         (d) => d.descuentoId === descId && d.seccionId === seccion.id,
                       );
-                      if (globalFound) return Number(globalFound.valorPorcentaje);
+                      if (globalFound) return { pct: Number(globalFound.valorPorcentaje), reglaId: globalFound.reglaId ?? null };
                       return null;
                     };
 
                     // Render variable discount selectors inline
                     const discountSelectors = variableDescs.map((desc) => {
-                      const appliedPct = getSeccionPct(desc.id);
+                      const appliedState = getSeccionApplied(desc.id);
+                      const appliedPct = appliedState?.pct ?? null;
+                      const appliedReglaId = appliedState?.reglaId ?? null;
                       const isSelMode = desc.modo === 'selector';
                       const reglasSorted = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
-                      const updatePct = async (pct: number) => {
+                      const updatePct = async (pct: number, reglaId?: number) => {
                         await trackPending((async () => {
                           await cotizacionesApi.updateSeccionDescuento(
-                            cotizacionId, version!.id, seccion.id, desc.id, pct,
+                            cotizacionId, version!.id, seccion.id, desc.id, pct, reglaId,
                           );
                           await invalidateVersion();
                         })());
@@ -1677,8 +1777,9 @@ export function CotizacionEditorPage() {
                             <SelectorDropdown
                               reglasSorted={reglasSorted}
                               appliedPct={appliedPct}
+                              appliedReglaId={appliedReglaId}
                               isEditable={isEditable}
-                              onApply={updatePct}
+                              onApply={(pct, rid) => updatePct(pct, rid)}
                               className="text-xs border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400 disabled:cursor-default"
                             />
                           ) : (
@@ -1743,7 +1844,8 @@ export function CotizacionEditorPage() {
                               cultivoVolumen={stats.bolsas}
                               cultivoMonto={stats.monto}
                               totalBolsas={totalBolsas}
-                              selectorAppliedPcts={selectorAppliedPcts}
+                              selectorApplied={selectorApplied}
+                              variableDescIds={sectionVariableDescIds}
                             />
                           );
                         })}
@@ -1768,7 +1870,8 @@ export function CotizacionEditorPage() {
                     cultivoVolumen={stats.bolsas}
                     cultivoMonto={stats.monto}
                     totalBolsas={totalBolsas}
-                    selectorAppliedPcts={selectorAppliedPcts}
+                    selectorApplied={selectorApplied}
+                    variableDescIds={sectionVariableDescIds}
                   />
                 );
               })
@@ -1788,7 +1891,7 @@ export function CotizacionEditorPage() {
               onApplySelector={applySelector}
               version={version}
               excludeIds={sectionVariableDescIds}
-              selectorAppliedPcts={selectorAppliedPcts}
+              selectorApplied={selectorApplied}
               onDragStart={itemDescDragStart}
               onDragOver={itemDescDragOver}
               onDragEnd={itemDescDragEnd}

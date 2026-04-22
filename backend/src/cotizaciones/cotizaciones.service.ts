@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 import { DescuentosService } from '../descuentos/descuentos.service';
 import { DescuentosVolumenService } from '../descuentos/descuentos-volumen.service';
 import { TipoAccion, TipoEntidad } from '../historial/historial-accion.entity';
@@ -237,6 +237,7 @@ export class CotizacionesService {
               cotizacionItemId: savedItem.id,
               descuentoId: d.descuentoId,
               valorPorcentaje: d.valorPorcentaje,
+              reglaId: d.reglaId ?? null,
             }),
           );
         }
@@ -249,6 +250,7 @@ export class CotizacionesService {
             versionId: savedVersion.id,
             descuentoId: d.descuentoId,
             valorPorcentaje: d.valorPorcentaje,
+            reglaId: d.reglaId ?? null,
           }),
         );
       }
@@ -307,6 +309,67 @@ export class CotizacionesService {
       );
     }
 
+    // Si ya hay descuentos "variables" aplicados en secciones, heredar una
+    // fila por (descuento, sección) para este ítem nuevo. Así, el ítem nace
+    // con el porcentaje y la regla elegidos en cada sección en vez de quedar
+    // sin descuento hasta que el usuario vuelva a tocar el selector.
+    const seccionesVersion = await this.seccionRepo.find({ where: { versionId } });
+    if (seccionesVersion.length > 0) {
+      const seccionIds = seccionesVersion.map((s) => s.id);
+      const otherItems = await this.itemRepo.find({ where: { versionId } });
+      const otherItemIds = otherItems.map((i) => i.id).filter((id) => id !== item.id);
+
+      const plantillas = new Map<string, { descuentoId: number; seccionId: number; valorPorcentaje: number; reglaId: number | null }>();
+
+      if (otherItemIds.length > 0) {
+        const seccionedItemDescs = await this.itemDescRepo.find({
+          where: seccionIds.flatMap((sid) =>
+            otherItemIds.map((iid) => ({ seccionId: sid, cotizacionItemId: iid })),
+          ),
+        });
+        for (const d of seccionedItemDescs) {
+          if (d.descuentoId == null || d.seccionId == null) continue;
+          const key = `${d.descuentoId}|${d.seccionId}`;
+          if (plantillas.has(key)) continue;
+          plantillas.set(key, {
+            descuentoId: d.descuentoId,
+            seccionId: d.seccionId,
+            valorPorcentaje: Number(d.valorPorcentaje),
+            reglaId: d.reglaId ?? null,
+          });
+        }
+      }
+
+      // También considerar descuentos globales asociados a las secciones —
+      // son templates válidos si no hay ítem previo de donde heredar.
+      const seccionedGlobalDescs = await this.descRepo.find({
+        where: seccionIds.map((sid) => ({ versionId, seccionId: sid })),
+      });
+      for (const d of seccionedGlobalDescs) {
+        if (d.descuentoId == null || d.seccionId == null) continue;
+        const key = `${d.descuentoId}|${d.seccionId}`;
+        if (plantillas.has(key)) continue;
+        plantillas.set(key, {
+          descuentoId: d.descuentoId,
+          seccionId: d.seccionId,
+          valorPorcentaje: Number(d.valorPorcentaje),
+          reglaId: d.reglaId ?? null,
+        });
+      }
+
+      for (const p of plantillas.values()) {
+        await this.itemDescRepo.save(
+          this.itemDescRepo.create({
+            cotizacionItemId: item.id,
+            descuentoId: p.descuentoId,
+            seccionId: p.seccionId,
+            valorPorcentaje: p.valorPorcentaje,
+            reglaId: p.reglaId,
+          }),
+        );
+      }
+    }
+
     await this.recalcularTotal(versionId);
 
     await this.historialService.registrar({
@@ -361,13 +424,28 @@ export class CotizacionesService {
       );
     }
 
-    const aplicado = await this.itemDescRepo.save(
-      this.itemDescRepo.create({
-        cotizacionItemId: itemId,
-        descuentoId: descuento.id,
-        valorPorcentaje: porcentaje,
-      }),
-    );
+    // Upsert: si ya existe un descuento aplicado para este ítem + descuento
+    // (y sin sección asignada, que es como se aplican siempre por este
+    // endpoint), actualizar en lugar de insertar. Evita que clics rápidos en
+    // un selector creen filas duplicadas.
+    const existing = await this.itemDescRepo.findOne({
+      where: { cotizacionItemId: itemId, descuentoId: descuento.id, seccionId: IsNull() },
+    });
+    let aplicado: CotizacionItemDescuento;
+    if (existing) {
+      existing.valorPorcentaje = porcentaje;
+      existing.reglaId = dto.reglaId ?? null;
+      aplicado = await this.itemDescRepo.save(existing);
+    } else {
+      aplicado = await this.itemDescRepo.save(
+        this.itemDescRepo.create({
+          cotizacionItemId: itemId,
+          descuentoId: descuento.id,
+          valorPorcentaje: porcentaje,
+          reglaId: dto.reglaId ?? null,
+        }),
+      );
+    }
 
     const version = await this.versionRepo.findOneBy({ id: item.versionId });
     await this.recalcularTotal(item.versionId);
@@ -425,13 +503,27 @@ export class CotizacionesService {
       );
     }
 
-    const aplicado = await this.descRepo.save(
-      this.descRepo.create({
-        versionId,
-        descuentoId: descuento.id,
-        valorPorcentaje: porcentaje,
-      }),
-    );
+    // Upsert: si ya hay un descuento global para esta versión + descuento (en
+    // seccion null), actualizar. Evita que un clic rápido en el selector genere
+    // filas duplicadas que después suman porcentajes o eligen la opción vieja.
+    const existing = await this.descRepo.findOne({
+      where: { versionId, descuentoId: descuento.id, seccionId: IsNull() },
+    });
+    let aplicado: CotizacionDescuento;
+    if (existing) {
+      existing.valorPorcentaje = porcentaje;
+      existing.reglaId = dto.reglaId ?? null;
+      aplicado = await this.descRepo.save(existing);
+    } else {
+      aplicado = await this.descRepo.save(
+        this.descRepo.create({
+          versionId,
+          descuentoId: descuento.id,
+          valorPorcentaje: porcentaje,
+          reglaId: dto.reglaId ?? null,
+        }),
+      );
+    }
 
     await this.recalcularTotal(versionId);
 
@@ -529,6 +621,7 @@ export class CotizacionesService {
                 cotizacionItemId: d.cotizacionItemId,
                 descuentoId: d.descuentoId,
                 valorPorcentaje: d.valorPorcentaje,
+                reglaId: d.reglaId ?? null,
                 seccionId: nuevaSeccion.id,
               }),
             );
@@ -546,6 +639,7 @@ export class CotizacionesService {
                 versionId,
                 descuentoId: d.descuentoId,
                 valorPorcentaje: d.valorPorcentaje,
+                reglaId: d.reglaId ?? null,
                 seccionId: nuevaSeccion.id,
               }),
             );
@@ -565,6 +659,7 @@ export class CotizacionesService {
               cotizacionItemId: d.cotizacionItemId,
               descuentoId: d.descuentoId,
               valorPorcentaje: d.valorPorcentaje,
+              reglaId: d.reglaId ?? null,
               seccionId: nuevaSeccion.id,
             }),
           );
@@ -579,6 +674,7 @@ export class CotizacionesService {
               versionId,
               descuentoId: d.descuentoId,
               valorPorcentaje: d.valorPorcentaje,
+              reglaId: d.reglaId ?? null,
               seccionId: nuevaSeccion.id,
             }),
           );
@@ -643,39 +739,66 @@ export class CotizacionesService {
   }
 
   /**
-   * Actualiza TODOS los descuentos de un descuento específico en una sección.
-   * Busca tanto a nivel de ítem como global y actualiza todos los que encuentre.
+   * Aplica el par (porcentaje, reglaId) de un descuento "variable" en una
+   * sección a TODOS los ítems de la versión. Si un ítem ya tiene fila para
+   * esa sección + descuento la actualiza; si no, la crea. Así garantizamos
+   * que todos los ítems queden sincronizados aunque alguno haya sido
+   * agregado después de haber creado la sección.
    */
   async updateSeccionDescuento(
     seccionId: number,
     descuentoId: number,
     dto: UpdateSeccionDescuentoDto,
   ): Promise<void> {
-    let updated = false;
-
-    // Update all item-level discounts for this descuento+section
-    const itemDescs = await this.itemDescRepo.find({ where: { seccionId, descuentoId } });
-    for (const d of itemDescs) {
-      d.valorPorcentaje = dto.porcentaje;
-      await this.itemDescRepo.save(d);
-      updated = true;
-    }
-
-    // Update all global-level discounts for this descuento+section
-    const globalDescs = await this.descRepo.find({ where: { seccionId, descuentoId } });
-    for (const d of globalDescs) {
-      d.valorPorcentaje = dto.porcentaje;
-      await this.descRepo.save(d);
-      updated = true;
-    }
-
-    if (!updated) {
-      throw new NotFoundException(`Descuento ${descuentoId} no encontrado en sección ${seccionId}`);
-    }
-
-    // Recalcular
     const seccion = await this.seccionRepo.findOneBy({ id: seccionId });
-    if (seccion) await this.recalcularTotal(seccion.versionId);
+    if (!seccion) {
+      throw new NotFoundException(`Sección ${seccionId} no encontrada`);
+    }
+
+    const reglaId = dto.reglaId ?? null;
+    const versionId = seccion.versionId;
+
+    await this.dataSource.transaction(async (em) => {
+      // 1) Upsert por ítem: todos los ítems de la versión terminan con una
+      //    fila (item, desc, seccion) con el valor actualizado.
+      const items = await em.find(CotizacionItem, { where: { versionId } });
+      const existingItemDescs = await em.find(CotizacionItemDescuento, {
+        where: { seccionId, descuentoId },
+      });
+      const byItemId = new Map(existingItemDescs.map((d) => [d.cotizacionItemId, d]));
+
+      for (const item of items) {
+        const existing = byItemId.get(item.id);
+        if (existing) {
+          existing.valorPorcentaje = dto.porcentaje;
+          existing.reglaId = reglaId;
+          await em.save(existing);
+        } else {
+          await em.save(
+            em.create(CotizacionItemDescuento, {
+              cotizacionItemId: item.id,
+              descuentoId,
+              seccionId,
+              valorPorcentaje: dto.porcentaje,
+              reglaId,
+            }),
+          );
+        }
+      }
+
+      // 2) Actualizar descuentos globales de la misma (desc, seccion), si los
+      //    hay — el modelo permite que sean globales en vez de por ítem.
+      const globalDescs = await em.find(CotizacionDescuento, {
+        where: { seccionId, descuentoId },
+      });
+      for (const d of globalDescs) {
+        d.valorPorcentaje = dto.porcentaje;
+        d.reglaId = reglaId;
+        await em.save(d);
+      }
+    });
+
+    await this.recalcularTotal(versionId);
   }
 
   // ─── CÁLCULO DE TOTAL (siempre en backend) ────────────────────────────────

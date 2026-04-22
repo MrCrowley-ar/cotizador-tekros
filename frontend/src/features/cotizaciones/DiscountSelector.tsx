@@ -84,6 +84,7 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
     setError('');
     try {
       let porcentaje: number | undefined = undefined;
+      let reglaId: number | undefined = undefined;
 
       if (modo === 'selector') {
         const descuento = descuentos.find((d) => d.id === descuentoId);
@@ -95,6 +96,7 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
           return;
         }
         porcentaje = Number(regla.valor);
+        reglaId = regla.id;
       } else if (modo === 'avanzado') {
         const ratioCultivo = getRatioCultivo();
         const agregados = getAgregados();
@@ -127,11 +129,13 @@ export function DiscountSelector({ cotizacionId, version, item, onClose }: Props
         await cotizacionesApi.applyItemDescuento(cotizacionId, version.id, item.id, {
           descuentoId,
           porcentaje,
+          ...(reglaId != null ? { reglaId } : {}),
         });
       } else {
         await cotizacionesApi.applyGlobalDescuento(cotizacionId, version.id, {
           descuentoId,
           porcentaje,
+          ...(reglaId != null ? { reglaId } : {}),
         });
       }
 

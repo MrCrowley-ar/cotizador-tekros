@@ -120,33 +120,59 @@ export function useCotizacionExportPng({
   const secciones = version.secciones ?? [];
   const hasSecciones = secciones.length > 0;
 
-  // Resolve section label from variable selector discount
+  // Resuelve la regla específica aplicada. Si el backend guarda reglaId lo
+  // usamos directamente; si no, hacemos fallback a matchear por valor (ambiguo
+  // cuando dos reglas tienen el mismo porcentaje, pero soporta datos viejos).
+  function resolveRegla(desc: Descuento, applied: { valorPorcentaje: number; reglaId?: number | null }) {
+    const reglas = [...(desc.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
+    if (applied.reglaId != null) {
+      const byId = reglas.find((r) => r.id === applied.reglaId);
+      if (byId) return byId;
+    }
+    const pct = Number(applied.valorPorcentaje);
+    return reglas.find((r) => Number(r.valor) === pct) ?? null;
+  }
+
+  // Resolve section label from variable selector discount. Usa el par
+  // (pct, reglaId) más frecuente entre los ítems de la sección: así, si un
+  // ítem quedó con el valor viejo por alguna inconsistencia transitoria, el
+  // label del PNG refleja la opción mayoritaria (la que el usuario eligió)
+  // y no la de un ítem rezagado.
   function getSeccionLabel(seccion: typeof secciones[0]): string {
-    // Find the selector discount applied in this section
     for (const desc of allDescuentos) {
       if (desc.modo !== 'selector') continue;
-      // Check item descuentos for this section
+
+      const counts = new Map<string, { count: number; pct: number; reglaId: number | null }>();
       for (const item of items) {
         const applied = item.descuentos.find(
           (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
         );
         if (applied) {
           const pct = Number(applied.valorPorcentaje);
-          const regla = [...(desc.reglas ?? [])]
-            .sort((a, b) => a.prioridad - b.prioridad)
-            .find((r) => Number(r.valor) === pct);
-          return regla?.nombre ?? `${desc.nombre} ${pct}%`;
+          const reglaId = applied.reglaId ?? null;
+          const key = `${pct}|${reglaId ?? 'null'}`;
+          const prev = counts.get(key);
+          if (prev) prev.count++;
+          else counts.set(key, { count: 1, pct, reglaId });
         }
       }
-      // Check global descuentos
+      if (counts.size > 0) {
+        let best: { count: number; pct: number; reglaId: number | null } | null = null;
+        for (const e of counts.values()) {
+          if (!best || e.count > best.count) best = e;
+        }
+        if (best) {
+          const regla = resolveRegla(desc, { valorPorcentaje: best.pct, reglaId: best.reglaId });
+          return regla?.nombre ?? `${desc.nombre} ${best.pct}%`;
+        }
+      }
+
       const appliedGlobal = (version?.descuentos ?? []).find(
         (d) => d.descuentoId === desc.id && d.seccionId === seccion.id,
       );
       if (appliedGlobal) {
+        const regla = resolveRegla(desc, appliedGlobal);
         const pct = Number(appliedGlobal.valorPorcentaje);
-        const regla = [...(desc.reglas ?? [])]
-          .sort((a, b) => a.prioridad - b.prioridad)
-          .find((r) => Number(r.valor) === pct);
         return regla?.nombre ?? `${desc.nombre} ${pct}%`;
       }
     }
@@ -162,16 +188,11 @@ export function useCotizacionExportPng({
     for (const desc of globalSelectorDescs) {
       const appliedItem = items[0]?.descuentos.find((d) => d.descuentoId === desc.id);
       const appliedGlobal = (version?.descuentos ?? []).find((d) => d.descuentoId === desc.id);
-      const appliedPct = appliedItem
-        ? Number(appliedItem.valorPorcentaje)
-        : appliedGlobal
-          ? Number(appliedGlobal.valorPorcentaje)
-          : null;
-      if (appliedPct !== null) {
-        const regla = [...(desc.reglas ?? [])]
-          .sort((a, b) => a.prioridad - b.prioridad)
-          .find((r) => Number(r.valor) === appliedPct);
-        medioDePago = regla?.nombre ?? `${appliedPct}%`;
+      const applied = appliedItem ?? appliedGlobal ?? null;
+      if (applied) {
+        const regla = resolveRegla(desc, applied);
+        const pct = Number(applied.valorPorcentaje);
+        medioDePago = regla?.nombre ?? `${pct}%`;
         break;
       }
     }
