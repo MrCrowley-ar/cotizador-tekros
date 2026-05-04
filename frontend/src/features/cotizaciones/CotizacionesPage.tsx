@@ -86,23 +86,45 @@ function NuevaCotizacionModal({ onClose }: { onClose: () => void }) {
 export function CotizacionesPage() {
   const navigate = useNavigate();
   const [showModal, setShowModal] = useState(false);
+  const [search, setSearch] = useState('');
 
   const { data: cotizaciones = [], isLoading } = useQuery({
     queryKey: ['cotizaciones'],
     queryFn: cotizacionesApi.getAll,
   });
 
+  const filtered = (() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return cotizaciones;
+    return cotizaciones.filter((c) => {
+      const numero = c.numero?.toLowerCase() ?? '';
+      const cliente = c.cliente?.nombre?.toLowerCase() ?? '';
+      const cuit = c.cliente?.cuit?.toLowerCase() ?? '';
+      const estado = c.estado?.toLowerCase() ?? '';
+      return numero.includes(q) || cliente.includes(q) || cuit.includes(q) || estado.includes(q);
+    });
+  })();
+
   return (
     <Layout title="Cotizaciones">
       <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-semibold text-gray-900">Cotizaciones</h1>
-          <button
-            onClick={() => setShowModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            + Nueva cotización
-          </button>
+        <div className="flex items-center justify-between mb-6 gap-3">
+          <h1 className="text-xl font-semibold text-gray-900 shrink-0">Cotizaciones</h1>
+          <div className="flex items-center gap-3 flex-1 justify-end">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por número, cliente, CUIT o estado…"
+              className="w-full max-w-xs border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              onClick={() => setShowModal(true)}
+              className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors shrink-0"
+            >
+              + Nueva cotización
+            </button>
+          </div>
         </div>
 
         {isLoading ? (
@@ -111,6 +133,10 @@ export function CotizacionesPage() {
           <div className="text-center py-12 text-gray-400">
             <p className="text-4xl mb-2">📄</p>
             <p>Sin cotizaciones aún. Creá la primera.</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            <p>Sin resultados para "{search}".</p>
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -125,7 +151,7 @@ export function CotizacionesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {cotizaciones.map((c) => (
+                {filtered.map((c) => (
                   <tr
                     key={c.id}
                     onClick={() => navigate(`/cotizaciones/${c.id}`)}

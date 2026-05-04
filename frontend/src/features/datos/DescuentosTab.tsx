@@ -42,6 +42,12 @@ function inferirTipoCondicion(d: Descuento): TipoCondicion {
   );
   if (todasCultivoId) return 'fijo';
 
+  // fijo + hibrido: todas las reglas tienen una sola condición hibrido_id =
+  const todasHibridoId = reglas.length > 0 && reglas.every(
+    (r) => r.condiciones?.length === 1 && r.condiciones[0].campo === 'hibrido_id',
+  );
+  if (todasHibridoId) return 'fijo';
+
   // por_rango (1 condición): mismo campo, operador >= o entre, sin valorCampo
   if (reglas.length > 0) {
     const primerCampo = reglas[0]?.condiciones?.[0]?.campo;
@@ -192,6 +198,18 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     return map;
   });
 
+  // Fijo + hibrido → grilla de % por híbrido
+  const [pctPorHibrido, setPctPorHibrido] = useState<Record<number, string>>(() => {
+    if (!initial || inferirTipoCondicion(initial) !== 'fijo' || initial.tipoAplicacion !== 'hibrido') return {};
+    const map: Record<number, string> = {};
+    (initial.reglas ?? []).forEach((r) => {
+      const cond = r.condiciones?.find((c) => c.campo === 'hibrido_id');
+      if (cond) map[cond.valor] = String(r.valor);
+    });
+    return map;
+  });
+  const [cultivoFiltroHibrido, setCultivoFiltroHibrido] = useState<number | 'todos'>('todos');
+
   // Por rango
   const [driver, setDriver] = useState<DriverRango>(() => {
     if (initial) return inferirDriverRango(initial);
@@ -326,11 +344,18 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     return map;
   });
 
-  // Cultivos (para cualquier combinación con alcance cultivo)
+  // Cultivos (para cualquier combinación con alcance cultivo o hibrido)
   const { data: cultivos = [] } = useQuery({
     queryKey: ['cultivos'],
     queryFn: () => productosApi.getCultivos(true),
-    enabled: alcance === 'cultivo',
+    enabled: alcance === 'cultivo' || alcance === 'hibrido',
+  });
+
+  // Hibridos (para fijo + hibrido)
+  const { data: hibridos = [], isLoading: loadingHibridos } = useQuery({
+    queryKey: ['hibridos', 'all', true],
+    queryFn: () => productosApi.getAllHibridos(true),
+    enabled: alcance === 'hibrido' && tipoCondicion === 'fijo',
   });
 
   // Cultivo activo: usa el seleccionado o cae al primero disponible
@@ -357,7 +382,23 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
         return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
       }
 
-      // fijo + global | hibrido → basico
+      // fijo + hibrido → grilla por híbrido (avanzado con reglas hibrido_id)
+      if (tipoCondicion === 'fijo' && alcance === 'hibrido') {
+        const reglas = hibridos
+          .filter((h) => pctPorHibrido[h.id] && Number(pctPorHibrido[h.id]) > 0)
+          .map((h, i) => ({
+            valor: Number(pctPorHibrido[h.id]),
+            prioridad: i + 1,
+            condiciones: [{ campo: 'hibrido_id' as const, operador: '=' as CondOp, valor: h.id }],
+          }));
+        const payload = {
+          nombre, tipoAplicacion: 'hibrido' as const,
+          modo: 'avanzado' as const, reglas,
+        };
+        return isEdit ? descuentosApi.update(initial!.id, payload) : descuentosApi.create(payload);
+      }
+
+      // fijo + global → basico
       if (tipoCondicion === 'fijo') {
         const payload = {
           nombre, tipoAplicacion: alcance,
@@ -505,6 +546,8 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
     if (!nombre.trim()) return false;
     if (tipoCondicion === 'fijo' && alcance === 'cultivo')
       return cultivos.some((c) => pctPorCultivo[c.id] && Number(pctPorCultivo[c.id]) > 0);
+    if (tipoCondicion === 'fijo' && alcance === 'hibrido')
+      return hibridos.some((h) => pctPorHibrido[h.id] && Number(pctPorHibrido[h.id]) > 0);
     if (tipoCondicion === 'fijo') return pctFijo !== '' && Number(pctFijo) >= 0;
     if (tipoCondicion === 'por_rango' && alcance === 'cultivo')
       return cultivos.some((c) => (tramosPorCultivo[c.id] ?? []).some((t) => t.pct !== '') || (pctDefaultPorCultivo[c.id] ?? '') !== '');
@@ -618,8 +661,8 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
 
         <hr className="border-gray-100" />
 
-        {/* ── Fijo ── */}
-        {tipoCondicion === 'fijo' && alcance !== 'cultivo' && (
+        {/* ── Fijo + global → un único % ── */}
+        {tipoCondicion === 'fijo' && alcance === 'global' && (
           <div>
             <label className={labelCls}>Porcentaje de descuento *</label>
             <div className="flex items-center gap-2">
@@ -668,6 +711,89 @@ function DescuentoFormModal({ initial, onClose }: { initial?: Descuento; onClose
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Fijo + híbrido → grilla por híbrido ── */}
+        {tipoCondicion === 'fijo' && alcance === 'hibrido' && (
+          <div>
+            <label className={labelCls}>Porcentaje por híbrido *</label>
+            <p className="text-xs text-gray-400 mb-2">
+              Dejá en 0 o vacío los híbridos sin descuento (no se aplica).
+            </p>
+            {loadingHibridos || (hibridos.length > 0 && cultivos.length === 0) ? (
+              <div className="flex justify-center py-4"><Spinner /></div>
+            ) : hibridos.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-4">No hay híbridos activos.</p>
+            ) : (
+              <>
+                {cultivos.length > 1 && (
+                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setCultivoFiltroHibrido('todos')}
+                      className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                        cultivoFiltroHibrido === 'todos'
+                          ? 'bg-blue-600 border-blue-600 text-white font-medium'
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      Todos
+                    </button>
+                    {cultivos.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setCultivoFiltroHibrido(c.id)}
+                        className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                          cultivoFiltroHibrido === c.id
+                            ? 'bg-blue-600 border-blue-600 text-white font-medium'
+                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        {c.nombre}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                  {(() => {
+                    const visibles = hibridos.filter(
+                      (h) => cultivoFiltroHibrido === 'todos' || h.cultivoId === cultivoFiltroHibrido,
+                    );
+                    if (visibles.length === 0) {
+                      return <p className="text-xs text-gray-400 text-center py-2">Sin híbridos en este cultivo.</p>;
+                    }
+                    return visibles.map((h) => {
+                      const cult = cultivos.find((c) => c.id === h.cultivoId);
+                      return (
+                        <div key={h.id} className="flex items-center gap-3 px-1 py-1 rounded hover:bg-gray-50">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-gray-700 truncate">{h.nombre}</div>
+                            {cult && cultivoFiltroHibrido === 'todos' && (
+                              <div className="text-xs text-gray-400 truncate">{cult.nombre}</div>
+                            )}
+                          </div>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.01}
+                            value={pctPorHibrido[h.id] ?? ''}
+                            onChange={(e) =>
+                              setPctPorHibrido((prev) => ({ ...prev, [h.id]: e.target.value }))
+                            }
+                            placeholder="0"
+                            className={`${inputCls} w-24 text-right`}
+                          />
+                          <span className="text-sm text-gray-500">%</span>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </>
             )}
           </div>
         )}
@@ -1004,7 +1130,12 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
   const { data: cultivos = [] } = useQuery({
     queryKey: ['cultivos'],
     queryFn: () => productosApi.getCultivos(true),
-    enabled: descuento.tipoAplicacion === 'cultivo',
+    enabled: descuento.tipoAplicacion === 'cultivo' || descuento.tipoAplicacion === 'hibrido',
+  });
+  const { data: hibridos = [] } = useQuery({
+    queryKey: ['hibridos', 'all', true],
+    queryFn: () => productosApi.getAllHibridos(true),
+    enabled: descuento.tipoAplicacion === 'hibrido',
   });
 
   const handleDeleteClick = async () => {
@@ -1052,6 +1183,7 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
 
   const tipoV = inferirTipoCondicion(descuento);
   const cultivoNombre = (id: number) => cultivos.find((c) => c.id === id)?.nombre ?? `Cultivo #${id}`;
+  const hibridoNombre = (id: number) => hibridos.find((h) => h.id === id)?.nombre ?? `Híbrido #${id}`;
 
   // Helpers de vista
   const reglasSorted = [...(descuento.reglas ?? [])].sort((a, b) => a.prioridad - b.prioridad);
@@ -1117,21 +1249,36 @@ function DescuentoDetailModal({ descuento, onClose }: { descuento: Descuento; on
           </div>
         )}
 
-        {/* Fijo + cultivo */}
+        {/* Fijo + cultivo / hibrido */}
         {tipoV === 'fijo' && descuento.modo === 'avanzado' && (
           <div className="text-sm">
-            <div className="font-medium text-gray-700 mb-2">Porcentaje por cultivo:</div>
-            <div className="space-y-1">
-              {reglasSorted.map((r) => (
-                <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
-                  <span className="text-gray-600">
-                    {r.condiciones?.[0]?.campo === 'cultivo_id'
-                      ? cultivoNombre(Number(r.condiciones[0].valor))
-                      : `Regla #${r.prioridad}`}
-                  </span>
-                  <span className="font-semibold text-blue-700">{r.valor}%</span>
-                </div>
-              ))}
+            <div className="font-medium text-gray-700 mb-2">
+              {descuento.tipoAplicacion === 'hibrido' ? 'Porcentaje por híbrido:' : 'Porcentaje por cultivo:'}
+            </div>
+            <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+              {reglasSorted.map((r) => {
+                const c = r.condiciones?.[0];
+                let label: string;
+                let sublabel: string | null = null;
+                if (c?.campo === 'cultivo_id') {
+                  label = cultivoNombre(Number(c.valor));
+                } else if (c?.campo === 'hibrido_id') {
+                  const hib = hibridos.find((h) => h.id === Number(c.valor));
+                  label = hib?.nombre ?? hibridoNombre(Number(c.valor));
+                  if (hib) sublabel = cultivoNombre(hib.cultivoId);
+                } else {
+                  label = `Regla #${r.prioridad}`;
+                }
+                return (
+                  <div key={r.id} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5">
+                    <div className="min-w-0">
+                      <div className="text-gray-600 truncate">{label}</div>
+                      {sublabel && <div className="text-xs text-gray-400 truncate">{sublabel}</div>}
+                    </div>
+                    <span className="font-semibold text-blue-700 shrink-0">{r.valor}%</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

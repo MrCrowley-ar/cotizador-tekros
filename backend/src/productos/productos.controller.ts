@@ -81,6 +81,11 @@ export class CultivosController {
 export class HibridosController {
   constructor(private readonly service: HibridosService) {}
 
+  @Get()
+  findAll(@Query('soloActivos', new ParseBoolPipe({ optional: true })) soloActivos?: boolean) {
+    return this.service.findAll(soloActivos);
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id);
