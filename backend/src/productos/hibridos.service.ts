@@ -22,6 +22,13 @@ export class HibridosService {
     });
   }
 
+  findAll(soloActivos = false): Promise<Hibrido[]> {
+    return this.repo.find({
+      where: soloActivos ? { activo: true } : {},
+      order: { cultivoId: 'ASC', nombre: 'ASC' },
+    });
+  }
+
   async findOne(id: number): Promise<Hibrido> {
     const hibrido = await this.repo.findOneBy({ id });
     if (!hibrido) throw new NotFoundException(`Híbrido ${id} no encontrado`);
