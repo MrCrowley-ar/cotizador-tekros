@@ -11,6 +11,7 @@ export function ClientesTab() {
   const [editNombre, setEditNombre] = useState('');
   const [editRazonSocial, setEditRazonSocial] = useState('');
   const [editCuit, setEditCuit] = useState('');
+  const [error, setError] = useState('');
 
   const qc = useQueryClient();
 
@@ -21,26 +22,29 @@ export function ClientesTab() {
 
   const createMut = useMutation({
     mutationFn: () => clientesApi.create({
-      nombre: editNombre.trim(),
+      nombre: editNombre.trim() || editRazonSocial.trim(),
       razonSocial: editRazonSocial.trim() || undefined,
       cuit: editCuit.trim(),
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clientes'] }); setEditing(null); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clientes'] }); setEditing(null); setError(''); },
+    onError: (err: Error) => setError(err.message || 'No se pudo guardar el cliente'),
   });
 
   const updateMut = useMutation({
     mutationFn: ({ id, activo }: { id: number; activo: boolean }) =>
       clientesApi.update(id, {
-        nombre: editNombre.trim(),
+        nombre: editNombre.trim() || editRazonSocial.trim(),
         razonSocial: editRazonSocial.trim() || undefined,
         cuit: editCuit.trim(),
         activo,
       }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clientes'] }); setEditing(null); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clientes'] }); setEditing(null); setError(''); },
+    onError: (err: Error) => setError(err.message || 'No se pudo actualizar el cliente'),
   });
 
   const startNew = () => {
     setEditNombre(''); setEditRazonSocial(''); setEditCuit('');
+    setError('');
     setEditing('new');
   };
 
@@ -48,11 +52,12 @@ export function ClientesTab() {
     setEditNombre(c.nombre);
     setEditRazonSocial(c.razonSocial ?? '');
     setEditCuit(c.cuit);
+    setError('');
     setEditing(c.id);
   };
 
-  const cancel = () => setEditing(null);
-  const canSave = editNombre.trim() && editCuit.trim();
+  const cancel = () => { setEditing(null); setError(''); };
+  const canSave = editRazonSocial.trim() && editCuit.trim();
 
   const inp = (color: 'blue' | 'green') =>
     `w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-${color}-500`;
@@ -69,6 +74,12 @@ export function ClientesTab() {
           className="border rounded-lg px-3 py-2 text-sm w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
+
+      {error && (
+        <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
@@ -88,12 +99,12 @@ export function ClientesTab() {
                   <td className="px-3 py-2">
                     <input autoFocus value={editNombre} onChange={(e) => setEditNombre(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Escape') cancel(); }}
-                      placeholder="Nombre contacto *" className={inp('blue')} />
+                      placeholder="Nombre contacto" className={inp('blue')} />
                   </td>
                   <td className="px-3 py-2">
                     <input value={editRazonSocial} onChange={(e) => setEditRazonSocial(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Escape') cancel(); }}
-                      placeholder="Razón social..." className={inp('blue')} />
+                      placeholder="Razón social *" className={inp('blue')} />
                   </td>
                   <td className="px-3 py-2">
                     <input value={editCuit} onChange={(e) => setEditCuit(e.target.value)}
@@ -134,12 +145,12 @@ export function ClientesTab() {
                 <td className="px-3 py-2">
                   <input autoFocus value={editNombre} onChange={(e) => setEditNombre(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && canSave) createMut.mutate(); if (e.key === 'Escape') cancel(); }}
-                    placeholder="Nombre contacto *" className={inp('green')} />
+                    placeholder="Nombre contacto" className={inp('green')} />
                 </td>
                 <td className="px-3 py-2">
                   <input value={editRazonSocial} onChange={(e) => setEditRazonSocial(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && canSave) createMut.mutate(); if (e.key === 'Escape') cancel(); }}
-                    placeholder="Razón social..." className={inp('green')} />
+                    placeholder="Razón social *" className={inp('green')} />
                 </td>
                 <td className="px-3 py-2">
                   <input value={editCuit} onChange={(e) => setEditCuit(e.target.value)}
