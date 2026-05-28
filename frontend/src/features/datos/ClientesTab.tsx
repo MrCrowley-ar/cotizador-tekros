@@ -11,6 +11,7 @@ export function ClientesTab() {
   const [editNombre, setEditNombre] = useState('');
   const [editRazonSocial, setEditRazonSocial] = useState('');
   const [editCuit, setEditCuit] = useState('');
+  const [error, setError] = useState('');
 
   const qc = useQueryClient();
 
@@ -25,7 +26,8 @@ export function ClientesTab() {
       razonSocial: editRazonSocial.trim() || undefined,
       cuit: editCuit.trim(),
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clientes'] }); setEditing(null); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clientes'] }); setEditing(null); setError(''); },
+    onError: (err: Error) => setError(err.message || 'No se pudo guardar el cliente'),
   });
 
   const updateMut = useMutation({
@@ -36,11 +38,13 @@ export function ClientesTab() {
         cuit: editCuit.trim(),
         activo,
       }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clientes'] }); setEditing(null); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clientes'] }); setEditing(null); setError(''); },
+    onError: (err: Error) => setError(err.message || 'No se pudo actualizar el cliente'),
   });
 
   const startNew = () => {
     setEditNombre(''); setEditRazonSocial(''); setEditCuit('');
+    setError('');
     setEditing('new');
   };
 
@@ -48,10 +52,11 @@ export function ClientesTab() {
     setEditNombre(c.nombre);
     setEditRazonSocial(c.razonSocial ?? '');
     setEditCuit(c.cuit);
+    setError('');
     setEditing(c.id);
   };
 
-  const cancel = () => setEditing(null);
+  const cancel = () => { setEditing(null); setError(''); };
   const canSave = editNombre.trim() && editCuit.trim();
 
   const inp = (color: 'blue' | 'green') =>
@@ -69,6 +74,12 @@ export function ClientesTab() {
           className="border rounded-lg px-3 py-2 text-sm w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
+
+      {error && (
+        <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
