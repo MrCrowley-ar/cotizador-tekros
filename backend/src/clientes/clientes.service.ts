@@ -18,7 +18,11 @@ export class ClientesService {
   async findAll(search?: string): Promise<Cliente[]> {
     if (search) {
       return this.repo.find({
-        where: [{ nombre: ILike(`%${search}%`) }, { cuit: ILike(`%${search}%`) }],
+        where: [
+          { nombre: ILike(`%${search}%`) },
+          { razonSocial: ILike(`%${search}%`) },
+          { cuit: ILike(`%${search}%`) },
+        ],
         order: { nombre: 'ASC' },
       });
     }

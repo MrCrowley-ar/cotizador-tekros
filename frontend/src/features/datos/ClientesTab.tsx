@@ -22,7 +22,7 @@ export function ClientesTab() {
 
   const createMut = useMutation({
     mutationFn: () => clientesApi.create({
-      nombre: editNombre.trim(),
+      nombre: editNombre.trim() || editRazonSocial.trim(),
       razonSocial: editRazonSocial.trim() || undefined,
       cuit: editCuit.trim(),
     }),
@@ -33,7 +33,7 @@ export function ClientesTab() {
   const updateMut = useMutation({
     mutationFn: ({ id, activo }: { id: number; activo: boolean }) =>
       clientesApi.update(id, {
-        nombre: editNombre.trim(),
+        nombre: editNombre.trim() || editRazonSocial.trim(),
         razonSocial: editRazonSocial.trim() || undefined,
         cuit: editCuit.trim(),
         activo,
@@ -57,7 +57,7 @@ export function ClientesTab() {
   };
 
   const cancel = () => { setEditing(null); setError(''); };
-  const canSave = editNombre.trim() && editCuit.trim();
+  const canSave = editRazonSocial.trim() && editCuit.trim();
 
   const inp = (color: 'blue' | 'green') =>
     `w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-${color}-500`;
@@ -99,12 +99,12 @@ export function ClientesTab() {
                   <td className="px-3 py-2">
                     <input autoFocus value={editNombre} onChange={(e) => setEditNombre(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Escape') cancel(); }}
-                      placeholder="Nombre contacto *" className={inp('blue')} />
+                      placeholder="Nombre contacto" className={inp('blue')} />
                   </td>
                   <td className="px-3 py-2">
                     <input value={editRazonSocial} onChange={(e) => setEditRazonSocial(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Escape') cancel(); }}
-                      placeholder="Razón social..." className={inp('blue')} />
+                      placeholder="Razón social *" className={inp('blue')} />
                   </td>
                   <td className="px-3 py-2">
                     <input value={editCuit} onChange={(e) => setEditCuit(e.target.value)}
@@ -145,12 +145,12 @@ export function ClientesTab() {
                 <td className="px-3 py-2">
                   <input autoFocus value={editNombre} onChange={(e) => setEditNombre(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && canSave) createMut.mutate(); if (e.key === 'Escape') cancel(); }}
-                    placeholder="Nombre contacto *" className={inp('green')} />
+                    placeholder="Nombre contacto" className={inp('green')} />
                 </td>
                 <td className="px-3 py-2">
                   <input value={editRazonSocial} onChange={(e) => setEditRazonSocial(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && canSave) createMut.mutate(); if (e.key === 'Escape') cancel(); }}
-                    placeholder="Razón social..." className={inp('green')} />
+                    placeholder="Razón social *" className={inp('green')} />
                 </td>
                 <td className="px-3 py-2">
                   <input value={editCuit} onChange={(e) => setEditCuit(e.target.value)}
