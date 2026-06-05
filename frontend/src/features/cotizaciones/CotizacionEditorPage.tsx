@@ -228,12 +228,14 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
   const { data: bandas = [] } = useQuery({
     queryKey: ['bandas', item.cultivoId],
     queryFn: () => productosApi.getBandas(item.cultivoId, false),
-    enabled: editingField === 'banda',
+    enabled: isEditable,
+    staleTime: 60_000,
   });
   const { data: hibridos = [] } = useQuery({
     queryKey: ['hibridos', item.cultivoId],
     queryFn: () => productosApi.getHibridos(item.cultivoId, false),
-    enabled: editingField === 'hibrido',
+    enabled: isEditable,
+    staleTime: 60_000,
   });
 
   const updateMut = useMutation({
@@ -323,7 +325,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
               updateMut.mutate({ hibridoId: Number(e.target.value) });
               setEditingField(null);
             }}
-            onBlur={() => setEditingField(null)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setEditingField(null); }}
             className="text-xs border rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
           >
             {hibridos.map((h: any) => (
@@ -347,7 +349,7 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
               updateMut.mutate({ bandaId: Number(e.target.value) });
               setEditingField(null);
             }}
-            onBlur={() => setEditingField(null)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setEditingField(null); }}
             className="text-xs border rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
           >
             {bandas.map((b: any) => (
