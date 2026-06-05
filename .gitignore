@@ -30,3 +30,6 @@ backups/*.sql.gz
 
 # Seeds locales (no subir al repo)
 backend/src/database/seeds/
+
+# Claude Code worktrees
+.claude/
