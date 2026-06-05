@@ -18,6 +18,7 @@ import { CreateCotizacionDto } from './dto/create-cotizacion.dto';
 import { CreateSeccionDto } from './dto/create-seccion.dto';
 import { UpdateEstadoDto } from './dto/update-estado.dto';
 import { UpdateSeccionDescuentoDto } from './dto/update-seccion-descuento.dto';
+import { UpdateItemDto } from './dto/update-item.dto';
 import { CotizacionesService } from './cotizaciones.service';
 
 @Controller('cotizaciones')
@@ -110,6 +111,16 @@ export class CotizacionesController {
     @CurrentUser() user: Usuario,
   ) {
     return this.service.eliminarItem(versionId, itemId, user.id);
+  }
+
+  @Patch(':id/versiones/:versionId/items/:itemId')
+  actualizarItem(
+    @Param('versionId', ParseIntPipe) versionId: number,
+    @Param('itemId', ParseIntPipe) itemId: number,
+    @Body() dto: UpdateItemDto,
+    @CurrentUser() user: Usuario,
+  ) {
+    return this.service.actualizarItem(versionId, itemId, dto, user.id);
   }
 
   // ─── DESCUENTOS POR ÍTEM ──────────────────────────────────────────────────
