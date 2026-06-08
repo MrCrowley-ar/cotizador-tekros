@@ -11,6 +11,7 @@ import { TipoAccion, TipoEntidad } from '../historial/historial-accion.entity';
 import { HistorialService } from '../historial/historial.service';
 import { PreciosService } from '../precios/precios.service';
 import { AddItemDto } from './dto/add-item.dto';
+import { UpdateItemDto } from './dto/update-item.dto';
 import { ApplyDescuentoDto } from './dto/apply-descuento.dto';
 import { CreateCotizacionDto } from './dto/create-cotizacion.dto';
 import { UpdateEstadoDto } from './dto/update-estado.dto';
@@ -403,6 +404,44 @@ export class CotizacionesService {
       descripcion: `Ítem ${itemId} eliminado de versión ${versionId}`,
       datosPrevios: { hibridoId: item.hibridoId, bandaId: item.bandaId, bolsas: item.bolsas, precioBase: item.precioBase },
     });
+  }
+
+  async actualizarItem(versionId: number, itemId: number, dto: UpdateItemDto, usuarioId?: number): Promise<CotizacionItem> {
+    const item = await this.itemRepo.findOneBy({ id: itemId, versionId });
+    if (!item) throw new NotFoundException(`Ítem ${itemId} no encontrado en versión ${versionId}`);
+
+    const newHibridoId = dto.hibridoId ?? item.hibridoId;
+    const newBandaId = dto.bandaId ?? item.bandaId;
+    const hibridoChanged = dto.hibridoId != null && dto.hibridoId !== item.hibridoId;
+    const bandaChanged = dto.bandaId != null && dto.bandaId !== item.bandaId;
+
+    if (hibridoChanged || bandaChanged) {
+      const precioActual = await this.preciosService.getPrecioActual(newHibridoId, newBandaId);
+      item.precioBase = Number(precioActual.precio);
+      item.subtotal = item.precioBase;
+      item.hibridoId = newHibridoId;
+      item.bandaId = newBandaId;
+    }
+
+    if (dto.bolsas != null) {
+      item.bolsas = dto.bolsas;
+    }
+
+    await this.itemRepo.save(item);
+    await this.recalcularTotal(versionId);
+
+    const version = await this.versionRepo.findOneBy({ id: versionId });
+    await this.historialService.registrar({
+      usuarioId: usuarioId ?? null,
+      cotizacionId: version!.cotizacionId,
+      tipoEntidad: TipoEntidad.COTIZACION_ITEM,
+      tipoAccion: TipoAccion.AGREGAR_ITEM,
+      entidadId: item.id,
+      descripcion: `Ítem modificado: híbrido ${item.hibridoId}, banda ${item.bandaId}, bolsas ${item.bolsas}, precio base $${item.precioBase}`,
+      datosNuevos: { hibridoId: item.hibridoId, bandaId: item.bandaId, bolsas: item.bolsas, precioBase: item.precioBase },
+    });
+
+    return item;
   }
 
   // ─── DESCUENTOS POR ÍTEM ──────────────────────────────────────────────────

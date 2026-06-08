@@ -221,6 +221,29 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
   const [deleteError, setDeleteError] = useState('');
   const [editingManual, setEditingManual] = useState<Record<number, string>>({});
 
+  type EditingField = 'bolsas' | 'banda' | 'hibrido' | null;
+  const [editingField, setEditingField] = useState<EditingField>(null);
+  const [editBolsas, setEditBolsas] = useState('');
+
+  const { data: bandas = [] } = useQuery({
+    queryKey: ['bandas', item.cultivoId],
+    queryFn: () => productosApi.getBandas(item.cultivoId, false),
+    enabled: isEditable,
+    staleTime: 60_000,
+  });
+  const { data: hibridos = [] } = useQuery({
+    queryKey: ['hibridos', item.cultivoId],
+    queryFn: () => productosApi.getHibridos(item.cultivoId, false),
+    enabled: isEditable,
+    staleTime: 60_000,
+  });
+
+  const updateMut = useMutation({
+    mutationFn: (body: { hibridoId?: number; bandaId?: number; bolsas?: number }) =>
+      cotizacionesApi.updateItem(cotizacionId, version.id, item.id, body),
+    onSuccess: () => invalidate(),
+  });
+
   const deleteMut = useMutation({
     mutationFn: () => cotizacionesApi.deleteItem(cotizacionId, version.id, item.id),
     onSuccess: () => {
@@ -289,9 +312,86 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
 
   return (
     <tr className="hover:bg-gray-50">
-      <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{item.hibrido?.nombre ?? item.hibridoId}</td>
-      <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">{item.banda?.nombre ?? item.bandaId}</td>
-      <td className="px-4 py-2 text-sm text-right text-gray-700">{Math.round(Number(item.bolsas)).toLocaleString('es-AR')}</td>
+      <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap"
+        onDoubleClick={() => { if (isEditable) setEditingField('hibrido'); }}
+        title={isEditable ? 'Doble clic para editar' : undefined}
+        style={isEditable ? { cursor: 'pointer' } : undefined}
+      >
+        {editingField === 'hibrido' ? (
+          <select
+            autoFocus
+            defaultValue={item.hibridoId}
+            onChange={(e) => {
+              updateMut.mutate({ hibridoId: Number(e.target.value) });
+              setEditingField(null);
+            }}
+            onKeyDown={(e) => { if (e.key === 'Escape') setEditingField(null); }}
+            className="text-xs border rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            {hibridos.map((h: any) => (
+              <option key={h.id} value={h.id}>{h.nombre}</option>
+            ))}
+          </select>
+        ) : (
+          item.hibrido?.nombre ?? item.hibridoId
+        )}
+      </td>
+      <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap"
+        onDoubleClick={() => { if (isEditable) setEditingField('banda'); }}
+        title={isEditable ? 'Doble clic para editar' : undefined}
+        style={isEditable ? { cursor: 'pointer' } : undefined}
+      >
+        {editingField === 'banda' ? (
+          <select
+            autoFocus
+            defaultValue={item.bandaId}
+            onChange={(e) => {
+              updateMut.mutate({ bandaId: Number(e.target.value) });
+              setEditingField(null);
+            }}
+            onKeyDown={(e) => { if (e.key === 'Escape') setEditingField(null); }}
+            className="text-xs border rounded px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            {bandas.map((b: any) => (
+              <option key={b.id} value={b.id}>{b.nombre}</option>
+            ))}
+          </select>
+        ) : (
+          item.banda?.nombre ?? item.bandaId
+        )}
+      </td>
+      <td className="px-4 py-2 text-sm text-right text-gray-700"
+        onDoubleClick={() => {
+          if (!isEditable) return;
+          setEditBolsas(String(item.bolsas));
+          setEditingField('bolsas');
+        }}
+        title={isEditable ? 'Doble clic para editar' : undefined}
+        style={isEditable ? { cursor: 'text' } : undefined}
+      >
+        {editingField === 'bolsas' ? (
+          <input
+            type="number"
+            min={0.01}
+            step={0.01}
+            autoFocus
+            value={editBolsas}
+            onChange={(e) => setEditBolsas(e.target.value)}
+            onBlur={() => {
+              const val = Number(editBolsas);
+              if (!isNaN(val) && val > 0) updateMut.mutate({ bolsas: val });
+              setEditingField(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              if (e.key === 'Escape') setEditingField(null);
+            }}
+            className="w-20 text-xs text-right border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        ) : (
+          Math.round(Number(item.bolsas)).toLocaleString('es-AR')
+        )}
+      </td>
       <td className="px-4 py-2 text-sm text-right text-gray-500 whitespace-nowrap">${fmt(Number(item.precioBase))}</td>
       {activeDescuentos.map((d) => {
         const applied = item.descuentos.find((x) => x.descuentoId === d.id);
