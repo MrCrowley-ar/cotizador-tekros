@@ -221,9 +221,12 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
   const [deleteError, setDeleteError] = useState('');
   const [editingManual, setEditingManual] = useState<Record<number, string>>({});
 
-  type EditingField = 'bolsas' | 'banda' | 'hibrido' | null;
+  type EditingField = 'banda' | 'hibrido' | null;
   const [editingField, setEditingField] = useState<EditingField>(null);
-  const [editBolsas, setEditBolsas] = useState('');
+  const [bolsasInput, setBolsasInput] = useState(String(Math.round(Number(item.bolsas))));
+  useEffect(() => {
+    setBolsasInput(String(Math.round(Number(item.bolsas))));
+  }, [item.bolsas]);
 
   const { data: bandas = [] } = useQuery({
     queryKey: ['bandas', item.cultivoId],
@@ -360,31 +363,30 @@ function ItemRow({ item, cotizacionId, version, isEditable, activeDescuentos }: 
           item.banda?.nombre ?? item.bandaId
         )}
       </td>
-      <td className="px-4 py-2 text-sm text-right text-gray-700"
-        onDoubleClick={() => {
-          if (!isEditable) return;
-          setEditBolsas(String(item.bolsas));
-          setEditingField('bolsas');
-        }}
-        title={isEditable ? 'Doble clic para editar' : undefined}
-        style={isEditable ? { cursor: 'text' } : undefined}
-      >
-        {editingField === 'bolsas' ? (
+      <td className="px-4 py-2 text-sm text-right text-gray-700">
+        {isEditable ? (
           <input
             type="number"
-            min={0.01}
-            step={0.01}
-            autoFocus
-            value={editBolsas}
-            onChange={(e) => setEditBolsas(e.target.value)}
+            min={1}
+            step={1}
+            value={bolsasInput}
+            onChange={(e) => setBolsasInput(e.target.value)}
+            onFocus={(e) => e.target.select()}
             onBlur={() => {
-              const val = Number(editBolsas);
-              if (!isNaN(val) && val > 0) updateMut.mutate({ bolsas: val });
-              setEditingField(null);
+              const val = Math.round(Number(bolsasInput));
+              const current = Math.round(Number(item.bolsas));
+              if (!isNaN(val) && val > 0 && val !== current) {
+                updateMut.mutate({ bolsas: val });
+              } else {
+                setBolsasInput(String(current));
+              }
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-              if (e.key === 'Escape') setEditingField(null);
+              if (e.key === 'Escape') {
+                setBolsasInput(String(Math.round(Number(item.bolsas))));
+                (e.target as HTMLInputElement).blur();
+              }
             }}
             className="w-20 text-xs text-right border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
           />
